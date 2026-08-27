@@ -15,6 +15,7 @@ from outils import (
     montant_perte_estime,
     montant_cout_garantie,
     formater_montant,
+    formater_nombre_espace,
     commandes_par_email,
     premiere_commande_apres,
     charger_nps,
@@ -250,6 +251,102 @@ COULEUR_PRIMAIRE = "#CC5500"
 COULEUR_SECONDAIRE = "#96234A"
 COULEUR_ACCENT_FONCE = "#8B4513"
 
+# Système de cartes/bandeaux (distinct du code couleur vert/jaune/rouge/bleu/gris des
+# tableaux, qui garde son propre rôle de signal de statut — voir couleur_niveau()).
+COULEUR_FOND_CARTE = "#FAFAF9"
+COULEUR_BORDURE_CARTE = "#E8E3DD"
+COULEUR_TEXTE_LABEL = "#8A7F73"
+COULEUR_TEXTE_VALEUR = "#2B2620"
+COULEUR_HAUSSE_FOND = "#DCF3E4"
+COULEUR_HAUSSE_TEXTE = "#1E7A42"
+COULEUR_BAISSE_FOND = "#FBDFDC"
+COULEUR_BAISSE_TEXTE = "#B23A2E"
+COULEUR_NEUTRE_FOND = "#EFECE8"
+COULEUR_NEUTRE_TEXTE = "#6A6258"
+COULEUR_FOND_BANDEAU = "#FBF3EC"
+COULEUR_BORDURE_BANDEAU = "#EAD9C4"
+
+# Variantes plus saturées de couleur_niveau() (outils.py), pensées pour un liseré de carte
+# plutôt qu'un fond de cellule de tableau — même langage de statut, contexte différent.
+COULEUR_ACCENT_OK = "#3FA76B"
+COULEUR_ACCENT_SURVEILLER = "#E0A72E"
+COULEUR_ACCENT_CRITIQUE = "#D1483B"
+COULEUR_ACCENT_DEBORDEMENT = "#8B2E24"
+
+
+def formater_delta_kpi(delta, delta_couleur):
+    if isinstance(delta, str):
+        texte_signe = delta
+        est_negatif = texte_signe.startswith("-")
+    else:
+        est_negatif = delta < 0
+        if delta >= 0:
+            texte_signe = "+" + str(delta)
+        else:
+            texte_signe = str(delta)
+
+    if est_negatif:
+        fleche = "↓"
+    else:
+        fleche = "↑"
+
+    if delta_couleur == "off":
+        fond, texte_couleur = COULEUR_NEUTRE_FOND, COULEUR_NEUTRE_TEXTE
+    elif delta_couleur == "inverse":
+        if est_negatif:
+            fond, texte_couleur = COULEUR_HAUSSE_FOND, COULEUR_HAUSSE_TEXTE
+        else:
+            fond, texte_couleur = COULEUR_BAISSE_FOND, COULEUR_BAISSE_TEXTE
+    else:
+        if est_negatif:
+            fond, texte_couleur = COULEUR_BAISSE_FOND, COULEUR_BAISSE_TEXTE
+        else:
+            fond, texte_couleur = COULEUR_HAUSSE_FOND, COULEUR_HAUSSE_TEXTE
+
+    return fleche + " " + texte_signe, fond, texte_couleur
+
+
+def construire_carte_kpi(label, valeur, delta=None, delta_couleur="normal", sous_texte=None, accent=None):
+    if accent is None:
+        bordure_gauche = "border-left:1px solid " + COULEUR_BORDURE_CARTE + ";"
+    else:
+        bordure_gauche = "border-left:3px solid " + accent + ";"
+
+    html = (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        + bordure_gauche
+        + 'border-radius:10px; padding:16px 18px 14px; margin-bottom:8px; min-height:104px;">'
+        '<div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_TEXTE_LABEL + "; "
+        'font-weight:600; margin-bottom:6px;">' + label + "</div>"
+        '<div style="font-size:28px; font-weight:600; color:' + COULEUR_TEXTE_VALEUR + '; line-height:1.2;">'
+        + str(valeur) + "</div>"
+    )
+
+    if delta is not None:
+        texte_delta, fond_delta, couleur_delta = formater_delta_kpi(delta, delta_couleur)
+        html = html + (
+            '<div style="display:inline-block; margin-top:8px; padding:2px 9px; border-radius:12px; '
+            "font-size:12px; font-weight:600; background-color:" + fond_delta + "; color:" + couleur_delta + ';">'
+            + texte_delta + "</div>"
+        )
+
+    if sous_texte is not None:
+        html = html + (
+            '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:6px;">' + sous_texte + "</div>"
+        )
+
+    html = html + "</div>"
+    return html
+
+
+def construire_bandeau_info(texte_html):
+    return (
+        '<div style="background-color:' + COULEUR_FOND_BANDEAU + "; border:1px solid " + COULEUR_BORDURE_BANDEAU + "; "
+        'border-radius:8px; padding:14px 16px; color:' + COULEUR_TEXTE_VALEUR + '; font-size:14px; line-height:1.5;">'
+        + texte_html + "</div>"
+    )
+
+
 DOSSIER_EXPORTS = os.path.join(DOSSIER_PROJET, "exports_hebdomadaires")
 FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopify_fictif.xlsx")
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
@@ -277,6 +374,19 @@ SEUIL_REPLIES_FAQ = 3
 SEUIL_CSAT_VERBATIM = 2
 
 st.set_page_config(page_title="Dashboard Customer Care : Emyria", layout="wide")
+
+st.markdown(
+    "<style>"
+    "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');"
+    "html, body, [class*='css'] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }"
+    "h1 { letter-spacing: -0.02em; }"
+    "h2, h3 { letter-spacing: -0.01em; font-weight: 600; color: #3A342C; }"
+    "[data-testid='stAlert'] { border-radius: 8px; }"
+    "[data-testid='stButton'] button { border-radius: 8px; }"
+    "</style>",
+    unsafe_allow_html=True,
+)
+
 st.title("Dashboard Customer Care : Emyria")
 
 exports_disponibles = lister_exports(DOSSIER_EXPORTS)
@@ -304,7 +414,7 @@ st.sidebar.caption(
     "hebdomadaire continu) — les semaines listées ci-dessous sont les seules pour lesquelles un "
     "export existe."
 )
-st.sidebar.button("Réinitialiser (dernières données)", on_click=reinitialiser_periode)
+st.sidebar.button("Réinitialiser (dernières données)", on_click=reinitialiser_periode, type="primary")
 
 st.sidebar.markdown("**Période A**")
 semaine_a = st.sidebar.selectbox(
@@ -429,9 +539,9 @@ for chemin_role in fichiers_actuels:
     onglet_creneaux, onglet_planning, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
 ) = st.tabs(
     [
-        "🏠 Contexte", "📊 Vue d'ensemble", "📈 Tendances", "🗂️ Catégories", "🧑‍💻 Agents",
-        "🚨 Alertes & suggestions", "⏱️ Créneaux & délais", "📅 Planning", "🔧 Produit", "📦 Livraison",
-        "💱 Conversion & acquisition", "🤝 Impact & confiance",
+        "Contexte", "Vue d'ensemble", "Tendances", "Catégories", "Agents",
+        "Alertes & suggestions", "Créneaux & délais", "Planning", "Produit", "Livraison",
+        "Conversion & acquisition", "Impact & confiance",
     ]
 )
 
@@ -452,10 +562,13 @@ with onglet_contexte:
             unsafe_allow_html=True,
         )
 
-        st.info(
-            "Ce tableau de bord est une démonstration construite sur des données 100 % fictives "
-            "(tickets, commandes, avis) — pas l'audit d'une entreprise réelle. Il illustre un outil de "
-            "pilotage du service client conçu pour ce type de scale-up e-commerce."
+        st.markdown(
+            construire_bandeau_info(
+                "Ce tableau de bord est une démonstration construite sur des données 100 % fictives "
+                "(tickets, commandes, avis) — pas l'audit d'une entreprise réelle. Il illustre un outil de "
+                "pilotage du service client conçu pour ce type de scale-up e-commerce."
+            ),
+            unsafe_allow_html=True,
         )
 
     with colonne_hero_image:
@@ -497,13 +610,13 @@ with onglet_contexte:
         st.markdown(
             "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
             "pas un ordre arbitraire :\n"
-            "- **📊 Vue d'ensemble → 🚨 Alertes** : pilotage hebdomadaire de l'équipe\n"
-            "- **⏱️ Créneaux & délais → 📅 Planning** : staffing et couverture horaire\n"
-            "- **🔧 Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
-            "- **📦 Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **💱 Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
-            "- **🤝 Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)\n\n"
-            "🎨 Les tableaux utilisent un code couleur (vert/jaune/rouge/bleu/gris) — légende "
+            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe\n"
+            "- **Créneaux & délais → Planning** : staffing et couverture horaire\n"
+            "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
+            "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
+            "- **Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
+            "- **Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)\n\n"
+            "Les tableaux utilisent un code couleur (vert/jaune/rouge/bleu/gris) — légende "
             "dans la barre latérale."
         )
 
@@ -539,50 +652,70 @@ with onglet_vue:
     frt_s2 = moyenne(tickets_s2, "first_reply_time_min")
     macro_s2 = taux_rempli(tickets_s2, "macro_applied")
 
-    colonne1, colonne2, colonne3, colonne4 = st.columns(4)
+    with st.container(border=True):
+        colonne1, colonne2, colonne3, colonne4 = st.columns(4)
 
-    if comparaison_disponible:
-        nombre_s1 = len(tickets_s1)
-        csat_s1 = moyenne(tickets_s1, "csat")
-        frt_s1 = moyenne(tickets_s1, "first_reply_time_min")
-        macro_s1 = taux_rempli(tickets_s1, "macro_applied")
+        if comparaison_disponible:
+            nombre_s1 = len(tickets_s1)
+            csat_s1 = moyenne(tickets_s1, "csat")
+            frt_s1 = moyenne(tickets_s1, "first_reply_time_min")
+            macro_s1 = taux_rempli(tickets_s1, "macro_applied")
 
-        colonne1.metric("Tickets reçus", nombre_s2, delta=nombre_s2 - nombre_s1, delta_color="off")
-
-        if csat_s2 is not None and csat_s1 is not None:
-            colonne2.metric("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2))
-        else:
-            colonne2.metric("CSAT moyen", formater_csat(csat_s2))
-
-        if frt_s2 is not None and frt_s1 is not None:
-            colonne3.metric(
-                "1re réponse",
-                formater_duree(frt_s2),
-                delta=str(round(frt_s2 - frt_s1)) + " min",
-                delta_color="inverse",
+            colonne1.markdown(
+                construire_carte_kpi(
+                    "Tickets reçus", formater_nombre_espace(nombre_s2),
+                    delta=nombre_s2 - nombre_s1, delta_couleur="off",
+                ),
+                unsafe_allow_html=True,
             )
-        else:
-            colonne3.metric("1re réponse", formater_duree(frt_s2))
 
-        if macro_s2 is not None and macro_s1 is not None:
-            colonne4.metric(
-                "Utilisation macro",
-                formater_pourcentage(macro_s2),
-                delta=str(round(macro_s2 - macro_s1, 1)) + " pt",
-            )
+            if csat_s2 is not None and csat_s1 is not None:
+                colonne2.markdown(
+                    construire_carte_kpi("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2)),
+                    unsafe_allow_html=True,
+                )
+            else:
+                colonne2.markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
+
+            if frt_s2 is not None and frt_s1 is not None:
+                colonne3.markdown(
+                    construire_carte_kpi(
+                        "1re réponse", formater_duree(frt_s2),
+                        delta=str(round(frt_s2 - frt_s1)) + " min", delta_couleur="inverse",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                colonne3.markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
+
+            if macro_s2 is not None and macro_s1 is not None:
+                colonne4.markdown(
+                    construire_carte_kpi(
+                        "Utilisation macro", formater_pourcentage(macro_s2),
+                        delta=str(round(macro_s2 - macro_s1, 1)) + " pt",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                colonne4.markdown(
+                    construire_carte_kpi("Utilisation macro", formater_pourcentage(macro_s2)), unsafe_allow_html=True
+                )
         else:
-            colonne4.metric("Utilisation macro", formater_pourcentage(macro_s2))
-    else:
-        colonne1.metric("Tickets reçus", nombre_s2)
-        colonne2.metric("CSAT moyen", formater_csat(csat_s2))
-        colonne3.metric("1re réponse", formater_duree(frt_s2))
-        colonne4.metric("Utilisation macro", formater_pourcentage(macro_s2))
+            colonne1.markdown(
+                construire_carte_kpi("Tickets reçus", formater_nombre_espace(nombre_s2)), unsafe_allow_html=True
+            )
+            colonne2.markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
+            colonne3.markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
+            colonne4.markdown(
+                construire_carte_kpi("Utilisation macro", formater_pourcentage(macro_s2)), unsafe_allow_html=True
+            )
 
     evenements_texte = construire_texte_evenements(exports_disponibles, date_a_debut, date_a_fin)
     for changement in changements_planning:
         evenements_texte = evenements_texte + "  \nChangement planning : " + changement
 
-    st.info("Événement(s) de la période :  \n" + evenements_texte)
+    evenements_html = "Événement(s) de la période :<br>" + evenements_texte.replace("  \n", "<br>")
+    st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
     st.subheader("Répartition par famille")
     if comparaison_disponible:
@@ -1017,7 +1150,7 @@ with onglet_agents:
 # ------------------------------------------------------------------
 
 with onglet_alertes:
-    st.subheader("🚨 Alertes")
+    st.subheader("Alertes")
 
     if not comparaison_disponible:
         st.caption("Active « Comparer à une autre période » dans la barre latérale pour faire apparaître les alertes.")
@@ -1269,7 +1402,10 @@ with onglet_alertes:
 
         taux_reopens_global = moyenne(tickets_s2, "reopens")
         if taux_reopens_global is not None:
-            st.metric("Réouvertures moyennes (toute la période)", round(taux_reopens_global, 2))
+            st.markdown(
+                construire_carte_kpi("Réouvertures moyennes (toute la période)", round(taux_reopens_global, 2)),
+                unsafe_allow_html=True,
+            )
 
         st.write("Les 10 tickets les plus longs à résoudre :")
 
@@ -1327,11 +1463,27 @@ with onglet_creneaux:
     pct_hors_dispo = len(tickets_hors_tout) / volume_total_creneaux * 100
     frt_en_creneau_global = moyenne(en_creneau, "first_reply_time_min")
 
-    colonne_a, colonne_b, colonne_c = st.columns(3)
-    colonne_a.metric("Reçus en créneau ouvré", len(en_creneau), formater_pourcentage(pct_en_creneau) + " du volume")
-    colonne_b.metric("Reçus hors dispo agents", len(tickets_hors_tout), formater_pourcentage(pct_hors_dispo) + " du volume")
-    if frt_en_creneau_global is not None:
-        colonne_c.metric("Traitement moyen en créneau", formater_duree(frt_en_creneau_global))
+    with st.container(border=True):
+        colonne_a, colonne_b, colonne_c = st.columns(3)
+        colonne_a.markdown(
+            construire_carte_kpi(
+                "Reçus en créneau ouvré", formater_nombre_espace(len(en_creneau)),
+                sous_texte=formater_pourcentage(pct_en_creneau) + " du volume",
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_b.markdown(
+            construire_carte_kpi(
+                "Reçus hors dispo agents", formater_nombre_espace(len(tickets_hors_tout)),
+                sous_texte=formater_pourcentage(pct_hors_dispo) + " du volume",
+            ),
+            unsafe_allow_html=True,
+        )
+        if frt_en_creneau_global is not None:
+            colonne_c.markdown(
+                construire_carte_kpi("Traitement moyen en créneau", formater_duree(frt_en_creneau_global)),
+                unsafe_allow_html=True,
+            )
 
     st.subheader("Respect du SLA")
     st.caption(
@@ -1343,7 +1495,9 @@ with onglet_creneaux:
 
     taux_sla_global = taux_sla(tickets_s2, planning_s2)
     if taux_sla_global is not None:
-        st.metric("SLA respecté", formater_pourcentage(taux_sla_global))
+        st.markdown(
+            construire_carte_kpi("SLA respecté", formater_pourcentage(taux_sla_global)), unsafe_allow_html=True
+        )
 
     tickets_sla_connu = []
     for ticket in tickets_s2:
@@ -1372,11 +1526,28 @@ with onglet_creneaux:
             niveau = niveau_reponse_ouvree(frt_ticket)
             compte_niveaux[niveau] = compte_niveaux[niveau] + 1
 
-    colonne_d, colonne_e, colonne_f, colonne_g = st.columns(4)
-    colonne_d.metric("OK (< 1h30)", compte_niveaux["OK"])
-    colonne_e.metric("À surveiller (1h30-2h)", compte_niveaux["A SURVEILLER"])
-    colonne_f.metric("Critique (> 2h)", compte_niveaux["CRITIQUE"])
-    colonne_g.metric("Débordement (> 8h)", compte_niveaux["DEBORDEMENT"])
+    with st.container(border=True):
+        colonne_d, colonne_e, colonne_f, colonne_g = st.columns(4)
+        colonne_d.markdown(
+            construire_carte_kpi("OK (< 1h30)", compte_niveaux["OK"], accent=COULEUR_ACCENT_OK),
+            unsafe_allow_html=True,
+        )
+        colonne_e.markdown(
+            construire_carte_kpi(
+                "À surveiller (1h30-2h)", compte_niveaux["A SURVEILLER"], accent=COULEUR_ACCENT_SURVEILLER
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_f.markdown(
+            construire_carte_kpi("Critique (> 2h)", compte_niveaux["CRITIQUE"], accent=COULEUR_ACCENT_CRITIQUE),
+            unsafe_allow_html=True,
+        )
+        colonne_g.markdown(
+            construire_carte_kpi(
+                "Débordement (> 8h)", compte_niveaux["DEBORDEMENT"], accent=COULEUR_ACCENT_DEBORDEMENT
+            ),
+            unsafe_allow_html=True,
+        )
 
     st.subheader("Par canal, en créneau")
 
@@ -1912,12 +2083,24 @@ with onglet_livraison:
     resolution_livraison_s2 = moyenne(tickets_livraison_s2, "full_resolution_time_hours")
     pct_livraison_global = volume_livraison_s2 / len(tickets_s2) * 100
 
-    colonne_liv_a, colonne_liv_b, colonne_liv_c = st.columns(3)
-    colonne_liv_a.metric("Tickets livraison", volume_livraison_s2, formater_pourcentage(pct_livraison_global) + " du volume global")
-    if csat_livraison_s2 is not None:
-        colonne_liv_b.metric("CSAT livraison", formater_csat(csat_livraison_s2))
-    if resolution_livraison_s2 is not None:
-        colonne_liv_c.metric("Résolution moyenne", formater_duree(resolution_livraison_s2 * 60))
+    with st.container(border=True):
+        colonne_liv_a, colonne_liv_b, colonne_liv_c = st.columns(3)
+        colonne_liv_a.markdown(
+            construire_carte_kpi(
+                "Tickets livraison", formater_nombre_espace(volume_livraison_s2),
+                sous_texte=formater_pourcentage(pct_livraison_global) + " du volume global",
+            ),
+            unsafe_allow_html=True,
+        )
+        if csat_livraison_s2 is not None:
+            colonne_liv_b.markdown(
+                construire_carte_kpi("CSAT livraison", formater_csat(csat_livraison_s2)), unsafe_allow_html=True
+            )
+        if resolution_livraison_s2 is not None:
+            colonne_liv_c.markdown(
+                construire_carte_kpi("Résolution moyenne", formater_duree(resolution_livraison_s2 * 60)),
+                unsafe_allow_html=True,
+            )
 
     st.subheader("Sujets livraison")
 
@@ -1977,17 +2160,19 @@ with onglet_livraison:
             "Pays": pays,
             "Tickets": len(tickets_pays),
             "CSAT": "N/A",
+            "Niveau CSAT": "",
             "Résolution moyenne": "N/A",
         }
         if csat_pays is not None:
             ligne["CSAT"] = formater_csat(csat_pays)
+            ligne["Niveau CSAT"] = niveau_csat(csat_pays)
         if resolution_pays is not None:
             ligne["Résolution moyenne"] = formater_duree(resolution_pays * 60)
 
         lignes_pays_livraison.append(ligne)
 
     lignes_pays_livraison_triees = sorted(lignes_pays_livraison, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_pays_livraison_triees, hide_index=True, width="stretch")
+    afficher_tableau_colore(lignes_pays_livraison_triees)
 
 
 # ------------------------------------------------------------------
@@ -2055,16 +2240,25 @@ with onglet_conversion:
         if commande is not None:
             conversion_par_sujet[sujet]["convertis"] = conversion_par_sujet[sujet]["convertis"] + 1
 
-    colonne_op_a, colonne_op_b = st.columns(2)
-    colonne_op_a.metric("Tickets avant-vente", len(tickets_avant_vente), formater_pourcentage(pct_avant_vente) + " du volume global")
+    with st.container(border=True):
+        colonne_op_a, colonne_op_b = st.columns(2)
+        colonne_op_a.markdown(
+            construire_carte_kpi(
+                "Tickets avant-vente", formater_nombre_espace(len(tickets_avant_vente)),
+                sous_texte=formater_pourcentage(pct_avant_vente) + " du volume global",
+            ),
+            unsafe_allow_html=True,
+        )
 
-    if csat_avant_vente is not None and csat_global is not None:
-        ecart_csat = round(csat_avant_vente - csat_global, 2)
-        if ecart_csat >= 0:
-            ecart_texte = "+" + str(ecart_csat) + " vs moyenne équipe"
-        else:
-            ecart_texte = str(ecart_csat) + " vs moyenne équipe"
-        colonne_op_b.metric("CSAT avant-vente", formater_csat(csat_avant_vente), ecart_texte)
+        if csat_avant_vente is not None and csat_global is not None:
+            ecart_csat = round(csat_avant_vente - csat_global, 2)
+            colonne_op_b.markdown(
+                construire_carte_kpi(
+                    "CSAT avant-vente", formater_csat(csat_avant_vente),
+                    delta=ecart_csat, sous_texte="vs moyenne équipe",
+                ),
+                unsafe_allow_html=True,
+            )
 
     sujets_av = grouper_par(tickets_avant_vente, "subject_cluster")
     lignes_av = []
@@ -2109,12 +2303,29 @@ with onglet_conversion:
     if len(tickets_avant_vente) > 0:
         taux_conversion = nombre_convertis / len(tickets_avant_vente) * 100
 
-        colonne_cv_a, colonne_cv_b, colonne_cv_c = st.columns(3)
-        colonne_cv_a.metric("Taux de conversion (" + str(FENETRE_CONVERSION_JOURS) + "j)", formater_pourcentage(taux_conversion))
-        if len(delais) > 0:
-            colonne_cv_b.metric("Délai moyen avant achat", str(round(sum(delais) / len(delais), 1)) + " j")
-        if len(montants) > 0:
-            colonne_cv_c.metric("Panier moyen (converti)", formater_montant(sum(montants) / len(montants)))
+        with st.container(border=True):
+            colonne_cv_a, colonne_cv_b, colonne_cv_c = st.columns(3)
+            colonne_cv_a.markdown(
+                construire_carte_kpi(
+                    "Taux de conversion (" + str(FENETRE_CONVERSION_JOURS) + "j)",
+                    formater_pourcentage(taux_conversion),
+                ),
+                unsafe_allow_html=True,
+            )
+            if len(delais) > 0:
+                colonne_cv_b.markdown(
+                    construire_carte_kpi(
+                        "Délai moyen avant achat", str(round(sum(delais) / len(delais), 1)) + " j"
+                    ),
+                    unsafe_allow_html=True,
+                )
+            if len(montants) > 0:
+                colonne_cv_c.markdown(
+                    construire_carte_kpi(
+                        "Panier moyen (converti)", formater_montant(sum(montants) / len(montants))
+                    ),
+                    unsafe_allow_html=True,
+                )
 
     st.write("Par CSAT du ticket avant-vente :")
 
@@ -2268,9 +2479,11 @@ with onglet_conversion:
             "% avec contact support avant achat": formater_pourcentage(taux_contact),
             "Conversions avant-vente liées": len(donnees["convertis_avant_vente"]),
             "CSAT de ces conversions": "N/A",
+            "Niveau CSAT": "",
         }
         if csat_convertis is not None:
             ligne["CSAT de ces conversions"] = formater_csat(csat_convertis)
+            ligne["Niveau CSAT"] = niveau_csat(csat_convertis)
 
         lignes_canal.append(ligne)
 
@@ -2278,7 +2491,7 @@ with onglet_conversion:
         return ligne["Commandes"]
 
     lignes_canal_triees = sorted(lignes_canal, key=obtenir_commandes_canal, reverse=True)
-    st.dataframe(lignes_canal_triees, hide_index=True, width="stretch")
+    afficher_tableau_colore(lignes_canal_triees)
 
     st.divider()
     st.subheader("Par pays (poids support vs poids commandes)")
@@ -2363,9 +2576,19 @@ with onglet_impact:
     else:
         taux_reachat = 0
 
-    colonne_fid_a, colonne_fid_b = st.columns(2)
-    colonne_fid_a.metric("Clients avec au moins 2 commandes", nb_clients_repeat, formater_pourcentage(taux_reachat) + " des clients")
-    colonne_fid_b.metric("Total clients (historique)", nb_clients_total)
+    with st.container(border=True):
+        colonne_fid_a, colonne_fid_b = st.columns(2)
+        colonne_fid_a.markdown(
+            construire_carte_kpi(
+                "Clients avec au moins 2 commandes", formater_nombre_espace(nb_clients_repeat),
+                sous_texte=formater_pourcentage(taux_reachat) + " des clients",
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_fid_b.markdown(
+            construire_carte_kpi("Total clients (historique)", formater_nombre_espace(nb_clients_total)),
+            unsafe_allow_html=True,
+        )
 
     with st.expander("Répartition détaillée du nombre de commandes par client"):
         repartition_commandes = {}
@@ -2416,19 +2639,23 @@ with onglet_impact:
 
     lignes_fidelite_csat = []
     if len(csats_onetime) > 0:
+        csat_moyen_onetime = sum(csats_onetime) / len(csats_onetime)
         lignes_fidelite_csat.append({
             "Segment": "Client à commande unique",
             "Clients (avec contact support)": len(csats_onetime),
-            "CSAT moyen": formater_csat(sum(csats_onetime) / len(csats_onetime)),
+            "CSAT moyen": formater_csat(csat_moyen_onetime),
+            "Niveau CSAT": niveau_csat(csat_moyen_onetime),
         })
     if len(csats_repeat) > 0:
+        csat_moyen_repeat = sum(csats_repeat) / len(csats_repeat)
         lignes_fidelite_csat.append({
             "Segment": "Client avec réachat (2+ commandes)",
             "Clients (avec contact support)": len(csats_repeat),
-            "CSAT moyen": formater_csat(sum(csats_repeat) / len(csats_repeat)),
+            "CSAT moyen": formater_csat(csat_moyen_repeat),
+            "Niveau CSAT": niveau_csat(csat_moyen_repeat),
         })
 
-    st.dataframe(lignes_fidelite_csat, hide_index=True, width="stretch")
+    afficher_tableau_colore(lignes_fidelite_csat)
     st.caption("Échantillon limité aux clients ayant eu au moins un contact support noté — les autres n'ont pas de point de comparaison.")
 
     st.divider()
@@ -2484,7 +2711,12 @@ with onglet_impact:
     st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
 
     if montant_total_pertes > 0:
-        st.metric("Total pertes financières directes estimées", formater_montant(montant_total_pertes))
+        st.markdown(
+            construire_carte_kpi(
+                "Total pertes financières directes estimées", formater_montant(montant_total_pertes)
+            ),
+            unsafe_allow_html=True,
+        )
 
     st.subheader("SAV sous garantie (coût absorbé par l'entreprise)")
 
@@ -2516,7 +2748,13 @@ with onglet_impact:
                 commandes_garantie_deja_comptees.add(order_id)
 
         if len(montants_garantie) > 0:
-            st.metric("Coût de remplacement estimé (produits sous garantie)", formater_montant(sum(montants_garantie)))
+            st.markdown(
+                construire_carte_kpi(
+                    "Coût de remplacement estimé (produits sous garantie)",
+                    formater_montant(sum(montants_garantie)),
+                ),
+                unsafe_allow_html=True,
+            )
             st.caption("Estimé à partir d'une fraction du prix de vente (coût matière/logistique), pas le prix payé par le client.")
 
     st.divider()
@@ -2566,13 +2804,20 @@ with onglet_impact:
     nps_contactes = calculer_nps(reponses_contactees)
     nps_non_contactes = calculer_nps(reponses_non_contactees)
 
-    colonne_nps_a, colonne_nps_b, colonne_nps_c = st.columns(3)
-    if nps_global is not None:
-        colonne_nps_a.metric("NPS global", round(nps_global, 1))
-    if nps_contactes is not None:
-        colonne_nps_b.metric("NPS - a contacté le support", round(nps_contactes, 1))
-    if nps_non_contactes is not None:
-        colonne_nps_c.metric("NPS - jamais contacté (référence)", round(nps_non_contactes, 1))
+    with st.container(border=True):
+        colonne_nps_a, colonne_nps_b, colonne_nps_c = st.columns(3)
+        if nps_global is not None:
+            colonne_nps_a.markdown(construire_carte_kpi("NPS global", round(nps_global, 1)), unsafe_allow_html=True)
+        if nps_contactes is not None:
+            colonne_nps_b.markdown(
+                construire_carte_kpi("NPS - a contacté le support", round(nps_contactes, 1)),
+                unsafe_allow_html=True,
+            )
+        if nps_non_contactes is not None:
+            colonne_nps_c.markdown(
+                construire_carte_kpi("NPS - jamais contacté (référence)", round(nps_non_contactes, 1)),
+                unsafe_allow_html=True,
+            )
 
     if nps_contactes is not None and nps_non_contactes is not None:
         ecart_nps = round(nps_contactes - nps_non_contactes, 1)

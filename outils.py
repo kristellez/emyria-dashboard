@@ -104,8 +104,24 @@ def montant_cout_garantie(ticket, commandes):
     return montant_commande * FRACTION_REMPLACEMENT
 
 
+def formater_nombre_espace(nombre_entier):
+    texte = str(abs(nombre_entier))
+
+    groupes = []
+    while len(texte) > 3:
+        groupes.append(texte[-3:])
+        texte = texte[:-3]
+    groupes.append(texte)
+    groupes.reverse()
+
+    resultat = " ".join(groupes)
+    if nombre_entier < 0:
+        return "-" + resultat
+    return resultat
+
+
 def formater_montant(valeur):
-    return str(round(valeur)) + " €"
+    return formater_nombre_espace(round(valeur)) + " €"
 
 
 def commandes_par_email(commandes):
