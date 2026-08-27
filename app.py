@@ -2036,6 +2036,10 @@ with onglet_produit:
         st.dataframe(lignes_composant_issue_triees, hide_index=True, width="stretch")
 
     st.subheader("Garantie")
+    st.caption(
+        "Part des tickets SAV produit sous garantie vs hors garantie — un hors-garantie coûte plus "
+        "cher à l'entreprise (voir l'onglet Impact & confiance pour le chiffrage)."
+    )
 
     par_garantie = grouper_par(tickets_sav_produit_s2, "warranty_status")
     lignes_garantie = []

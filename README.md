@@ -2,8 +2,8 @@
 
 Tableau de bord d'analyse du service client pour **Emyria**, une marque fictive de diffuseurs
 d'ambiance connectés. Projet portfolio en Python (Streamlit) : ingestion de tickets support,
-détection automatique d'irritants récurrents, suivi d'impact avant/après action, et volet
-business (conversion, coûts SAV, fidélisation).
+détection automatique d'irritants récurrents, suivi d'impact avant/après action, et suivi
+business vu du service client (conversion avant-vente, coûts SAV, confiance client).
 
 > Toutes les données (tickets, commandes, avis clients) sont **100 % fictives**, générées pour la démonstration.
 
@@ -17,7 +17,7 @@ business (conversion, coûts SAV, fidélisation).
 - **Alertes automatiques** : détecte une catégorie qui se dégrade sur deux signaux à la fois (CSAT en baisse ET temps de réponse en hausse) — pas sur un seul, pour limiter les faux positifs
 - **Suggestions de macros/FAQ à créer**, basées sur les irritants récurrents (CSAT bas, adoption macro faible, volume d'échanges élevé)
 - **Suivi d'impact** : une fois une macro créée, compare le CSAT et l'usage macro avant/après sa mise en place
-- **Volet business** : conversion avant-vente réelle (pas estimée), coûts SAV, confiance client (NPS), fidélisation/réachat, coût d'acquisition par canal
+- **Volet business, vu du service client** : conversion avant-vente réelle (pas estimée, par agent et pays), pertes financières SAV, confiance client (NPS) — pas de metrics sales/marketing (coût d'acquisition, fidélisation), hors du périmètre du service client
 
 ## Stack technique
 
