@@ -392,12 +392,12 @@ categories_s2 = grouper_par_categorie(tickets_s2)
 
 (
     onglet_contexte, onglet_vue, onglet_tendances, onglet_categories, onglet_agents, onglet_alertes,
-    onglet_creneaux, onglet_planning, onglet_produit, onglet_livraison, onglet_business,
+    onglet_creneaux, onglet_planning, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
 ) = st.tabs(
     [
         "🏠 Contexte", "📊 Vue d'ensemble", "📈 Tendances", "🗂️ Catégories", "🧑‍💻 Agents",
         "🚨 Alertes & suggestions", "⏱️ Créneaux & délais", "📅 Planning", "🔧 Produit", "📦 Livraison",
-        "💼 Business",
+        "💱 Conversion & acquisition", "🤝 Impact & confiance",
     ]
 )
 
@@ -463,7 +463,8 @@ with onglet_contexte:
             "- **Créneaux & délais → Planning** : staffing et couverture horaire\n"
             "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **Business** : impact — conversion, coûts, fidélisation, confiance client"
+            "- **Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
+            "- **Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)"
         )
 
     st.divider()
@@ -1814,10 +1815,10 @@ with onglet_livraison:
 
 
 # ------------------------------------------------------------------
-# Onglet 9 : Business
+# Onglet 10 : Conversion & acquisition
 # ------------------------------------------------------------------
 
-with onglet_business:
+with onglet_conversion:
     commandes = charger_commandes(FICHIER_SHOPIFY)
 
     st.caption(
@@ -2151,7 +2152,18 @@ with onglet_business:
     lignes_pays_business_triees = sorted(lignes_pays_business, key=obtenir_tickets_periode, reverse=True)
     st.dataframe(lignes_pays_business_triees, hide_index=True, width="stretch")
 
-    st.divider()
+
+# ------------------------------------------------------------------
+# Onglet 11 : Impact & confiance
+# ------------------------------------------------------------------
+
+with onglet_impact:
+    st.caption(
+        "Les montants € viennent d'un fichier Shopify FICTIF (commandes_shopify_fictif.xlsx), "
+        "croisé aux tickets via order_id — Emyria est une marque fictive, ces chiffres sont des "
+        "ordres de grandeur d'exemple pour la démonstration."
+    )
+
     st.subheader("Ventes par produit")
     st.caption(
         "Chiffre d'affaires par parfum (commandes, tout l'historique) croisé au volume de tickets sur "
