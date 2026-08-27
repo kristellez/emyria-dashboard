@@ -27,8 +27,6 @@ from outils import (
     charger_texte_macro,
     extraire_nom_fichier_faq,
     charger_texte_faq,
-    charger_calendrier_evenements,
-    evenements_dans_periode,
     lister_exports,
     detecter_opportunites_hors_catalogue,
     horaires_agent,
@@ -46,7 +44,7 @@ from outils import (
     evolution_pourcentage,
     categoriser,
     CATEGORIE_SAV_PRODUIT,
-    niveau_csat,
+    couleur_texte_csat,
     niveau_macro,
     niveau_reponse_ouvree,
     niveau_hausse_sujet,
@@ -59,7 +57,6 @@ from outils import (
     separer_creneau,
     type_hors_creneau_detaille,
     taux_sla,
-    cible_perte_confiance,
     type_perte_financiere,
 )
 
@@ -73,9 +70,9 @@ def obtenir_sav_recurrents(ligne):
 
 
 DEFINITION_EN_CRENEAU = (
-    "« En créneau » = uniquement les tickets arrivés pendant les horaires de travail définis "
-    "dans l'onglet Planning. Ça isole la vraie performance de l'équipe, sans le délai dû aux "
-    "horaires hors couverture (voir l'onglet Créneaux & délais pour le détail du hors créneau)."
+    "« En créneau » = uniquement les tickets arrivés pendant les horaires de travail planifiés. "
+    "Ça isole la vraie performance de l'équipe, sans le délai dû aux horaires hors couverture "
+    "(voir l'onglet Staffing & réactivité pour le détail du planning et du hors créneau)."
 )
 
 ROLE_RESPONSABLE_EQUIPE = "Responsable d'équipe"
@@ -208,7 +205,7 @@ def construire_schema_composants(par_composant, couleur):
     )
 
 
-def afficher_tableau_colore(lignes):
+def afficher_tableau_colore(lignes, colonne_figee=None):
     if len(lignes) == 0:
         st.write("Aucune donnée.")
         return
@@ -224,7 +221,22 @@ def afficher_tableau_colore(lignes):
         tableau[colonne] = tableau[colonne].map(libelle_niveau)
 
     tableau_stylise = tableau.style.map(couleur_niveau, subset=colonnes_niveaux)
-    st.dataframe(tableau_stylise, hide_index=True, width="stretch")
+
+    # Le CSAT se colore directement sur le chiffre (pas de colonne "Niveau CSAT" séparée) —
+    # cohérent partout où une colonne "CSAT" existe, pas besoin de le déclarer à chaque appel.
+    if "CSAT" in tableau.columns:
+        tableau_stylise = tableau_stylise.map(couleur_texte_csat, subset=["CSAT"])
+
+    configuration_colonnes = None
+    if colonne_figee is not None:
+        configuration_colonnes = {colonne_figee: st.column_config.Column(pinned=True)}
+
+    st.dataframe(
+        tableau_stylise,
+        hide_index=True,
+        width="stretch",
+        column_config=configuration_colonnes,
+    )
 
 
 JOURS_ORDRE = [
@@ -245,6 +257,56 @@ def construire_ligne_planning(nom_affiche, horaires, role):
 
     ligne["Total heures/semaine"] = total_heures
     return ligne
+
+
+HEURE_DEBUT_GRILLE = 7
+HEURE_FIN_GRILLE = 22
+
+
+def construire_grille_couverture(planning, agents_grille):
+    grille = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        ligne_jour = {}
+        for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
+            ligne_jour[heure] = 0
+        grille[nom_jour] = ligne_jour
+
+    for agent in agents_grille:
+        horaires_grille = horaires_agent(planning, agent)
+        for nom_jour, numero_jour in JOURS_ORDRE:
+            plages = horaires_grille.get(numero_jour, [])
+            for debut, fin in plages:
+                for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
+                    if debut <= heure < fin:
+                        grille[nom_jour][heure] = grille[nom_jour][heure] + 1
+
+    return grille
+
+
+def couleur_fond_couverture(nombre_agents):
+    if nombre_agents == 0:
+        return "background-color: #f7c6c2"
+    elif nombre_agents == 1:
+        return "background-color: #ffe8a1"
+    else:
+        return "background-color: #c6f0d2"
+
+
+def afficher_grille_couverture(grille):
+    colonnes_heures = []
+    for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
+        colonnes_heures.append(str(heure) + "h")
+
+    lignes_grille = []
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        ligne = {"Jour": nom_jour}
+        for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
+            ligne[str(heure) + "h"] = grille[nom_jour][heure]
+        lignes_grille.append(ligne)
+
+    tableau_grille = pd.DataFrame(lignes_grille).set_index("Jour")
+    tableau_grille_stylise = tableau_grille.style.map(couleur_fond_couverture, subset=colonnes_heures)
+    st.dataframe(tableau_grille_stylise, width="stretch")
 
 
 COULEUR_PRIMAIRE = "#CC5500"
@@ -365,16 +427,7 @@ FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
 FICHIER_SUIVI_SUGGESTIONS = os.path.join(DOSSIER_PROJET, "data_suivi", "suivi_suggestions.xlsx")
 DOSSIER_MACROS = os.path.join(DOSSIER_PROJET, "knowledge_base", "macros")
 DOSSIER_FAQ = os.path.join(DOSSIER_PROJET, "knowledge_base", "faq")
-FICHIER_CALENDRIER = os.path.join(DOSSIER_PROJET, "data_calendrier", "calendrier_evenements.xlsx")
 FENETRE_CONVERSION_JOURS = 30
-
-COUT_ACQUISITION_PAR_CANAL = {
-    "Publicité Meta/Google": 20,
-    "Email marketing": 5,
-    "Recherche organique": 2,
-    "Recommandation": 3,
-    "Direct": 0,
-}
 
 SEUIL_MINIMUM_SUJET = 5
 SEUIL_MACRO_BASSE = 20
@@ -510,7 +563,7 @@ if comparaison_disponible:
     agents_s2_liste = list(grouper_par(tickets_s2, "assignee").keys())
     changements_planning = detecter_changements_planning(agents_s1_liste, agents_s2_liste, planning_s1_dernier, planning_s2_dernier)
 
-st.caption(periode_texte + " (" + str(len(fichiers_actuels)) + " export(s) — " + str(len(tickets_s2)) + " tickets)")
+st.caption(periode_texte)
 if comparer and not comparaison_disponible:
     st.caption("Aucun export disponible sur la période B choisie — pas de comparaison possible.")
 
@@ -522,6 +575,7 @@ with st.sidebar.expander("🎨 Comment lire les couleurs", expanded=True):
         "🔵 **Bleu** — Nouveau : sujet apparu depuis la période précédente\n\n"
         "⚪ **Gris** — Disparu : sujet qui n'apparaît plus sur la période actuelle"
     )
+    st.caption("CSAT noté sur une échelle de 0 à 5.")
 
 categories_s1 = grouper_par_categorie(tickets_s1)
 categories_s2 = grouper_par_categorie(tickets_s2)
@@ -535,7 +589,7 @@ for date_export_hist, chemin_hist in exports_disponibles:
     fichiers_tous_business.append(chemin_hist)
 tickets_historique_business = charger_periode(fichiers_tous_business)
 
-# Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Planning".
+# Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Staffing & réactivité".
 # Fusionné sur tous les fichiers de la période (pas seulement le dernier) : avec "Étendre
 # sur plusieurs semaines" coché, un agent peut ne pas apparaître dans le rôle du dernier
 # export pris isolément (rôle non renseigné ce jour-là, agent parti avant le dernier export...).
@@ -547,12 +601,12 @@ for chemin_role in fichiers_actuels:
         roles_periode[agent_role] = role_valeur
 
 (
-    onglet_contexte, onglet_vue, onglet_tendances, onglet_categories, onglet_agents, onglet_alertes,
-    onglet_creneaux, onglet_planning, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
+    onglet_contexte, onglet_vue, onglet_tendances, onglet_agents, onglet_alertes,
+    onglet_creneaux, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
 ) = st.tabs(
     [
-        "Contexte", "Vue d'ensemble", "Tendances", "Catégories", "Agents",
-        "Alertes & suggestions", "Créneaux & délais", "Planning", "Produit", "Livraison",
+        "Contexte", "Vue d'ensemble", "Tendances", "Agents",
+        "Alertes & suggestions", "Staffing & réactivité", "Produit", "Livraison",
         "Conversion & acquisition", "Impact & confiance",
     ]
 )
@@ -622,12 +676,12 @@ with onglet_contexte:
         st.markdown(
             "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
             "pas un ordre arbitraire :\n"
-            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe\n"
-            "- **Créneaux & délais → Planning** : staffing et couverture horaire\n"
+            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe (catégories incluses)\n"
+            "- **Staffing & réactivité** : couverture horaire, SLA, planning de l'équipe\n"
             "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
-            "- **Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)\n\n"
+            "- **Conversion & acquisition** : conversion réelle après contact avant-vente\n"
+            "- **Impact & confiance** : coûts SAV, confiance client (NPS)\n\n"
             "Les tableaux utilisent un code couleur (vert/jaune/rouge/bleu/gris) — légende "
             "dans la barre latérale."
         )
@@ -859,16 +913,77 @@ with onglet_vue:
             lignes_sujets_cat_triees = sorted(lignes_sujets_cat, key=obtenir_tickets, reverse=True)
             afficher_tableau_colore(lignes_sujets_cat_triees)
 
+    st.divider()
+    st.markdown(titre_section_principale("Performance par catégorie"), unsafe_allow_html=True)
+    st.caption(DEFINITION_EN_CRENEAU)
+
+    lignes_categories = []
+
+    if comparaison_disponible:
+        categories_a_afficher_perf = cles_combinees(categories_s2, categories_s1)
+    else:
+        categories_a_afficher_perf = list(categories_s2.keys())
+
+    for categorie in categories_a_afficher_perf:
+        tickets_cat_s2 = categories_s2.get(categorie, [])
+        tickets_cat_s1 = categories_s1.get(categorie, [])
+
+        csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
+        macro_cat_s2 = taux_rempli(tickets_cat_s2, "macro_applied")
+
+        if len(tickets_cat_s2) > 0:
+            en_creneau_cat, pause_cat, hors_cat = separer_creneau(tickets_cat_s2, planning_s2)
+            frt_en_creneau_cat = moyenne(en_creneau_cat, "first_reply_time_min")
+            pct_hors_creneau_cat = (len(pause_cat) + len(hors_cat)) / len(tickets_cat_s2) * 100
+        else:
+            frt_en_creneau_cat = None
+            pct_hors_creneau_cat = None
+
+        ligne = {"Catégorie": categorie}
+
+        if comparaison_disponible:
+            ligne["Volume période précédente"] = len(tickets_cat_s1)
+
+        ligne["Volume période actuelle"] = len(tickets_cat_s2)
+        ligne["CSAT"] = "N/A"
+        ligne["1re réponse (en créneau)"] = "N/A"
+        ligne["Niveau réponse"] = ""
+        ligne["% hors créneau"] = formater_pourcentage(pct_hors_creneau_cat)
+        ligne["Utilisation macro (%)"] = formater_pourcentage(macro_cat_s2)
+        ligne["Niveau utilisation macro"] = niveau_macro(macro_cat_s2)
+
+        if csat_cat_s2 is not None:
+            ligne["CSAT"] = formater_csat(csat_cat_s2)
+
+        if frt_en_creneau_cat is not None:
+            ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_cat)
+            ligne["Niveau réponse"] = niveau_reponse_ouvree(frt_en_creneau_cat)
+
+        lignes_categories.append(ligne)
+
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_categories)
+
 
 # ------------------------------------------------------------------
-# Onglet 1bis : Tendances
+# Onglet 2 : Tendances
 # ------------------------------------------------------------------
 
 with onglet_tendances:
+    exports_jusqu_a_periode = []
+    for date_export, chemin in exports_disponibles:
+        if date_export <= date_a_fin:
+            exports_jusqu_a_periode.append((date_export, chemin))
+
+    if len(exports_jusqu_a_periode) > 1:
+        texte_nombre_exports = str(len(exports_jusqu_a_periode)) + " exports disponibles"
+    else:
+        texte_nombre_exports = str(len(exports_jusqu_a_periode)) + " export disponible"
+
     st.caption(
-        "Évolution sur les " + str(len(exports_disponibles)) + " exports disponibles (~1 an) — indépendant "
-        "du filtre de période dans la barre latérale, pour voir une vraie tendance plutôt que comparer "
-        "seulement deux instantanés."
+        "Évolution sur les " + texte_nombre_exports + " jusqu'à la période sélectionnée dans la barre "
+        "latérale — pas de données au-delà de la Période A, pour garder une lecture cohérente avec "
+        "« où on en est ». Voir une vraie tendance plutôt que comparer seulement deux instantanés."
     )
     st.caption(
         "⚠️ Chaque point est une semaine représentative isolée, pas un suivi hebdomadaire continu — "
@@ -877,7 +992,7 @@ with onglet_tendances:
     )
 
     lignes_tendance = []
-    for date_export, chemin in exports_disponibles:
+    for date_export, chemin in exports_jusqu_a_periode:
         tickets_fichier = charger_tickets(chemin)
         if len(tickets_fichier) == 0:
             continue
@@ -928,63 +1043,6 @@ with onglet_tendances:
     ).properties(height=260).configure_view(strokeWidth=0)
     with st.container(border=True):
         st.altair_chart(graphique_macro, width="stretch")
-
-
-# ------------------------------------------------------------------
-# Onglet 2 : Catégories
-# ------------------------------------------------------------------
-
-with onglet_categories:
-    st.caption(DEFINITION_EN_CRENEAU)
-
-    lignes_categories = []
-
-    if comparaison_disponible:
-        categories_a_afficher = cles_combinees(categories_s2, categories_s1)
-    else:
-        categories_a_afficher = list(categories_s2.keys())
-
-    for categorie in categories_a_afficher:
-        tickets_cat_s2 = categories_s2.get(categorie, [])
-        tickets_cat_s1 = categories_s1.get(categorie, [])
-
-        csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
-        macro_cat_s2 = taux_rempli(tickets_cat_s2, "macro_applied")
-
-        if len(tickets_cat_s2) > 0:
-            en_creneau_cat, pause_cat, hors_cat = separer_creneau(tickets_cat_s2, planning_s2)
-            frt_en_creneau_cat = moyenne(en_creneau_cat, "first_reply_time_min")
-            pct_hors_creneau_cat = (len(pause_cat) + len(hors_cat)) / len(tickets_cat_s2) * 100
-        else:
-            frt_en_creneau_cat = None
-            pct_hors_creneau_cat = None
-
-        ligne = {"Catégorie": categorie}
-
-        if comparaison_disponible:
-            ligne["Volume période précédente"] = len(tickets_cat_s1)
-
-        ligne["Volume période actuelle"] = len(tickets_cat_s2)
-        ligne["CSAT"] = "N/A"
-        ligne["Niveau CSAT"] = ""
-        ligne["1re réponse (en créneau)"] = "N/A"
-        ligne["Niveau réponse"] = ""
-        ligne["% hors créneau"] = formater_pourcentage(pct_hors_creneau_cat)
-        ligne["Utilisation macro (%)"] = formater_pourcentage(macro_cat_s2)
-        ligne["Niveau utilisation macro"] = niveau_macro(macro_cat_s2)
-
-        if csat_cat_s2 is not None:
-            ligne["CSAT"] = formater_csat(csat_cat_s2)
-            ligne["Niveau CSAT"] = niveau_csat(csat_cat_s2)
-
-        if frt_en_creneau_cat is not None:
-            ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_cat)
-            ligne["Niveau réponse"] = niveau_reponse_ouvree(frt_en_creneau_cat)
-
-        lignes_categories.append(ligne)
-
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_categories)
 
 
 # ------------------------------------------------------------------
@@ -1059,7 +1117,6 @@ with onglet_agents:
             "Rôle": role_agent,
             "Tickets": volume,
             "CSAT": formater_csat(csat_agent),
-            "Niveau CSAT": niveau_csat(csat_agent),
             "1re réponse (en créneau)": "N/A",
             "Niveau réponse": "",
             "Résolution moyenne": "N/A",
@@ -1073,7 +1130,7 @@ with onglet_agents:
             ligne["Résolution moyenne"] = formater_duree(resolution_agent * 60)
 
         if reopens_agent is not None:
-            ligne["Réouvertures moyennes"] = round(reopens_agent, 2)
+            ligne["Réouvertures moyennes"] = str(round(reopens_agent, 2))
 
         if frt_en_creneau_agent is not None:
             ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_agent)
@@ -1083,7 +1140,7 @@ with onglet_agents:
 
     lignes_agents_triees = sorted(lignes_agents, key=obtenir_tickets, reverse=True)
     with st.container(border=True):
-        afficher_tableau_colore(lignes_agents_triees)
+        afficher_tableau_colore(lignes_agents_triees, colonne_figee="Agent")
 
     st.subheader("Détail par agent")
     st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
@@ -1157,7 +1214,7 @@ with onglet_agents:
                     ligne_sujet["1re réponse (en créneau)"] = formater_duree(frt_sujet)
 
                 if reopens_sujet is not None:
-                    ligne_sujet["Réouvertures moyennes"] = round(reopens_sujet, 2)
+                    ligne_sujet["Réouvertures moyennes"] = str(round(reopens_sujet, 2))
 
                 lignes_sujets_agent.append(ligne_sujet)
 
@@ -1203,7 +1260,7 @@ with onglet_alertes:
                 alertes.append({
                     "Catégorie": categorie,
                     "CSAT": formater_csat(csat_s1) + " → " + formater_csat(csat_s2),
-                    "Évolution CSAT": round(delta_csat, 2),
+                    "Évolution CSAT": str(round(delta_csat, 2)),
                     "1re réponse": formater_duree(frt_s1) + " → " + formater_duree(frt_s2),
                     "Évolution 1re réponse": "+" + str(round(delta_frt)) + " min",
                 })
@@ -1215,7 +1272,85 @@ with onglet_alertes:
                 st.dataframe(alertes, hide_index=True, width="stretch")
 
     st.divider()
-    st.caption("Détail complet par catégorie (CSAT, temps de réponse, macro) → onglet Catégories.")
+    st.caption("Détail complet par catégorie (CSAT, temps de réponse, macro) → onglet Vue d'ensemble.")
+
+    st.markdown(titre_section_principale("Temps de résolution par catégorie"), unsafe_allow_html=True)
+    st.caption(
+        "Trié par temps de résolution moyen, du plus long au plus court — la vraie question n'est pas "
+        "\"quel ticket a traîné\" mais \"quelle catégorie prend le plus de temps à l'équipe\"."
+    )
+
+    categories_resolution = {}
+    for ticket in tickets_s2:
+        if ticket["full_resolution_time_hours"] is None:
+            continue
+        categorie_ticket = categoriser(ticket)
+        if categorie_ticket in categories_resolution:
+            categories_resolution[categorie_ticket].append(ticket)
+        else:
+            categories_resolution[categorie_ticket] = [ticket]
+
+    lignes_resolution_categorie = []
+    for categorie, tickets_categorie in categories_resolution.items():
+        resolution_moyenne = moyenne(tickets_categorie, "full_resolution_time_hours")
+        macro_categorie = taux_rempli(tickets_categorie, "macro_applied")
+
+        resolutions_types = grouper_par(tickets_categorie, "resolution_type")
+        resolution_principale = "—"
+        plus_grand_compte = 0
+        for type_resolution, tickets_type_resolution in resolutions_types.items():
+            if len(tickets_type_resolution) > plus_grand_compte:
+                plus_grand_compte = len(tickets_type_resolution)
+                resolution_principale = type_resolution
+
+        if macro_categorie < SEUIL_MACRO_BASSE:
+            commentaire_macro = "Peu/pas de macro utilisée"
+        else:
+            commentaire_macro = "Macro bien utilisée"
+
+        lignes_resolution_categorie.append({
+            "resolution_tri": resolution_moyenne,
+            "Catégorie": categorie,
+            "Tickets": len(tickets_categorie),
+            "Résolution moyenne": formater_duree(resolution_moyenne * 60),
+            "Résolution la plus fréquente": resolution_principale,
+            "Macro": commentaire_macro,
+        })
+
+    def obtenir_resolution_tri(ligne):
+        return ligne["resolution_tri"]
+
+    lignes_resolution_categorie_triees = sorted(lignes_resolution_categorie, key=obtenir_resolution_tri, reverse=True)
+    for ligne in lignes_resolution_categorie_triees:
+        del ligne["resolution_tri"]
+
+    with st.container(border=True):
+        st.dataframe(lignes_resolution_categorie_triees, hide_index=True, width="stretch")
+
+    with st.expander("Détail : les 10 tickets les plus longs"):
+        def obtenir_resolution(ticket):
+            return ticket["full_resolution_time_hours"]
+
+        tickets_avec_resolution = []
+        for ticket in tickets_s2:
+            if ticket["full_resolution_time_hours"] is not None:
+                tickets_avec_resolution.append(ticket)
+
+        tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
+
+        lignes_longs = []
+        for ticket in tickets_tries_par_resolution[:10]:
+            lignes_longs.append(
+                {
+                    "Ticket": ticket["ticket_id"],
+                    "Agent": ticket["assignee"],
+                    "Catégorie": categoriser(ticket),
+                    "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
+                    "Résolu par": ticket["resolution_type"],
+                }
+            )
+
+        st.dataframe(lignes_longs, hide_index=True, width="stretch")
 
     st.subheader("Suggestions - macro à créer")
     st.caption(
@@ -1253,7 +1388,6 @@ with onglet_alertes:
             "Sujet": sujet,
             "Tickets": volume,
             "CSAT": formater_csat(csat_sujet),
-            "Niveau CSAT": niveau_csat(csat_sujet),
             "Utilisation macro (%)": formater_pourcentage(macro_sujet),
         }
 
@@ -1307,7 +1441,7 @@ with onglet_alertes:
         suggestions_faq.append({
             "Sujet": sujet,
             "Tickets": volume,
-            "Échanges moyens": round(replies_moyen, 1),
+            "Échanges moyens": str(round(replies_moyen, 1)),
         })
 
     with st.container(border=True):
@@ -1316,11 +1450,9 @@ with onglet_alertes:
     st.subheader("Verbatims clients (CSAT bas)")
     st.caption(
         "Lecture qualitative des tickets mal notés (CSAT ≤ " + str(SEUIL_CSAT_VERBATIM) + ") — pour "
-        "repérer des irritants \"process\" que les champs structurés ne capturent pas."
+        "repérer des irritants \"process\" que les champs structurés ne capturent pas. Groupés par "
+        "sujet, les 3 commentaires les plus récents par sujet."
     )
-
-    def obtenir_csat_ticket(ticket):
-        return ticket["csat"]
 
     tickets_verbatims = []
     for ticket in tickets_s2:
@@ -1329,21 +1461,32 @@ with onglet_alertes:
         if csat_ticket is not None and csat_ticket <= SEUIL_CSAT_VERBATIM and commentaire:
             tickets_verbatims.append(ticket)
 
-    tickets_verbatims_tries = sorted(tickets_verbatims, key=obtenir_csat_ticket)
-
-    lignes_verbatims = []
-    for ticket in tickets_verbatims_tries:
-        lignes_verbatims.append({
-            "Sujet": ticket["subject_cluster"],
-            "CSAT": ticket["csat"],
-            "Commentaire": ticket["csat_comment"],
-        })
-
-    if len(lignes_verbatims) == 0:
+    if len(tickets_verbatims) == 0:
         st.write("Aucun commentaire sur les tickets mal notés de cette période.")
     else:
-        with st.container(border=True):
-            st.dataframe(lignes_verbatims, hide_index=True, width="stretch")
+        sujets_verbatims = grouper_par(tickets_verbatims, "subject_cluster")
+
+        def obtenir_compte_verbatims(item):
+            sujet, tickets_sujet = item
+            return len(tickets_sujet)
+
+        sujets_verbatims_tries = sorted(sujets_verbatims.items(), key=obtenir_compte_verbatims, reverse=True)
+
+        def obtenir_date_ticket(ticket):
+            return ticket["created_at"]
+
+        for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
+            tickets_recents = sorted(tickets_sujet_verbatims, key=obtenir_date_ticket, reverse=True)[:3]
+
+            titre_expander = sujet + " (" + str(len(tickets_sujet_verbatims)) + " commentaire(s))"
+            with st.expander(titre_expander):
+                lignes_verbatims_sujet = []
+                for ticket in tickets_recents:
+                    lignes_verbatims_sujet.append({
+                        "CSAT": ticket["csat"],
+                        "Commentaire": ticket["csat_comment"],
+                    })
+                st.dataframe(lignes_verbatims_sujet, hide_index=True, width="stretch")
 
     with st.expander("Mots fréquents (sujets à faible CSAT)"):
         st.caption(
@@ -1410,70 +1553,35 @@ with onglet_alertes:
     with st.container(border=True):
         afficher_tableau_colore(lignes_suivi)
 
+    lignes_macros_associees = []
     for sujet, entree in sujets_traites:
         code_macro = extraire_code_macro(entree["notes"])
         texte_macro = charger_texte_macro(code_macro, DOSSIER_MACROS)
         if texte_macro is not None:
-            with st.expander("Voir la macro " + code_macro + " (" + sujet + ")"):
-                st.markdown(texte_macro)
-
             nom_fichier_faq = extraire_nom_fichier_faq(texte_macro)
-            texte_faq = charger_texte_faq(nom_fichier_faq, DOSSIER_FAQ)
-            if texte_faq is not None:
-                with st.expander("Voir la FAQ associée (" + sujet + ")"):
-                    st.markdown(texte_faq)
+            faq_associee = "—"
+            if nom_fichier_faq is not None:
+                texte_faq = charger_texte_faq(nom_fichier_faq, DOSSIER_FAQ)
+                if texte_faq is not None:
+                    faq_associee = nom_fichier_faq
 
-    st.divider()
-    with st.expander("Réouvertures & tickets longs"):
-        st.caption("Un ticket rouvert plusieurs fois signale une résolution bâclée ou incomplète, pas juste un chiffre de volume en plus")
+            lignes_macros_associees.append({
+                "Sujet": sujet,
+                "Macro": code_macro,
+                "FAQ associée": faq_associee,
+            })
 
-        taux_reopens_global = moyenne(tickets_s2, "reopens")
-        if taux_reopens_global is not None:
-            st.markdown(
-                construire_carte_kpi("Réouvertures moyennes (toute la période)", round(taux_reopens_global, 2)),
-                unsafe_allow_html=True,
-            )
-
-        st.write("Les 10 tickets les plus longs à résoudre :")
-
-        def obtenir_resolution(ticket):
-            return ticket["full_resolution_time_hours"]
-
-        tickets_avec_resolution = []
-        for ticket in tickets_s2:
-            if ticket["full_resolution_time_hours"] is not None:
-                tickets_avec_resolution.append(ticket)
-
-        tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
-
-        lignes_longs = []
-        for ticket in tickets_tries_par_resolution[:10]:
-            if ticket["macro_applied"] is not None:
-                macro_texte = "Oui"
-            else:
-                macro_texte = "Non"
-
-            lignes_longs.append(
-                {
-                    "Ticket": ticket["ticket_id"],
-                    "Agent": ticket["assignee"],
-                    "Sujet": ticket["subject_cluster"],
-                    "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
-                    "Macro utilisée": macro_texte,
-                    "Réouvertures": ticket["reopens"],
-                }
-            )
-
-        st.dataframe(lignes_longs, hide_index=True, width="stretch")
+    if len(lignes_macros_associees) > 0:
+        st.caption("Macros/FAQ créées pour ces sujets — texte complet dans le CRM, pas dupliqué ici.")
+        st.dataframe(lignes_macros_associees, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
-# Onglet 5 : Créneaux & délais
+# Onglet 5 : Staffing & réactivité
 # ------------------------------------------------------------------
 
 with onglet_creneaux:
     st.caption(DEFINITION_EN_CRENEAU)
-    st.caption("Horaires lus depuis l'onglet PLANNING du fichier Excel (un planning par agent est possible, avec un planning par défaut pour les autres)")
 
     en_creneau, pause_dejeuner, hors_creneau = separer_creneau(tickets_s2, planning_s2)
     tickets_hors_tout = pause_dejeuner + hors_creneau
@@ -1483,7 +1591,7 @@ with onglet_creneaux:
     # Disponibilité des agents vs volume reçu
     # ------------------------------------------------------------------
 
-    st.markdown(titre_section_principale("Les agents sont-ils disponibles aux bons horaires ?"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Couverture & respect du SLA"), unsafe_allow_html=True)
     st.caption("Sommes-nous assez staffés pour absorber le volume, aux bons horaires et aux bons jours ?")
 
     pct_en_creneau = len(en_creneau) / volume_total_creneaux * 100
@@ -1597,7 +1705,7 @@ with onglet_creneaux:
     # ------------------------------------------------------------------
 
     st.divider()
-    st.subheader("Quand les clients nous contactent hors créneau")
+    st.markdown(titre_section_principale("Volume hors créneau"), unsafe_allow_html=True)
     st.caption("Pour décider s'il faut élargir les horaires d'ouverture ou couvrir le week-end")
 
     groupes_type = {}
@@ -1630,85 +1738,74 @@ with onglet_creneaux:
 
     lignes_type_triees = sorted(lignes_type, key=obtenir_tickets, reverse=True)
 
-    tableau_type_graphique = pd.DataFrame(lignes_type_triees)[["Type", "Tickets"]].set_index("Type")
     with st.container(border=True):
-        st.bar_chart(tableau_type_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
         st.dataframe(lignes_type_triees, hide_index=True, width="stretch")
 
-    st.subheader("Pourquoi (par catégorie de demande)")
+    with st.expander("Détail : pourquoi et comment"):
+        groupes_type_categorie = {}
+        for ticket in tickets_hors_tout:
+            type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_s2)
+            cle = (type_detail, categoriser(ticket))
+            if cle in groupes_type_categorie:
+                groupes_type_categorie[cle].append(ticket)
+            else:
+                groupes_type_categorie[cle] = [ticket]
 
-    groupes_type_categorie = {}
-    for ticket in tickets_hors_tout:
-        type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_s2)
-        cle = (type_detail, categoriser(ticket))
-        if cle in groupes_type_categorie:
-            groupes_type_categorie[cle].append(ticket)
-        else:
-            groupes_type_categorie[cle] = [ticket]
+        lignes_type_categorie = []
+        for cle, tickets_groupe in groupes_type_categorie.items():
+            type_detail, categorie = cle
+            frt_groupe = moyenne(tickets_groupe, "first_reply_time_min")
+            csat_groupe = moyenne(tickets_groupe, "csat")
 
-    lignes_type_categorie = []
-    for cle, tickets_groupe in groupes_type_categorie.items():
-        type_detail, categorie = cle
-        frt_groupe = moyenne(tickets_groupe, "first_reply_time_min")
-        csat_groupe = moyenne(tickets_groupe, "csat")
+            ligne = {
+                "Type": type_detail, "Catégorie": categorie, "Tickets": len(tickets_groupe),
+                "Délai de rattrapage": "N/A", "CSAT": "N/A",
+            }
+            if frt_groupe is not None:
+                ligne["Délai de rattrapage"] = formater_duree(frt_groupe)
+            if csat_groupe is not None:
+                ligne["CSAT"] = formater_csat(csat_groupe)
+            lignes_type_categorie.append(ligne)
 
-        ligne = {
-            "Type": type_detail, "Catégorie": categorie, "Tickets": len(tickets_groupe),
-            "Délai de rattrapage": "N/A", "CSAT": "N/A",
-        }
-        if frt_groupe is not None:
-            ligne["Délai de rattrapage"] = formater_duree(frt_groupe)
-        if csat_groupe is not None:
-            ligne["CSAT"] = formater_csat(csat_groupe)
-        lignes_type_categorie.append(ligne)
-
-    lignes_type_categorie_triees = sorted(lignes_type_categorie, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
+        st.write("Pourquoi (par catégorie de demande) :")
+        lignes_type_categorie_triees = sorted(lignes_type_categorie, key=obtenir_tickets, reverse=True)
         st.dataframe(lignes_type_categorie_triees, hide_index=True, width="stretch")
 
-    st.subheader("Comment (par canal)")
+        groupes_type_canal = {}
+        for ticket in tickets_hors_tout:
+            type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_s2)
+            cle = (type_detail, ticket["via_channel"])
+            if cle in groupes_type_canal:
+                groupes_type_canal[cle].append(ticket)
+            else:
+                groupes_type_canal[cle] = [ticket]
 
-    groupes_type_canal = {}
-    for ticket in tickets_hors_tout:
-        type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_s2)
-        cle = (type_detail, ticket["via_channel"])
-        if cle in groupes_type_canal:
-            groupes_type_canal[cle].append(ticket)
-        else:
-            groupes_type_canal[cle] = [ticket]
+        lignes_type_canal = []
+        for cle, tickets_groupe in groupes_type_canal.items():
+            type_detail, canal = cle
+            frt_groupe = moyenne(tickets_groupe, "first_reply_time_min")
+            csat_groupe = moyenne(tickets_groupe, "csat")
 
-    lignes_type_canal = []
-    for cle, tickets_groupe in groupes_type_canal.items():
-        type_detail, canal = cle
-        frt_groupe = moyenne(tickets_groupe, "first_reply_time_min")
-        csat_groupe = moyenne(tickets_groupe, "csat")
+            ligne = {
+                "Type": type_detail, "Canal": canal, "Tickets": len(tickets_groupe),
+                "Délai de rattrapage": "N/A", "CSAT": "N/A",
+            }
+            if frt_groupe is not None:
+                ligne["Délai de rattrapage"] = formater_duree(frt_groupe)
+            if csat_groupe is not None:
+                ligne["CSAT"] = formater_csat(csat_groupe)
+            lignes_type_canal.append(ligne)
 
-        ligne = {
-            "Type": type_detail, "Canal": canal, "Tickets": len(tickets_groupe),
-            "Délai de rattrapage": "N/A", "CSAT": "N/A",
-        }
-        if frt_groupe is not None:
-            ligne["Délai de rattrapage"] = formater_duree(frt_groupe)
-        if csat_groupe is not None:
-            ligne["CSAT"] = formater_csat(csat_groupe)
-        lignes_type_canal.append(ligne)
-
-    lignes_type_canal_triees = sorted(lignes_type_canal, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
+        st.write("Comment (par canal) :")
+        lignes_type_canal_triees = sorted(lignes_type_canal, key=obtenir_tickets, reverse=True)
         st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
-
-# ------------------------------------------------------------------
-# Onglet 6 : Planning
-# ------------------------------------------------------------------
-
-with onglet_planning:
-    st.caption("Qui est programmé sur cette période, avec quel rôle, et combien d'heures — lu depuis l'onglet PLANNING du dernier export de la période (complété par les assignees de tickets non présents dans ce planning)")
-
-    horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
-    lignes_planning = [
-        construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
-    ]
+    st.divider()
+    st.markdown(titre_section_principale("Planning de l'équipe"), unsafe_allow_html=True)
+    st.caption(
+        "Nombre d'agents couvrant chaque créneau, lu depuis l'onglet PLANNING du dernier export de la "
+        "période — pour voir d'un coup d'œil où la couverture est faible avant de modifier des horaires."
+    )
 
     # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
     # n'a clôturé aucun ticket ne doit pas disparaître de sa propre ligne de planning) ;
@@ -1716,27 +1813,39 @@ with onglet_planning:
     agents_de_la_periode = grouper_par(tickets_s2, "assignee")
     agents_a_afficher = cles_combinees(planning_s2_dernier, agents_de_la_periode)
 
+    agents_grille = []
     for agent in agents_a_afficher:
-        if agent == NOM_AGENT_DEFAUT:
-            continue
-        horaires = horaires_agent(planning_s2_dernier, agent)
-        role = roles_periode.get(agent, "—")
-        lignes_planning.append(construire_ligne_planning(agent, horaires, role))
+        if agent != NOM_AGENT_DEFAUT:
+            agents_grille.append(agent)
 
     with st.container(border=True):
-        st.dataframe(lignes_planning, hide_index=True, width="stretch")
+        grille_couverture = construire_grille_couverture(planning_s2_dernier, agents_grille)
+        afficher_grille_couverture(grille_couverture)
+        st.caption("Nombre d'agents planifiés sur ce créneau — 0 = rouge, 1 = jaune, 2+ = vert.")
 
-    st.caption(
-        "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "
-        "agent, jour, heure_debut, heure_fin, role) : les horaires et le rôle d'un agent, mais aussi "
-        "le créneau standard lui-même (ligne \"DEFAUT\") — utile si un client passe à mi-temps, ferme "
-        "un mois donné, ou ajoute des heures supplémentaires. Les arrivées/départs/absences se notent "
-        "dans la colonne evenement_semaine de l'onglet RAW_TICKETS."
-    )
+    with st.expander("Détail horaires par agent"):
+        horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
+        lignes_planning = [
+            construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
+        ]
+
+        for agent in agents_grille:
+            horaires = horaires_agent(planning_s2_dernier, agent)
+            role = roles_periode.get(agent, "—")
+            lignes_planning.append(construire_ligne_planning(agent, horaires, role))
+
+        st.dataframe(lignes_planning, hide_index=True, width="stretch")
+        st.caption(
+            "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "
+            "agent, jour, heure_debut, heure_fin, role) : les horaires et le rôle d'un agent, mais aussi "
+            "le créneau standard lui-même (ligne \"DEFAUT\") — utile si un client passe à mi-temps, ferme "
+            "un mois donné, ou ajoute des heures supplémentaires. Les arrivées/départs/absences se notent "
+            "dans la colonne evenement_semaine de l'onglet RAW_TICKETS."
+        )
 
 
 # ------------------------------------------------------------------
-# Onglet 7 : Produit
+# Onglet 6 : Produit
 # ------------------------------------------------------------------
 
 with onglet_produit:
@@ -1770,14 +1879,6 @@ with onglet_produit:
                 + " tickets concernent le packaging/accessoires — hors schéma, pas un composant du produit lui-même."
             )
 
-    lignes_composant_graphique = []
-    for composant, tickets_composant in par_composant_s2.items():
-        lignes_composant_graphique.append({"Composant": composant, "Tickets": len(tickets_composant)})
-    lignes_composant_graphique_triees = sorted(lignes_composant_graphique, key=obtenir_tickets, reverse=True)
-    tableau_composant_graphique = pd.DataFrame(lignes_composant_graphique_triees).set_index("Composant")
-    with st.container(border=True):
-        st.bar_chart(tableau_composant_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
-
     lignes_composant = []
 
     if comparaison_disponible:
@@ -1795,12 +1896,10 @@ with onglet_produit:
             "Tickets": len(tickets_composant),
             "% du volume global": formater_pourcentage(pct_composant),
             "CSAT": "N/A",
-            "Niveau CSAT": "",
         }
 
         if csat_composant is not None:
             ligne["CSAT"] = formater_csat(csat_composant)
-            ligne["Niveau CSAT"] = niveau_csat(csat_composant)
 
         if comparaison_disponible:
             tickets_composant_s1 = par_composant_s1.get(composant, [])
@@ -1862,12 +1961,10 @@ with onglet_produit:
             "Tickets": len(tickets_produit),
             "% du volume global": formater_pourcentage(pct_produit),
             "CSAT": "N/A",
-            "Niveau CSAT": "",
         }
 
         if csat_produit is not None:
             ligne["CSAT"] = formater_csat(csat_produit)
-            ligne["Niveau CSAT"] = niveau_csat(csat_produit)
 
         if comparaison_disponible:
             tickets_produit_s1 = par_produit_s1.get(produit, [])
@@ -2002,121 +2099,40 @@ with onglet_produit:
             with colonne_rec_b:
                 st.dataframe(lignes_composant_recurrent_triees, hide_index=True, width="stretch")
 
-        st.write("Clients à contacter en priorité (au moins 2 SAV avant celui-ci) :")
-
-        recurrents_par_client = {}
-        for ticket in tickets_recurrents:
-            email_client = ticket["requester_email"]
-            if email_client not in recurrents_par_client or ticket["created_at"] > recurrents_par_client[email_client]["created_at"]:
-                recurrents_par_client[email_client] = ticket
-
-        lignes_clients_recurrents = []
-        for email_client, ticket_recent in recurrents_par_client.items():
-            if ticket_recent["prior_sav_count"] < 2:
-                continue
-
-            lignes_clients_recurrents.append({
-                "Client": email_client,
-                "SAV au total": ticket_recent["prior_sav_count"] + 1,
-                "Produit": ticket_recent["product_name"],
-                "Composant": ticket_recent["component"],
-                "Dernier ticket": ticket_recent["created_at"].strftime("%d/%m/%Y"),
-            })
-
-        if len(lignes_clients_recurrents) == 0:
-            st.write("Aucun client avec 2 SAV ou plus avant celui-ci sur cette période.")
-        else:
-            def obtenir_sav_total(ligne):
-                return ligne["SAV au total"]
-
-            lignes_clients_recurrents_triees = sorted(lignes_clients_recurrents, key=obtenir_sav_total, reverse=True)
-            with st.container(border=True):
-                st.dataframe(lignes_clients_recurrents_triees, hide_index=True, width="stretch")
-
-    st.divider()
-    st.subheader("Ventes par produit")
-    st.caption(
-        "Chiffre d'affaires par parfum (commandes, tout l'historique) croisé au volume de tickets sur "
-        "la période affichée — pour repérer un parfum qui vend bien mais génère disproportionnellement "
-        "du support. Montants € : données Shopify fictives (commandes_shopify_fictif.xlsx)."
-    )
-
-    ca_par_produit = {}
-    for commande in commandes.values():
-        produit_commande = commande["product_name"]
-        if produit_commande in ca_par_produit:
-            ca_par_produit[produit_commande] = ca_par_produit[produit_commande] + commande["montant_total"]
-        else:
-            ca_par_produit[produit_commande] = commande["montant_total"]
-
-    tickets_par_produit_ventes = grouper_par(tickets_s2, "product_name")
-    produits_ventes_a_afficher = cles_combinees(ca_par_produit, tickets_par_produit_ventes)
-
-    lignes_produit_ventes = []
-    for produit_nom in produits_ventes_a_afficher:
-        lignes_produit_ventes.append({
-            "produit": produit_nom,
-            "ca": ca_par_produit.get(produit_nom, 0),
-            "tickets": len(tickets_par_produit_ventes.get(produit_nom, [])),
-        })
-
-    def obtenir_ca(ligne):
-        return ligne["ca"]
-
-    lignes_produit_ventes_triees = sorted(lignes_produit_ventes, key=obtenir_ca, reverse=True)
-
-    lignes_produit_ventes_affichage = []
-    for ligne in lignes_produit_ventes_triees:
-        lignes_produit_ventes_affichage.append({
-            "Produit": ligne["produit"],
-            "CA (historique)": formater_montant(ligne["ca"]),
-            "Tickets (période)": ligne["tickets"],
-        })
-
-    with st.container(border=True):
-        st.dataframe(lignes_produit_ventes_affichage, hide_index=True, width="stretch")
-
     st.divider()
     st.subheader("Opportunités produit — demandes hors catalogue")
     st.caption(
-        "Détecte automatiquement tout sujet marqué « (hors catalogue) » — une demande pour quelque chose "
-        "qu'on ne vend pas (accessoire, personnalisation...). Élargis la Période A dans la barre latérale "
-        "pour voir le seuil se déclencher sur des cadences plus longues."
+        "Top 10 des demandes récurrentes pour quelque chose qu'on ne vend pas (accessoire, "
+        "personnalisation...), détectées via tout sujet marqué « (hors catalogue) » — à remonter à "
+        "l'équipe produit."
     )
 
-    seuil_opportunite = st.slider("Seuil de déclenchement (nombre de tickets sur la période)", 1, 20, 3)
-
-    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, seuil_opportunite)
+    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, 1)
 
     if len(opportunites) == 0:
-        st.write("Aucune demande hors catalogue n'atteint le seuil sur cette période.")
+        st.write("Aucune demande hors catalogue sur cette période.")
     else:
         lignes_opportunites = []
         for sujet, tickets_sujet in opportunites:
             csat_opportunite = moyenne(tickets_sujet, "csat")
-            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A", "Niveau CSAT": ""}
+            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
             if csat_opportunite is not None:
                 ligne["CSAT"] = formater_csat(csat_opportunite)
-                ligne["Niveau CSAT"] = niveau_csat(csat_opportunite)
             lignes_opportunites.append(ligne)
 
-        lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)
+        lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)[:10]
         with st.container(border=True):
             afficher_tableau_colore(lignes_opportunites_triees)
-        st.write(
-            "À remonter à l'équipe produit : ce sont des demandes récurrentes pour quelque chose qui "
-            "n'existe pas encore au catalogue."
-        )
 
 
 # ------------------------------------------------------------------
-# Onglet 8 : Livraison
+# Onglet 7 : Livraison
 # ------------------------------------------------------------------
 
 with onglet_livraison:
     st.caption(
         "Miroir mensuel de la catégorie Livraison, pensé pour un point avec le transporteur — voir "
-        "l'onglet Catégories pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
+        "l'onglet Vue d'ensemble pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
         "recommandée (élargis la Période A dans la barre latérale) — les exports disponibles restent des "
         "semaines représentatives isolées, pas un historique continu."
     )
@@ -2171,13 +2187,11 @@ with onglet_livraison:
             "Tickets": volume_s2,
             "% du volume global": formater_pourcentage(pct_sujet_global),
             "CSAT": "N/A",
-            "Niveau CSAT": "",
             "Résolution moyenne": "N/A",
         }
 
         if csat_sujet is not None:
             ligne["CSAT"] = formater_csat(csat_sujet)
-            ligne["Niveau CSAT"] = niveau_csat(csat_sujet)
 
         if resolution_sujet is not None:
             ligne["Résolution moyenne"] = formater_duree(resolution_sujet * 60)
@@ -2209,12 +2223,10 @@ with onglet_livraison:
             "Pays": pays,
             "Tickets": len(tickets_pays),
             "CSAT": "N/A",
-            "Niveau CSAT": "",
             "Résolution moyenne": "N/A",
         }
         if csat_pays is not None:
             ligne["CSAT"] = formater_csat(csat_pays)
-            ligne["Niveau CSAT"] = niveau_csat(csat_pays)
         if resolution_pays is not None:
             ligne["Résolution moyenne"] = formater_duree(resolution_pays * 60)
 
@@ -2226,116 +2238,11 @@ with onglet_livraison:
 
 
 # ------------------------------------------------------------------
-# Onglet 9 : Conversion & acquisition
+# Onglet 8 : Conversion & acquisition
 # ------------------------------------------------------------------
 
 with onglet_conversion:
-    st.caption(
-        "Les montants € viennent d'un fichier Shopify FICTIF (commandes_shopify_fictif.xlsx), "
-        "croisé aux tickets via order_id — Emyria est une marque fictive, ces chiffres sont des "
-        "ordres de grandeur d'exemple pour la démonstration."
-    )
-
-    evenements_marketing = charger_calendrier_evenements(FICHIER_CALENDRIER)
-    evenements_periode_actuelle = evenements_dans_periode(evenements_marketing, date_a_debut, date_a_fin)
-
-    if len(evenements_periode_actuelle) > 0:
-        st.subheader("Contexte marketing sur cette période")
-        st.caption(
-            "Campagnes et lancements en cours ou en chevauchement avec la période affichée — pour "
-            "lire les chiffres de conversion et de volume avec ce contexte en tête."
-        )
-
-        lignes_evenements = []
-        for evenement in evenements_periode_actuelle:
-            reduction = evenement["reduction_pct"]
-            if reduction is None:
-                reduction_texte = "—"
-            else:
-                reduction_texte = "-" + str(reduction) + " %"
-
-            lignes_evenements.append({
-                "Événement": evenement["nom_evenement"],
-                "Type": evenement["type"],
-                "Dates": formater_plage(evenement["date_debut"], evenement["date_fin"]),
-                "Canal": evenement["canal_diffusion"],
-                "Réduction": reduction_texte,
-                "Notes": evenement["notes"],
-            })
-
-        with st.container(border=True):
-            st.dataframe(lignes_evenements, hide_index=True, width="stretch")
-        st.divider()
-
-    st.markdown(titre_section_principale("Opportunités - avant-vente"), unsafe_allow_html=True)
-    st.caption("CSAT élevé = fort potentiel de conclure la vente ; CSAT bas = risque de perdre le prospect")
-
-    tickets_avant_vente = categories_s2.get("Avant-vente / conseil", [])
-    csat_avant_vente = moyenne(tickets_avant_vente, "csat")
-    csat_global = moyenne(tickets_s2, "csat")
-    pct_avant_vente = len(tickets_avant_vente) / len(tickets_s2) * 100
-
-    index_commandes_email = commandes_par_email(commandes)
-
-    resultats_conversion = []
-    for ticket in tickets_avant_vente:
-        commande = premiere_commande_apres(ticket, index_commandes_email, FENETRE_CONVERSION_JOURS)
-        resultats_conversion.append((ticket, commande))
-
-    conversion_par_sujet = {}
-    for ticket, commande in resultats_conversion:
-        sujet = ticket["subject_cluster"]
-        if sujet not in conversion_par_sujet:
-            conversion_par_sujet[sujet] = {"total": 0, "convertis": 0}
-        conversion_par_sujet[sujet]["total"] = conversion_par_sujet[sujet]["total"] + 1
-        if commande is not None:
-            conversion_par_sujet[sujet]["convertis"] = conversion_par_sujet[sujet]["convertis"] + 1
-
-    with st.container(border=True):
-        colonne_op_a, colonne_op_b = st.columns(2)
-        colonne_op_a.markdown(
-            construire_carte_kpi(
-                "Tickets avant-vente", formater_nombre_espace(len(tickets_avant_vente)),
-                sous_texte=formater_pourcentage(pct_avant_vente) + " du volume global",
-            ),
-            unsafe_allow_html=True,
-        )
-
-        if csat_avant_vente is not None and csat_global is not None:
-            ecart_csat = round(csat_avant_vente - csat_global, 2)
-            colonne_op_b.markdown(
-                construire_carte_kpi(
-                    "CSAT avant-vente", formater_csat(csat_avant_vente),
-                    delta=ecart_csat, sous_texte="vs moyenne équipe",
-                ),
-                unsafe_allow_html=True,
-            )
-
-    sujets_av = grouper_par(tickets_avant_vente, "subject_cluster")
-    lignes_av = []
-    for sujet, tickets_sujet in sujets_av.items():
-        csat_sujet = moyenne(tickets_sujet, "csat")
-        ligne = {"Sujet": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A", "Taux de conversion": "N/A"}
-        if csat_sujet is not None:
-            ligne["CSAT"] = formater_csat(csat_sujet)
-
-        compte_sujet = conversion_par_sujet.get(sujet)
-        if compte_sujet is not None and compte_sujet["total"] > 0:
-            taux_sujet = compte_sujet["convertis"] / compte_sujet["total"] * 100
-            ligne["Taux de conversion"] = formater_pourcentage(taux_sujet)
-
-        lignes_av.append(ligne)
-
-    lignes_av_triees = sorted(lignes_av, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_av_triees)
-    st.caption(
-        "Taux de conversion réel par sujet (pas une estimation à partir du CSAT) — pour voir quelles "
-        "demandes avant-vente convertissent le mieux, indépendamment de leur volume ou de leur note."
-    )
-
-    st.divider()
-    st.subheader("Conversion / ré-achat après contact avant-vente")
+    st.markdown(titre_section_principale("Conversion après contact avant-vente"), unsafe_allow_html=True)
     st.caption(
         "Fenêtre de " + str(FENETRE_CONVERSION_JOURS) + " jours glissants après le ticket. Rapproché par "
         "e-mail avec la commande la plus proche dans cette fenêtre (fichier Shopify fictif) — méthode "
@@ -2343,24 +2250,31 @@ with onglet_conversion:
         "(client avec plusieurs tickets rapprochés dans le temps). À garder en tête en lisant les chiffres."
     )
 
+    tickets_avant_vente = categories_s2.get("Avant-vente / conseil", [])
+    index_commandes_email = commandes_par_email(commandes)
+
+    resultats_conversion = []
+    for ticket in tickets_avant_vente:
+        commande = premiere_commande_apres(ticket, index_commandes_email, FENETRE_CONVERSION_JOURS)
+        resultats_conversion.append((ticket, commande))
+
     nombre_convertis = 0
     delais = []
-    montants = []
     for ticket, commande in resultats_conversion:
         if commande is not None:
             nombre_convertis = nombre_convertis + 1
             delais.append((commande["order_date"] - ticket["created_at"]).days)
-            montants.append(commande["montant_total"])
 
     if len(tickets_avant_vente) > 0:
         taux_conversion = nombre_convertis / len(tickets_avant_vente) * 100
 
         with st.container(border=True):
-            colonne_cv_a, colonne_cv_b, colonne_cv_c = st.columns(3)
+            colonne_cv_a, colonne_cv_b = st.columns(2)
             colonne_cv_a.markdown(
                 construire_carte_kpi(
                     "Taux de conversion (" + str(FENETRE_CONVERSION_JOURS) + "j)",
                     formater_pourcentage(taux_conversion),
+                    sous_texte=formater_nombre_espace(len(tickets_avant_vente)) + " tickets avant-vente sur la période",
                 ),
                 unsafe_allow_html=True,
             )
@@ -2371,351 +2285,62 @@ with onglet_conversion:
                     ),
                     unsafe_allow_html=True,
                 )
-            if len(montants) > 0:
-                colonne_cv_c.markdown(
-                    construire_carte_kpi(
-                        "Panier moyen (converti)", formater_montant(sum(montants) / len(montants))
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-    st.write("Par CSAT du ticket avant-vente :")
-
-    par_csat_conversion = {}
-    for ticket, commande in resultats_conversion:
-        csat = ticket["csat"]
-        if csat not in par_csat_conversion:
-            par_csat_conversion[csat] = {"total": 0, "convertis": 0}
-        par_csat_conversion[csat]["total"] = par_csat_conversion[csat]["total"] + 1
-        if commande is not None:
-            par_csat_conversion[csat]["convertis"] = par_csat_conversion[csat]["convertis"] + 1
-
-    lignes_conversion_csat = []
-    for csat, compte in par_csat_conversion.items():
-        if csat is None:
-            csat_texte = "Pas de note"
-        else:
-            csat_texte = str(csat)
-
-        taux = compte["convertis"] / compte["total"] * 100
-
-        lignes_conversion_csat.append(
-            {
-                "CSAT": csat_texte,
-                "Tickets": compte["total"],
-                "Convertis": compte["convertis"],
-                "Taux de conversion": formater_pourcentage(taux),
-                "Taux (valeur)": round(taux, 1),
-            }
-        )
-
-    def obtenir_csat_pour_tri(ligne):
-        if ligne["CSAT"] == "Pas de note":
-            return -1
-        return int(ligne["CSAT"])
-
-    lignes_conversion_csat_triees = sorted(lignes_conversion_csat, key=obtenir_csat_pour_tri, reverse=True)
-
-    lignes_conversion_csat_notees = []
-    for ligne in lignes_conversion_csat_triees:
-        if ligne["CSAT"] != "Pas de note":
-            lignes_conversion_csat_notees.append(ligne)
-    lignes_conversion_csat_croissant = sorted(lignes_conversion_csat_notees, key=obtenir_csat_pour_tri)
-
-    tableau_conversion_csat_graphique = pd.DataFrame(lignes_conversion_csat_croissant)[["CSAT", "Taux (valeur)"]].set_index("CSAT")
-
-    lignes_conversion_csat_affichage = []
-    for ligne in lignes_conversion_csat_triees:
-        lignes_conversion_csat_affichage.append(
-            {
-                "CSAT": ligne["CSAT"],
-                "Tickets": ligne["Tickets"],
-                "Convertis": ligne["Convertis"],
-                "Taux de conversion": ligne["Taux de conversion"],
-            }
-        )
-
-    with st.container(border=True):
-        st.bar_chart(tableau_conversion_csat_graphique, color=COULEUR_PRIMAIRE, y_label="Taux de conversion (%)")
-        st.dataframe(lignes_conversion_csat_affichage, hide_index=True, width="stretch")
-    st.caption("Échantillons parfois petits par note (ex : CSAT 1 ou 2) — à lire comme une tendance, pas un chiffre définitif.")
-
-    st.write("Par agent :")
-    st.caption("Clique sur l'en-tête d'une colonne pour trier par nombre de conversions ou par CA généré")
-
-    par_agent_conversion = {}
-    for ticket, commande in resultats_conversion:
-        agent = ticket["assignee"]
-        if agent not in par_agent_conversion:
-            par_agent_conversion[agent] = {"total": 0, "convertis": 0, "montants": []}
-        par_agent_conversion[agent]["total"] = par_agent_conversion[agent]["total"] + 1
-        if commande is not None:
-            par_agent_conversion[agent]["convertis"] = par_agent_conversion[agent]["convertis"] + 1
-            par_agent_conversion[agent]["montants"].append(commande["montant_total"])
-
-    lignes_agent_conversion = []
-    for agent, stats in par_agent_conversion.items():
-        taux_agent = stats["convertis"] / stats["total"] * 100
-        ca_genere = sum(stats["montants"])
-
-        lignes_agent_conversion.append(
-            {
-                "Agent": agent,
-                "Tickets avant-vente": stats["total"],
-                "Convertis": stats["convertis"],
-                "Taux de conversion": formater_pourcentage(taux_agent),
-                "CA généré": formater_montant(ca_genere),
-            }
-        )
-
-    def obtenir_convertis(ligne):
-        return ligne["Convertis"]
-
-    lignes_agent_conversion_triees = sorted(lignes_agent_conversion, key=obtenir_convertis, reverse=True)
-    with st.container(border=True):
-        st.dataframe(lignes_agent_conversion_triees, hide_index=True, width="stretch")
-
-    montants_silencieux = []
-    for order_id in commandes:
-        commande = commandes[order_id]
-        if commande["a_genere_ticket"] == "Non" and commande["ticket_conversion"] is None:
-            montants_silencieux.append(commande["montant_total"])
-
-    if len(montants_silencieux) > 0 and len(montants) > 0:
-        st.write(
-            "Panier moyen d'une commande sans aucun contact support : "
-            + formater_montant(sum(montants_silencieux) / len(montants_silencieux))
-            + " (vs " + formater_montant(sum(montants) / len(montants)) + " après contact avant-vente converti)"
-        )
 
     st.divider()
-    st.subheader("Par canal d'acquisition")
+    st.markdown(titre_section_principale("Conversion par agent et par pays"), unsafe_allow_html=True)
     st.caption(
-        "Origine client (fichier Shopify) croisée avec le coût d'acquisition (CAC estimé, hypothèse "
-        "fictive illustrative), le contact support et le CSAT — sur tout l'historique disponible, comme "
-        "les commandes ci-dessus (pas filtré par la période affichée)."
+        "Pour repérer si un agent convertit mieux (ou moins bien) certains pays que d'autres — un signal "
+        "utile pour la répartition des dossiers, pas un chiffre de performance commerciale. Limité aux "
+        "combinaisons agent/pays avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets avant-vente."
     )
 
-    tickets_par_id = {}
-    for ticket in tickets_historique_business:
-        tickets_par_id[ticket["ticket_id"]] = ticket
+    par_agent_pays = {}
+    for ticket, commande in resultats_conversion:
+        cle = (ticket["assignee"], ticket["country"])
+        if cle not in par_agent_pays:
+            par_agent_pays[cle] = {"total": 0, "convertis": 0}
+        par_agent_pays[cle]["total"] = par_agent_pays[cle]["total"] + 1
+        if commande is not None:
+            par_agent_pays[cle]["convertis"] = par_agent_pays[cle]["convertis"] + 1
 
-    par_canal = {}
-    for commande in commandes.values():
-        canal = commande["canal_acquisition"]
-        if canal not in par_canal:
-            par_canal[canal] = {"commandes": 0, "avec_contact": 0, "convertis_avant_vente": [], "montants": []}
-
-        par_canal[canal]["commandes"] = par_canal[canal]["commandes"] + 1
-        if commande["a_genere_ticket"] == "Oui":
-            par_canal[canal]["avec_contact"] = par_canal[canal]["avec_contact"] + 1
-
-        if commande["ticket_conversion"] is not None:
-            ticket_lie = tickets_par_id.get(commande["ticket_conversion"])
-            if ticket_lie is not None:
-                par_canal[canal]["convertis_avant_vente"].append(ticket_lie)
-
-        par_canal[canal]["montants"].append(commande["montant_total"])
-
-    lignes_canal = []
-    for canal, donnees in par_canal.items():
-        taux_contact = donnees["avec_contact"] / donnees["commandes"] * 100
-        csat_convertis = moyenne(donnees["convertis_avant_vente"], "csat")
-        panier_moyen = sum(donnees["montants"]) / len(donnees["montants"])
-        cac = COUT_ACQUISITION_PAR_CANAL.get(canal, 0)
-
-        ligne = {
-            "Canal": canal,
-            "Commandes": donnees["commandes"],
-            "CAC estimé": formater_montant(cac),
-            "Panier moyen": formater_montant(panier_moyen),
-            "Marge après CAC": formater_montant(panier_moyen - cac),
-            "% avec contact support avant achat": formater_pourcentage(taux_contact),
-            "Conversions avant-vente liées": len(donnees["convertis_avant_vente"]),
-            "CSAT de ces conversions": "N/A",
-            "Niveau CSAT": "",
-        }
-        if csat_convertis is not None:
-            ligne["CSAT de ces conversions"] = formater_csat(csat_convertis)
-            ligne["Niveau CSAT"] = niveau_csat(csat_convertis)
-
-        lignes_canal.append(ligne)
-
-    def obtenir_commandes_canal(ligne):
-        return ligne["Commandes"]
-
-    lignes_canal_triees = sorted(lignes_canal, key=obtenir_commandes_canal, reverse=True)
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_canal_triees)
-
-    st.divider()
-    st.subheader("Par pays (poids support vs poids commandes)")
-    st.caption(
-        "Tickets de la période affichée comparés aux commandes de tout l'historique (comme les autres "
-        "sections ci-dessus) — un écart marqué signale que les clients d'un pays sollicitent le support "
-        "disproportionnellement plus (ou moins) que leur poids réel dans les ventes."
-    )
-    st.caption(
-        "Échantillon parfois petit côté tickets sur une seule semaine (vs des commandes cumulées sur "
-        "tout l'historique) — à lire comme une tendance à confirmer sur plusieurs périodes, pas un "
-        "écart définitif."
-    )
-
-    tickets_par_pays = grouper_par(tickets_s2, "country")
-    commandes_par_pays = {}
-    for commande in commandes.values():
-        pays = commande["pays"]
-        if pays in commandes_par_pays:
-            commandes_par_pays[pays] = commandes_par_pays[pays] + 1
-        else:
-            commandes_par_pays[pays] = 1
-
-    pays_a_afficher = cles_combinees(tickets_par_pays, commandes_par_pays)
-
-    lignes_pays_business = []
-    for pays in pays_a_afficher:
-        nb_tickets = len(tickets_par_pays.get(pays, []))
-        nb_commandes = commandes_par_pays.get(pays, 0)
-        pct_tickets = nb_tickets / len(tickets_s2) * 100
-
-        if len(commandes) > 0:
-            pct_commandes = nb_commandes / len(commandes) * 100
-        else:
-            pct_commandes = 0
-
-        lignes_pays_business.append({
-            "Pays": pays,
-            "Tickets (période)": nb_tickets,
-            "% des tickets": formater_pourcentage(pct_tickets),
-            "Commandes (historique)": nb_commandes,
-            "% des commandes": formater_pourcentage(pct_commandes),
-            "Écart (points)": round(pct_tickets - pct_commandes, 1),
+    lignes_agent_pays = []
+    for cle, stats in par_agent_pays.items():
+        agent, pays = cle
+        if stats["total"] < SEUIL_MINIMUM_SUJET:
+            continue
+        lignes_agent_pays.append({
+            "agent": agent,
+            "pays": pays,
+            "tickets": stats["total"],
+            "convertis": stats["convertis"],
+            "taux": stats["convertis"] / stats["total"] * 100,
         })
 
-    def obtenir_tickets_periode(ligne):
-        return ligne["Tickets (période)"]
+    def obtenir_tri_agent_pays(ligne):
+        return (ligne["agent"], -ligne["taux"])
 
-    lignes_pays_business_triees = sorted(lignes_pays_business, key=obtenir_tickets_periode, reverse=True)
+    lignes_agent_pays_triees = sorted(lignes_agent_pays, key=obtenir_tri_agent_pays)
+
+    lignes_agent_pays_affichage = []
+    for ligne in lignes_agent_pays_triees:
+        lignes_agent_pays_affichage.append({
+            "Agent": ligne["agent"],
+            "Pays": ligne["pays"],
+            "Tickets avant-vente": ligne["tickets"],
+            "Convertis": ligne["convertis"],
+            "Taux de conversion": formater_pourcentage(ligne["taux"]),
+        })
+
     with st.container(border=True):
-        st.dataframe(lignes_pays_business_triees, hide_index=True, width="stretch")
+        st.dataframe(lignes_agent_pays_affichage, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
-# Onglet 10 : Impact & confiance
+# Onglet 9 : Impact & confiance
 # ------------------------------------------------------------------
 
 with onglet_impact:
-    st.caption("Montants € : mêmes données Shopify fictives que l'onglet Conversion & acquisition.")
-
-    st.markdown(titre_section_principale("Fidélisation & réachat"), unsafe_allow_html=True)
-    st.caption(
-        "Sur tout l'historique des commandes (pas filtré par la période affichée) — pour voir si une "
-        "bonne expérience support se traduit en réachat."
-    )
-
-    commandes_par_client = {}
-    for commande in commandes.values():
-        email = commande["email_client"]
-        if email in commandes_par_client:
-            commandes_par_client[email].append(commande)
-        else:
-            commandes_par_client[email] = [commande]
-
-    nb_clients_total = len(commandes_par_client)
-    nb_clients_repeat = 0
-    for email, liste_client in commandes_par_client.items():
-        if len(liste_client) >= 2:
-            nb_clients_repeat = nb_clients_repeat + 1
-
-    if nb_clients_total > 0:
-        taux_reachat = nb_clients_repeat / nb_clients_total * 100
-    else:
-        taux_reachat = 0
-
-    with st.container(border=True):
-        colonne_fid_a, colonne_fid_b = st.columns(2)
-        colonne_fid_a.markdown(
-            construire_carte_kpi(
-                "Clients avec au moins 2 commandes", formater_nombre_espace(nb_clients_repeat),
-                sous_texte=formater_pourcentage(taux_reachat) + " des clients",
-            ),
-            unsafe_allow_html=True,
-        )
-        colonne_fid_b.markdown(
-            construire_carte_kpi("Total clients (historique)", formater_nombre_espace(nb_clients_total)),
-            unsafe_allow_html=True,
-        )
-
-    with st.expander("Répartition détaillée du nombre de commandes par client"):
-        repartition_commandes = {}
-        for email, liste_client in commandes_par_client.items():
-            nb_commandes_client = len(liste_client)
-            if nb_commandes_client >= 5:
-                cle_repartition = "5+"
-            else:
-                cle_repartition = str(nb_commandes_client)
-
-            if cle_repartition in repartition_commandes:
-                repartition_commandes[cle_repartition] = repartition_commandes[cle_repartition] + 1
-            else:
-                repartition_commandes[cle_repartition] = 1
-
-        ordre_cles_repartition = ["1", "2", "3", "4", "5+"]
-        lignes_repartition = []
-        for cle_repartition in ordre_cles_repartition:
-            if cle_repartition in repartition_commandes:
-                lignes_repartition.append({"Nombre de commandes": cle_repartition, "Clients": repartition_commandes[cle_repartition]})
-
-        tableau_repartition = pd.DataFrame(lignes_repartition).set_index("Nombre de commandes")
-        st.bar_chart(tableau_repartition, color=COULEUR_PRIMAIRE)
-
-    st.write("CSAT support des clients ayant eu au moins un contact, par statut de fidélité :")
-
-    csat_historique_par_email = {}
-    for ticket in tickets_historique_business:
-        email_ticket = ticket["requester_email"]
-        csat_ticket = ticket["csat"]
-        if csat_ticket is None:
-            continue
-        if email_ticket not in csat_historique_par_email:
-            csat_historique_par_email[email_ticket] = []
-        csat_historique_par_email[email_ticket].append(csat_ticket)
-
-    csats_repeat = []
-    csats_onetime = []
-    for email, liste_client in commandes_par_client.items():
-        csats_client = csat_historique_par_email.get(email)
-        if csats_client is None or len(csats_client) == 0:
-            continue
-        csat_moyen_client = sum(csats_client) / len(csats_client)
-        if len(liste_client) >= 2:
-            csats_repeat.append(csat_moyen_client)
-        else:
-            csats_onetime.append(csat_moyen_client)
-
-    lignes_fidelite_csat = []
-    if len(csats_onetime) > 0:
-        csat_moyen_onetime = sum(csats_onetime) / len(csats_onetime)
-        lignes_fidelite_csat.append({
-            "Segment": "Client à commande unique",
-            "Clients (avec contact support)": len(csats_onetime),
-            "CSAT moyen": formater_csat(csat_moyen_onetime),
-            "Niveau CSAT": niveau_csat(csat_moyen_onetime),
-        })
-    if len(csats_repeat) > 0:
-        csat_moyen_repeat = sum(csats_repeat) / len(csats_repeat)
-        lignes_fidelite_csat.append({
-            "Segment": "Client avec réachat (2+ commandes)",
-            "Clients (avec contact support)": len(csats_repeat),
-            "CSAT moyen": formater_csat(csat_moyen_repeat),
-            "Niveau CSAT": niveau_csat(csat_moyen_repeat),
-        })
-
-    afficher_tableau_colore(lignes_fidelite_csat)
-    st.caption("Échantillon limité aux clients ayant eu au moins un contact support noté — les autres n'ont pas de point de comparaison.")
-
-    st.divider()
-    st.subheader("Pertes financières directes")
+    st.markdown(titre_section_principale("Pertes financières directes"), unsafe_allow_html=True)
     st.caption(
         "Basé sur le type de résolution du ticket, montant estimé par une fraction réaliste du prix de "
         "la commande d'origine (fichier Shopify fictif) — remboursement intégral, remplacement ou geste "
@@ -2815,35 +2440,7 @@ with onglet_impact:
             st.caption("Estimé à partir d'une fraction du prix de vente (coût matière/logistique), pas le prix payé par le client.")
 
     st.divider()
-    st.subheader("Pertes de confiance")
-    st.caption(
-        "Un CSAT bas ne pèse pas pareil selon le sujet : sur un défaut produit, c'est le produit ET "
-        "la marque qui trinquent ; sur une livraison, c'est la marque seule ; en avant-vente, c'est "
-        "une conversion perdue."
-    )
-
-    lignes_confiance = []
-    for categorie, tickets_cat in categories_s2.items():
-        csat_cat = moyenne(tickets_cat, "csat")
-        if csat_cat is None or csat_cat >= SEUIL_CSAT_INSATISFAISANT:
-            continue
-
-        lignes_confiance.append(
-            {
-                "Catégorie": categorie,
-                "Tickets": len(tickets_cat),
-                "CSAT": formater_csat(csat_cat),
-                "Niveau CSAT": niveau_csat(csat_cat),
-                "Ce qui est en jeu": cible_perte_confiance(categorie),
-            }
-        )
-
-    lignes_confiance_triees = sorted(lignes_confiance, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_confiance_triees)
-
-    st.divider()
-    st.subheader("Confiance mesurée (NPS)")
+    st.markdown(titre_section_principale("Confiance mesurée (NPS)"), unsafe_allow_html=True)
     st.caption(
         "Fichier NPS FICTIF (nps_fictif.xlsx) — un score par client (0 à 10), pas filtré par période. "
         "NPS = % de promoteurs (9-10) moins % de détracteurs (0-6)."

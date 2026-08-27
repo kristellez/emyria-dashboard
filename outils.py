@@ -249,40 +249,6 @@ def charger_texte_faq(nom_fichier, dossier_faq):
         return fichier.read()
 
 
-def charger_calendrier_evenements(chemin):
-    if not os.path.exists(chemin):
-        return []
-
-    classeur = openpyxl.load_workbook(chemin, data_only=True)
-    if "EVENEMENTS" not in classeur.sheetnames:
-        return []
-
-    feuille = classeur["EVENEMENTS"]
-    entetes = []
-    for cellule in feuille[1]:
-        entetes.append(cellule.value)
-
-    evenements = []
-    for ligne in feuille.iter_rows(min_row=2, values_only=True):
-        evenement = {}
-        for i in range(len(entetes)):
-            valeur = ligne[i]
-            if isinstance(valeur, datetime.datetime):
-                valeur = valeur.date()
-            evenement[entetes[i]] = valeur
-        evenements.append(evenement)
-
-    return evenements
-
-
-def evenements_dans_periode(evenements, date_debut, date_fin):
-    evenements_periode = []
-    for evenement in evenements:
-        if evenement["date_debut"] <= date_fin and evenement["date_fin"] >= date_debut:
-            evenements_periode.append(evenement)
-    return evenements_periode
-
-
 def charger_suivi_suggestions(chemin):
     if not os.path.exists(chemin):
         return {}
@@ -809,6 +775,35 @@ def niveau_csat(valeur):
         return "EXCELLENT"
 
 
+# Le CSAT n'a pas besoin d'une colonne "Niveau" séparée pour être lisible : la couleur
+# directement sur le chiffre suffit (contrairement aux autres niveaux — macro, réponse —
+# qui restent en fond de cellule via couleur_niveau, cf. afficher_tableau_colore).
+COULEUR_TEXTE_CSAT = {
+    "CRITIQUE": "#B23A2E",
+    "A SURVEILLER": "#9A6B00",
+    "CORRECT": "#1E7A42",
+    "EXCELLENT": "#1E7A42",
+}
+
+
+def couleur_texte_csat(texte_csat):
+    if texte_csat is None or texte_csat == "N/A":
+        return ""
+
+    # Certaines colonnes "CSAT" affichent une comparaison ("4.15 → 3.97") plutôt qu'un
+    # chiffre unique — pas de couleur dans ce cas, seul un CSAT unique se colore.
+    try:
+        valeur = float(texte_csat)
+    except ValueError:
+        return ""
+
+    niveau = niveau_csat(valeur)
+    couleur = COULEUR_TEXTE_CSAT.get(niveau)
+    if couleur is None:
+        return ""
+    return "color: " + couleur + "; font-weight: 600"
+
+
 MOTS_VIDES_FR = {
     "le", "la", "les", "de", "des", "du", "un", "une", "et", "à", "a", "est", "c'est", "je", "j'ai",
     "que", "qui", "pour", "pas", "ne", "se", "sur", "au", "aux", "en", "dans", "avec", "mon", "ma",
@@ -848,21 +843,6 @@ def mots_frequents(tickets, champ, nombre_max):
     for i in range(min(nombre_max, len(mots_tries))):
         resultat.append(mots_tries[i])
     return resultat
-
-
-def cible_perte_confiance(categorie):
-    if categorie == CATEGORIE_SAV_PRODUIT:
-        return "Confiance produit + marque"
-    elif categorie == "Livraison":
-        return "Confiance marque"
-    elif categorie == "SAV usage (besoin d'aide)":
-        return "Confiance produit (usage)"
-    elif categorie == "Avant-vente / conseil":
-        return "Conversion potentielle perdue"
-    elif categorie == "Après-vente commande/admin":
-        return "Confiance marque (process)"
-    else:
-        return "Non catégorisé"
 
 
 def type_perte_financiere(ticket):
