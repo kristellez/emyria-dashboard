@@ -45,6 +45,22 @@ streamlit run app.py
 - `knowledge_base/` — textes des macros et FAQ créées
 - `ROADMAP.md` / `METRIQUES.md` — notes de conception du projet
 
+## Limites connues
+
+- **Pertes financières** : estimées via une fraction du prix de vente selon le type de résolution
+  (remboursement intégral, remplacement/geste commercial à coût partiel) — une approximation
+  illustrative, pas un chiffre comptable réel.
+- **Exports disponibles** : semaines représentatives espacées dans l'année (pas un historique
+  hebdomadaire continu) — voir l'onglet "Tendances" du dashboard pour le détail des écarts.
+- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le rythme
+  soutenable d'un fonctionnement normal — volontaire, pensé comme un mode « surge » temporaire
+  plutôt qu'un défaut de modélisation.
+- **Suivi des suggestions** (onglet "Alertes & suggestions") : inclut volontairement un cas où la
+  macro créée a bien été adoptée par l'équipe mais n'a pas amélioré le CSAT — un vrai outil de
+  pilotage doit pouvoir montrer un échec, pas seulement des réussites.
+
+Détail complet dans l'onglet "Contexte" du dashboard (expander "Limites connues de cette démo").
+
 ## Contexte du projet
 
 Ce projet a été construit pour apprendre Python en partant d'un besoin concret (service client),

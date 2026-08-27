@@ -516,7 +516,10 @@ with onglet_contexte:
             "historique hebdomadaire continu) — voir l'onglet Tendances pour le détail des écarts.\n"
             "- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le "
             "rythme soutenable d'un fonctionnement normal — volontaire, pensé comme un mode « surge » "
-            "temporaire plutôt qu'un défaut de modélisation."
+            "temporaire plutôt qu'un défaut de modélisation.\n"
+            "- **Suivi des suggestions** (onglet Alertes & suggestions) : inclut volontairement un cas "
+            "(MAC-018) où la macro créée a bien été adoptée par l'équipe mais n'a pas amélioré le CSAT — "
+            "un vrai outil de pilotage doit pouvoir montrer un échec, pas seulement des réussites."
         )
 
 
