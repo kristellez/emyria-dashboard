@@ -299,6 +299,11 @@ def reinitialiser_periode():
 st.sidebar.header("Période à afficher")
 date_dernier_export = exports_disponibles[-1][0]
 st.sidebar.caption("Dernières données disponibles : " + date_dernier_export.strftime("%d/%m/%Y"))
+st.sidebar.caption(
+    str(len(semaines_disponibles)) + " semaines représentatives disponibles (pas un historique "
+    "hebdomadaire continu) — les semaines listées ci-dessous sont les seules pour lesquelles un "
+    "export existe."
+)
 st.sidebar.button("Réinitialiser (dernières données)", on_click=reinitialiser_periode)
 
 st.sidebar.markdown("**Période A**")
