@@ -364,6 +364,11 @@ if len(fichiers_actuels) == 0:
     st.stop()
 
 tickets_s2 = charger_periode(fichiers_actuels)
+
+if len(tickets_s2) == 0:
+    st.warning("Les exports de la période A ne contiennent aucun ticket.")
+    st.stop()
+
 planning_s2_dernier = charger_planning(fichiers_actuels[-1])
 planning_s2 = construire_plannings_periode(fichiers_actuels, exports_disponibles)
 
@@ -1166,11 +1171,7 @@ with onglet_alertes:
 
     lignes_suivi = []
     if len(sujets_traites) > 0:
-        fichiers_tous = []
-        for date_export_historique, chemin_historique in exports_disponibles:
-            fichiers_tous.append(chemin_historique)
-        tickets_historique = charger_periode(fichiers_tous)
-        sujets_historique = grouper_par(tickets_historique, "subject_cluster")
+        sujets_historique = grouper_par(tickets_historique_business, "subject_cluster")
 
         for sujet, entree in sujets_traites:
             tickets_sujet_historique = sujets_historique.get(sujet, [])
@@ -1921,7 +1922,7 @@ with onglet_livraison:
 
 
 # ------------------------------------------------------------------
-# Onglet 10 : Conversion & acquisition
+# Onglet 9 : Conversion & acquisition
 # ------------------------------------------------------------------
 
 with onglet_conversion:
@@ -2234,7 +2235,11 @@ with onglet_conversion:
         nb_tickets = len(tickets_par_pays.get(pays, []))
         nb_commandes = commandes_par_pays.get(pays, 0)
         pct_tickets = nb_tickets / len(tickets_s2) * 100
-        pct_commandes = nb_commandes / len(commandes) * 100
+
+        if len(commandes) > 0:
+            pct_commandes = nb_commandes / len(commandes) * 100
+        else:
+            pct_commandes = 0
 
         lignes_pays_business.append({
             "Pays": pays,
@@ -2253,7 +2258,7 @@ with onglet_conversion:
 
 
 # ------------------------------------------------------------------
-# Onglet 11 : Impact & confiance
+# Onglet 10 : Impact & confiance
 # ------------------------------------------------------------------
 
 with onglet_impact:
@@ -2279,7 +2284,10 @@ with onglet_impact:
         if len(liste_client) >= 2:
             nb_clients_repeat = nb_clients_repeat + 1
 
-    taux_reachat = nb_clients_repeat / nb_clients_total * 100
+    if nb_clients_total > 0:
+        taux_reachat = nb_clients_repeat / nb_clients_total * 100
+    else:
+        taux_reachat = 0
 
     colonne_fid_a, colonne_fid_b = st.columns(2)
     colonne_fid_a.metric("Clients avec au moins 2 commandes", nb_clients_repeat, formater_pourcentage(taux_reachat) + " des clients")
