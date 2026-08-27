@@ -280,7 +280,7 @@ def charger_suivi_suggestions(chemin):
     for cellule in feuille[1]:
         entetes.append(cellule.value)
 
-    if "sujet" not in entetes:
+    if "sujet" not in entetes or "statut" not in entetes or "date_action" not in entetes or "notes" not in entetes:
         return {}
 
     idx_sujet = entetes.index("sujet")
@@ -349,6 +349,8 @@ def charger_tickets(chemin):
 
 
 def delai_jours(date_debut, date_fin):
+    if date_debut is None or date_fin is None:
+        return None
     difference = date_fin - date_debut
     return difference.days
 
@@ -454,7 +456,9 @@ def charger_planning(chemin):
         jour_texte = ligne[idx_jour]
         heure_debut = ligne[idx_debut]
         heure_fin = ligne[idx_fin]
-        jour_numero = JOURS_SEMAINE[jour_texte]
+        jour_numero = JOURS_SEMAINE.get(jour_texte)
+        if jour_numero is None:
+            continue
 
         if agent not in planning:
             planning[agent] = {}

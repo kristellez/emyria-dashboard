@@ -408,7 +408,15 @@ for date_export_hist, chemin_hist in exports_disponibles:
 tickets_historique_business = charger_periode(fichiers_tous_business)
 
 # Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Planning".
-roles_periode = charger_roles_planning(fichiers_actuels[-1])
+# Fusionné sur tous les fichiers de la période (pas seulement le dernier) : avec "Étendre
+# sur plusieurs semaines" coché, un agent peut ne pas apparaître dans le rôle du dernier
+# export pris isolément (rôle non renseigné ce jour-là, agent parti avant le dernier export...).
+# Le dernier fichier traité l'emporte en cas de rôle différent d'un export à l'autre.
+roles_periode = {}
+for chemin_role in fichiers_actuels:
+    roles_fichier = charger_roles_planning(chemin_role)
+    for agent_role, role_valeur in roles_fichier.items():
+        roles_periode[agent_role] = role_valeur
 
 (
     onglet_contexte, onglet_vue, onglet_tendances, onglet_categories, onglet_agents, onglet_alertes,
@@ -1719,6 +1727,8 @@ with onglet_produit:
         compte_anciennete = {}
         for ticket in tickets_sav_produit_s2:
             jours = delai_jours(ticket["order_date"], ticket["sav_reported_date"])
+            if jours is None:
+                continue
             niveau = niveau_anciennete_defaut(jours)
             if niveau in compte_anciennete:
                 compte_anciennete[niveau] = compte_anciennete[niveau] + 1
