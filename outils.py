@@ -173,6 +173,35 @@ def charger_texte_macro(code, dossier_macros):
         return fichier.read()
 
 
+def extraire_nom_fichier_faq(texte_macro):
+    if texte_macro is None:
+        return None
+
+    marqueur = "knowledge_base/faq/"
+    debut = texte_macro.find(marqueur)
+    if debut == -1:
+        return None
+
+    debut = debut + len(marqueur)
+    fin = debut
+    while fin < len(texte_macro) and texte_macro[fin] not in (" ", "\n", "\r"):
+        fin = fin + 1
+
+    return texte_macro[debut:fin]
+
+
+def charger_texte_faq(nom_fichier, dossier_faq):
+    if nom_fichier is None:
+        return None
+
+    chemin = os.path.join(dossier_faq, nom_fichier)
+    if not os.path.exists(chemin):
+        return None
+
+    with open(chemin, "r", encoding="utf-8") as fichier:
+        return fichier.read()
+
+
 def charger_calendrier_evenements(chemin):
     if not os.path.exists(chemin):
         return []
@@ -629,18 +658,33 @@ def niveau_macro(valeur):
 
 
 def couleur_niveau(valeur):
-    if valeur in ("OK", "CORRECT", "EXCELLENT", "En créneau", "Fort potentiel"):
+    if valeur in ("OK", "CORRECT", "Correct", "EXCELLENT", "Excellent", "En créneau", "Fort potentiel"):
         return "background-color: #c6f0d2"
-    elif valeur in ("A SURVEILLER", "Potentiel moyen"):
+    elif valeur in ("A SURVEILLER", "À surveiller", "Potentiel moyen"):
         return "background-color: #ffe8a1"
-    elif valeur in ("CRITIQUE", "DEBORDEMENT", "Risque de perte du prospect"):
+    elif valeur in ("CRITIQUE", "Critique", "DEBORDEMENT", "Débordement", "Risque de perte du prospect"):
         return "background-color: #f7c6c2"
-    elif valeur == "NOUVEAU":
+    elif valeur in ("NOUVEAU", "Nouveau"):
         return "background-color: #c6dcf7"
-    elif valeur == "DISPARU":
+    elif valeur in ("DISPARU", "Disparu"):
         return "background-color: #e0e0e0"
     else:
         return ""
+
+
+LIBELLES_NIVEAUX = {
+    "CORRECT": "Correct",
+    "EXCELLENT": "Excellent",
+    "A SURVEILLER": "À surveiller",
+    "CRITIQUE": "Critique",
+    "DEBORDEMENT": "Débordement",
+    "NOUVEAU": "Nouveau",
+    "DISPARU": "Disparu",
+}
+
+
+def libelle_niveau(valeur):
+    return LIBELLES_NIVEAUX.get(valeur, valeur)
 
 
 def grouper_par(tickets, champ):
@@ -678,6 +722,9 @@ def grouper_par_categorie(tickets):
 CATEGORIE_SAV_PRODUIT = "SAV produit (défaut)"
 
 
+# NB : la colonne "is_sav" du fichier source n'est pas utilisée ici — elle est
+# redondante avec ticket_reason == "SAV" et cette fonction affine encore la
+# distinction SAV usage / SAV produit à partir de resolution_type.
 def categoriser(ticket):
     raison = ticket["ticket_reason"]
 

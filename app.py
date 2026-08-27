@@ -23,6 +23,8 @@ from outils import (
     mots_frequents,
     extraire_code_macro,
     charger_texte_macro,
+    extraire_nom_fichier_faq,
+    charger_texte_faq,
     charger_calendrier_evenements,
     evenements_dans_periode,
     lister_exports,
@@ -47,6 +49,7 @@ from outils import (
     niveau_reponse_ouvree,
     niveau_hausse_sujet,
     couleur_niveau,
+    libelle_niveau,
     evenements_periode,
     detecter_changements_planning,
     delai_jours,
@@ -213,6 +216,9 @@ def afficher_tableau_colore(lignes):
         if colonne.startswith("Niveau") or colonne == "Évolution":
             colonnes_niveaux.append(colonne)
 
+    for colonne in colonnes_niveaux:
+        tableau[colonne] = tableau[colonne].map(libelle_niveau)
+
     tableau_stylise = tableau.style.map(couleur_niveau, subset=colonnes_niveaux)
     st.dataframe(tableau_stylise, hide_index=True, width="stretch")
 
@@ -246,6 +252,7 @@ FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopif
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
 FICHIER_SUIVI_SUGGESTIONS = os.path.join(DOSSIER_PROJET, "data_suivi", "suivi_suggestions.xlsx")
 DOSSIER_MACROS = os.path.join(DOSSIER_PROJET, "knowledge_base", "macros")
+DOSSIER_FAQ = os.path.join(DOSSIER_PROJET, "knowledge_base", "faq")
 FICHIER_CALENDRIER = os.path.join(DOSSIER_PROJET, "data_calendrier", "calendrier_evenements.xlsx")
 FENETRE_CONVERSION_JOURS = 30
 
@@ -371,6 +378,15 @@ st.caption(periode_texte + " (" + str(len(fichiers_actuels)) + " export(s) — "
 if comparer and not comparaison_disponible:
     st.caption("Aucun export disponible sur la période B choisie — pas de comparaison possible.")
 
+with st.sidebar.expander("🎨 Comment lire les couleurs"):
+    st.markdown(
+        "🟢 **Vert** — OK / Correct / Excellent / Fort potentiel : rien à faire\n\n"
+        "🟡 **Jaune** — À surveiller / Potentiel moyen : à garder à l'œil\n\n"
+        "🔴 **Rouge** — Critique / Débordement / Risque de perte du prospect : action recommandée\n\n"
+        "🔵 **Bleu** — Nouveau : sujet apparu depuis la période précédente\n\n"
+        "⚪ **Gris** — Disparu : sujet qui n'apparaît plus sur la période actuelle"
+    )
+
 categories_s1 = grouper_par_categorie(tickets_s1)
 categories_s2 = grouper_par_categorie(tickets_s2)
 
@@ -437,6 +453,17 @@ with onglet_contexte:
             "- Suggestions de macros/FAQ à créer, basées sur les irritants récurrents\n"
             "- Volet business : conversion avant-vente, coûts SAV, confiance client (NPS), "
             "opportunités produit hors catalogue"
+        )
+
+        st.subheader("Comment lire les onglets")
+        st.markdown(
+            "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
+            "pas un ordre arbitraire :\n"
+            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe\n"
+            "- **Créneaux & délais → Planning** : staffing et couverture horaire\n"
+            "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
+            "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
+            "- **Business** : impact — conversion, coûts, fidélisation, confiance client"
         )
 
     st.divider()
@@ -1070,31 +1097,31 @@ with onglet_alertes:
     else:
         st.dataframe(lignes_verbatims, hide_index=True, width="stretch")
 
-    st.subheader("Mots fréquents (sujets à faible CSAT)")
-    st.caption(
-        "Comptage simple des mots qui reviennent le plus dans les premiers messages des sujets déjà "
-        "signalés ci-dessus — pour repérer un vocabulaire commun sans relire chaque ticket un par un."
-    )
+    with st.expander("Mots fréquents (sujets à faible CSAT)"):
+        st.caption(
+            "Comptage simple des mots qui reviennent le plus dans les premiers messages des sujets déjà "
+            "signalés ci-dessus — pour repérer un vocabulaire commun sans relire chaque ticket un par un."
+        )
 
-    if len(suggestions_creation) == 0:
-        st.write("Aucun sujet signalé à faible CSAT sur cette période.")
-    else:
-        for ligne_suggestion in suggestions_creation:
-            sujet_signale = ligne_suggestion["Sujet"]
-            tickets_sujet_signale = sujets_s2.get(sujet_signale, [])
-            mots_top = mots_frequents(tickets_sujet_signale, "first_message", 5)
+        if len(suggestions_creation) == 0:
+            st.write("Aucun sujet signalé à faible CSAT sur cette période.")
+        else:
+            for ligne_suggestion in suggestions_creation:
+                sujet_signale = ligne_suggestion["Sujet"]
+                tickets_sujet_signale = sujets_s2.get(sujet_signale, [])
+                mots_top = mots_frequents(tickets_sujet_signale, "first_message", 5)
 
-            if len(mots_top) == 0:
-                continue
+                if len(mots_top) == 0:
+                    continue
 
-            texte_mots = ""
-            for i in range(len(mots_top)):
-                mot, compte = mots_top[i]
-                if i > 0:
-                    texte_mots = texte_mots + ", "
-                texte_mots = texte_mots + mot + " (" + str(compte) + ")"
+                texte_mots = ""
+                for i in range(len(mots_top)):
+                    mot, compte = mots_top[i]
+                    if i > 0:
+                        texte_mots = texte_mots + ", "
+                    texte_mots = texte_mots + mot + " (" + str(compte) + ")"
 
-            st.write("**" + sujet_signale + "** : " + texte_mots)
+                st.write("**" + sujet_signale + "** : " + texte_mots)
 
     st.subheader("Suivi des suggestions")
     st.caption(
@@ -1145,45 +1172,51 @@ with onglet_alertes:
             with st.expander("Voir la macro " + code_macro + " (" + sujet + ")"):
                 st.markdown(texte_macro)
 
+            nom_fichier_faq = extraire_nom_fichier_faq(texte_macro)
+            texte_faq = charger_texte_faq(nom_fichier_faq, DOSSIER_FAQ)
+            if texte_faq is not None:
+                with st.expander("Voir la FAQ associée (" + sujet + ")"):
+                    st.markdown(texte_faq)
+
     st.divider()
-    st.subheader("Réouvertures & tickets longs")
-    st.caption("Un ticket rouvert plusieurs fois signale une résolution bâclée ou incomplète, pas juste un chiffre de volume en plus")
+    with st.expander("Réouvertures & tickets longs"):
+        st.caption("Un ticket rouvert plusieurs fois signale une résolution bâclée ou incomplète, pas juste un chiffre de volume en plus")
 
-    taux_reopens_global = moyenne(tickets_s2, "reopens")
-    if taux_reopens_global is not None:
-        st.metric("Réouvertures moyennes (toute la période)", round(taux_reopens_global, 2))
+        taux_reopens_global = moyenne(tickets_s2, "reopens")
+        if taux_reopens_global is not None:
+            st.metric("Réouvertures moyennes (toute la période)", round(taux_reopens_global, 2))
 
-    st.write("Les 10 tickets les plus longs à résoudre :")
+        st.write("Les 10 tickets les plus longs à résoudre :")
 
-    def obtenir_resolution(ticket):
-        return ticket["full_resolution_time_hours"]
+        def obtenir_resolution(ticket):
+            return ticket["full_resolution_time_hours"]
 
-    tickets_avec_resolution = []
-    for ticket in tickets_s2:
-        if ticket["full_resolution_time_hours"] is not None:
-            tickets_avec_resolution.append(ticket)
+        tickets_avec_resolution = []
+        for ticket in tickets_s2:
+            if ticket["full_resolution_time_hours"] is not None:
+                tickets_avec_resolution.append(ticket)
 
-    tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
+        tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
 
-    lignes_longs = []
-    for ticket in tickets_tries_par_resolution[:10]:
-        if ticket["macro_applied"] is not None:
-            macro_texte = "Oui"
-        else:
-            macro_texte = "Non"
+        lignes_longs = []
+        for ticket in tickets_tries_par_resolution[:10]:
+            if ticket["macro_applied"] is not None:
+                macro_texte = "Oui"
+            else:
+                macro_texte = "Non"
 
-        lignes_longs.append(
-            {
-                "Ticket": ticket["ticket_id"],
-                "Agent": ticket["assignee"],
-                "Sujet": ticket["subject_cluster"],
-                "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
-                "Macro utilisée": macro_texte,
-                "Réouvertures": ticket["reopens"],
-            }
-        )
+            lignes_longs.append(
+                {
+                    "Ticket": ticket["ticket_id"],
+                    "Agent": ticket["assignee"],
+                    "Sujet": ticket["subject_cluster"],
+                    "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
+                    "Macro utilisée": macro_texte,
+                    "Réouvertures": ticket["reopens"],
+                }
+            )
 
-    st.dataframe(lignes_longs, hide_index=True, width="stretch")
+        st.dataframe(lignes_longs, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -1694,7 +1727,11 @@ with onglet_produit:
 # ------------------------------------------------------------------
 
 with onglet_livraison:
-    st.caption("Vue pensée pour un point avec le transporteur — cadence mensuelle recommandée (élargis la Période A dans la barre latérale)")
+    st.caption(
+        "Miroir mensuel de la catégorie Livraison, pensé pour un point avec le transporteur — voir "
+        "l'onglet Catégories pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
+        "recommandée (élargis la Période A dans la barre latérale)."
+    )
 
     tickets_livraison_s2 = categories_s2.get("Livraison", [])
     tickets_livraison_s1 = categories_s1.get("Livraison", [])
