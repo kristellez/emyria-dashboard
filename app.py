@@ -12,7 +12,8 @@ from outils import (
     charger_planning,
     construire_plannings_periode,
     charger_commandes,
-    montant_ticket,
+    montant_perte_estime,
+    montant_cout_garantie,
     formater_montant,
     commandes_par_email,
     premiere_commande_apres,
@@ -75,6 +76,8 @@ DEFINITION_EN_CRENEAU = (
     "dans l'onglet Planning. Ça isole la vraie performance de l'équipe, sans le délai dû aux "
     "horaires hors couverture (voir l'onglet Créneaux & délais pour le détail du hors créneau)."
 )
+
+ROLE_RESPONSABLE_EQUIPE = "Responsable d'équipe"
 
 
 def formater_plage(date_debut, date_fin):
@@ -383,7 +386,7 @@ st.caption(periode_texte + " (" + str(len(fichiers_actuels)) + " export(s) — "
 if comparer and not comparaison_disponible:
     st.caption("Aucun export disponible sur la période B choisie — pas de comparaison possible.")
 
-with st.sidebar.expander("🎨 Comment lire les couleurs"):
+with st.sidebar.expander("🎨 Comment lire les couleurs", expanded=True):
     st.markdown(
         "🟢 **Vert** — OK / Correct / Excellent / Fort potentiel : rien à faire\n\n"
         "🟡 **Jaune** — À surveiller / Potentiel moyen : à garder à l'œil\n\n"
@@ -403,6 +406,9 @@ fichiers_tous_business = []
 for date_export_hist, chemin_hist in exports_disponibles:
     fichiers_tous_business.append(chemin_hist)
 tickets_historique_business = charger_periode(fichiers_tous_business)
+
+# Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Planning".
+roles_periode = charger_roles_planning(fichiers_actuels[-1])
 
 (
     onglet_contexte, onglet_vue, onglet_tendances, onglet_categories, onglet_agents, onglet_alertes,
@@ -454,9 +460,13 @@ with onglet_contexte:
             "- **Canaux de communication** : email, chat, WhatsApp, téléphone (appel direct ou "
             "consultation programmée sur rendez-vous pour l'avant-vente — cohérent avec le "
             "positionnement haut de gamme)\n"
-            "- **Équipe** : 38 personnes, dont 4 au service client\n"
+            "- **Équipe** : 38 personnes, dont 4-5 au service client (Sam en renfort saisonnier "
+            "en décembre)\n"
             "- **Stade** : scale-up, post-Série A, forte croissance\n"
-            "- **Fondée en** : 2021"
+            "- **Fondée en** : 2021\n"
+            "- **Volume support** : très saisonnier — les pics Black Friday/Noël représentent un "
+            "mode « surge » assumé (macros en priorité, SLA temporairement élargi, renfort "
+            "week-end), pas le rythme soutenable habituel de l'équipe"
         )
 
     with colonne_ctx_b:
@@ -488,6 +498,18 @@ with onglet_contexte:
         "Toutes les données (tickets, commandes, avis NPS) sont générées aléatoirement pour cette "
         "démonstration — les chiffres n'ont aucune valeur réelle."
     )
+
+    with st.expander("Limites connues de cette démo"):
+        st.markdown(
+            "- **Pertes financières** : estimées via une fraction du prix de vente selon le type de "
+            "résolution (remboursement intégral, remplacement/geste commercial à coût partiel) — une "
+            "approximation illustrative, pas un chiffre comptable réel.\n"
+            "- **Exports disponibles** : semaines représentatives espacées dans l'année (pas un "
+            "historique hebdomadaire continu) — voir l'onglet Tendances pour le détail des écarts.\n"
+            "- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le "
+            "rythme soutenable d'un fonctionnement normal — volontaire, pensé comme un mode « surge » "
+            "temporaire plutôt qu'un défaut de modélisation."
+        )
 
 
 # ------------------------------------------------------------------
@@ -684,6 +706,11 @@ with onglet_tendances:
         "du filtre de période dans la barre latérale, pour voir une vraie tendance plutôt que comparer "
         "seulement deux instantanés."
     )
+    st.caption(
+        "⚠️ Chaque point est une semaine représentative isolée, pas un suivi hebdomadaire continu — "
+        "certains écarts entre points vont jusqu'à 6-7 semaines sans export. Les lignes en pointillé "
+        "relient les points pour la lisibilité, mais n'illustrent pas une évolution semaine par semaine réelle."
+    )
 
     lignes_tendance = []
     for date_export, chemin in exports_disponibles:
@@ -703,7 +730,7 @@ with onglet_tendances:
     tableau_tendance = pd.DataFrame(lignes_tendance)
 
     st.subheader("Volume de tickets")
-    graphique_volume = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE).encode(
+    graphique_volume = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("Tickets:Q"),
         tooltip=["Date:T", "Tickets:Q", "Événement:N"],
@@ -711,7 +738,7 @@ with onglet_tendances:
     st.altair_chart(graphique_volume, width="stretch")
 
     st.subheader("CSAT moyen")
-    graphique_csat = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_SECONDAIRE).encode(
+    graphique_csat = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_SECONDAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
         tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"],
@@ -719,7 +746,7 @@ with onglet_tendances:
     st.altair_chart(graphique_csat, width="stretch")
 
     st.subheader("Temps de 1re réponse moyen")
-    graphique_frt = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_ACCENT_FONCE).encode(
+    graphique_frt = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_ACCENT_FONCE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("1re réponse (min):Q", title="Minutes"),
         tooltip=["Date:T", alt.Tooltip("1re réponse (min):Q", format=".0f"), "Événement:N"],
@@ -727,7 +754,7 @@ with onglet_tendances:
     st.altair_chart(graphique_frt, width="stretch")
 
     st.subheader("Utilisation macro")
-    graphique_macro = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE).encode(
+    graphique_macro = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("Utilisation macro (%):Q", scale=alt.Scale(domain=[0, 100])),
         tooltip=["Date:T", alt.Tooltip("Utilisation macro (%):Q", format=".0f"), "Événement:N"],
@@ -800,10 +827,15 @@ with onglet_agents:
 
     par_agent = grouper_par(tickets_s2, "assignee")
 
+    # Le/la responsable d'équipe traite volontairement moins de tickets (temps pris par le
+    # management) : l'inclure dans la moyenne d'équipe fausserait le point de comparaison pour
+    # tout le monde, et la comparer aux autres sur le volume n'a pas de sens non plus.
     volumes = []
     csats_valides = []
 
     for agent, tickets_agent in par_agent.items():
+        if roles_periode.get(agent) == ROLE_RESPONSABLE_EQUIPE:
+            continue
         volumes.append(len(tickets_agent))
         csat_agent_valeur = moyenne(tickets_agent, "csat")
         if csat_agent_valeur is not None:
@@ -832,24 +864,30 @@ with onglet_agents:
         resolution_agent = moyenne(tickets_agent, "full_resolution_time_hours")
         reopens_agent = moyenne(tickets_agent, "reopens")
 
-        volume_haut = volume > volume_moyen_equipe
+        role_agent = roles_periode.get(agent, "—")
 
-        if csat_agent is not None and csat_moyen_equipe is not None:
-            csat_haut = csat_agent > csat_moyen_equipe
+        if role_agent == ROLE_RESPONSABLE_EQUIPE:
+            profil = "Management (volume non comparable aux conseillers)"
         else:
-            csat_haut = False
+            volume_haut = volume > volume_moyen_equipe
 
-        if volume_haut and csat_haut:
-            profil = "Référence"
-        elif volume_haut and not csat_haut:
-            profil = "Va vite, satisfaction en retrait"
-        elif not volume_haut and csat_haut:
-            profil = "Soigné, volume en retrait"
-        else:
-            profil = "À accompagner en priorité"
+            if csat_agent is not None and csat_moyen_equipe is not None:
+                csat_haut = csat_agent > csat_moyen_equipe
+            else:
+                csat_haut = False
+
+            if volume_haut and csat_haut:
+                profil = "Référence"
+            elif volume_haut and not csat_haut:
+                profil = "Va vite, satisfaction en retrait"
+            elif not volume_haut and csat_haut:
+                profil = "Soigné, volume en retrait"
+            else:
+                profil = "À accompagner en priorité"
 
         ligne = {
             "Agent": agent,
+            "Rôle": role_agent,
             "Tickets": volume,
             "CSAT": formater_csat(csat_agent),
             "Niveau CSAT": niveau_csat(csat_agent),
@@ -1254,6 +1292,7 @@ with onglet_alertes:
 # ------------------------------------------------------------------
 
 with onglet_creneaux:
+    st.caption(DEFINITION_EN_CRENEAU)
     st.caption("Horaires lus depuis l'onglet PLANNING du fichier Excel (un planning par agent est possible, avec un planning par défaut pour les autres)")
 
     en_creneau, pause_dejeuner, hors_creneau = separer_creneau(tickets_s2, planning_s2)
@@ -1448,8 +1487,6 @@ with onglet_creneaux:
 with onglet_planning:
     st.caption("Qui a travaillé sur cette période, avec quel rôle, et combien d'heures — lu depuis l'onglet PLANNING du dernier export de la période")
 
-    roles_periode = charger_roles_planning(fichiers_actuels[-1])
-
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
     lignes_planning = [
         construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
@@ -1478,7 +1515,12 @@ with onglet_planning:
 # ------------------------------------------------------------------
 
 with onglet_produit:
-    st.caption("Cadence trimestrielle recommandée — élargis la Période A dans la barre latérale pour une vraie tendance produit")
+    st.caption(
+        "Cadence trimestrielle recommandée — élargis la Période A dans la barre latérale pour une vraie "
+        "tendance produit. Les exports disponibles sont des semaines représentatives espacées dans le "
+        "temps (pas un historique hebdomadaire continu) : élargir la période ajoute les exports compris "
+        "dans la plage, sans combler les semaines entre deux exports."
+    )
 
     tickets_sav_produit_s2 = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
     tickets_sav_produit_s1 = categories_s1.get(CATEGORIE_SAV_PRODUIT, [])
@@ -1658,8 +1700,9 @@ with onglet_produit:
     for cle, nombre in par_composant_issue.items():
         lignes_composant_issue.append({"Composant": cle[0], "Nature du problème": cle[1], "Tickets": nombre})
 
-    lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_composant_issue_triees, hide_index=True, width="stretch")
+    with st.expander("Détail croisé composant × nature du problème"):
+        lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
+        st.dataframe(lignes_composant_issue_triees, hide_index=True, width="stretch")
 
     st.subheader("Garantie")
 
@@ -1670,23 +1713,23 @@ with onglet_produit:
 
     st.dataframe(lignes_garantie, hide_index=True, width="stretch")
 
-    st.subheader("Délai entre achat et signalement SAV")
-    st.caption("Un défaut précoce (moins de 30 jours après achat) évoque plutôt un défaut de fabrication ; un défaut tardif évoque plutôt de l'usure normale.")
+    with st.expander("Délai entre achat et signalement SAV"):
+        st.caption("Un défaut précoce (moins de 30 jours après achat) évoque plutôt un défaut de fabrication ; un défaut tardif évoque plutôt de l'usure normale.")
 
-    compte_anciennete = {}
-    for ticket in tickets_sav_produit_s2:
-        jours = delai_jours(ticket["order_date"], ticket["sav_reported_date"])
-        niveau = niveau_anciennete_defaut(jours)
-        if niveau in compte_anciennete:
-            compte_anciennete[niveau] = compte_anciennete[niveau] + 1
-        else:
-            compte_anciennete[niveau] = 1
+        compte_anciennete = {}
+        for ticket in tickets_sav_produit_s2:
+            jours = delai_jours(ticket["order_date"], ticket["sav_reported_date"])
+            niveau = niveau_anciennete_defaut(jours)
+            if niveau in compte_anciennete:
+                compte_anciennete[niveau] = compte_anciennete[niveau] + 1
+            else:
+                compte_anciennete[niveau] = 1
 
-    lignes_anciennete = []
-    for niveau, compte in compte_anciennete.items():
-        lignes_anciennete.append({"Ancienneté du défaut": niveau, "Tickets": compte})
+        lignes_anciennete = []
+        for niveau, compte in compte_anciennete.items():
+            lignes_anciennete.append({"Ancienneté du défaut": niveau, "Tickets": compte})
 
-    st.dataframe(lignes_anciennete, hide_index=True, width="stretch")
+        st.dataframe(lignes_anciennete, hide_index=True, width="stretch")
 
     st.subheader("Clients avec SAV récurrents")
 
@@ -1832,7 +1875,8 @@ with onglet_livraison:
     st.caption(
         "Miroir mensuel de la catégorie Livraison, pensé pour un point avec le transporteur — voir "
         "l'onglet Catégories pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
-        "recommandée (élargis la Période A dans la barre latérale)."
+        "recommandée (élargis la Période A dans la barre latérale) — les exports disponibles restent des "
+        "semaines représentatives isolées, pas un historique continu."
     )
 
     tickets_livraison_s2 = categories_s2.get("Livraison", [])
@@ -2293,27 +2337,28 @@ with onglet_impact:
     colonne_fid_a.metric("Clients avec au moins 2 commandes", nb_clients_repeat, formater_pourcentage(taux_reachat) + " des clients")
     colonne_fid_b.metric("Total clients (historique)", nb_clients_total)
 
-    repartition_commandes = {}
-    for email, liste_client in commandes_par_client.items():
-        nb_commandes_client = len(liste_client)
-        if nb_commandes_client >= 5:
-            cle_repartition = "5+"
-        else:
-            cle_repartition = str(nb_commandes_client)
+    with st.expander("Répartition détaillée du nombre de commandes par client"):
+        repartition_commandes = {}
+        for email, liste_client in commandes_par_client.items():
+            nb_commandes_client = len(liste_client)
+            if nb_commandes_client >= 5:
+                cle_repartition = "5+"
+            else:
+                cle_repartition = str(nb_commandes_client)
 
-        if cle_repartition in repartition_commandes:
-            repartition_commandes[cle_repartition] = repartition_commandes[cle_repartition] + 1
-        else:
-            repartition_commandes[cle_repartition] = 1
+            if cle_repartition in repartition_commandes:
+                repartition_commandes[cle_repartition] = repartition_commandes[cle_repartition] + 1
+            else:
+                repartition_commandes[cle_repartition] = 1
 
-    ordre_cles_repartition = ["1", "2", "3", "4", "5+"]
-    lignes_repartition = []
-    for cle_repartition in ordre_cles_repartition:
-        if cle_repartition in repartition_commandes:
-            lignes_repartition.append({"Nombre de commandes": cle_repartition, "Clients": repartition_commandes[cle_repartition]})
+        ordre_cles_repartition = ["1", "2", "3", "4", "5+"]
+        lignes_repartition = []
+        for cle_repartition in ordre_cles_repartition:
+            if cle_repartition in repartition_commandes:
+                lignes_repartition.append({"Nombre de commandes": cle_repartition, "Clients": repartition_commandes[cle_repartition]})
 
-    tableau_repartition = pd.DataFrame(lignes_repartition).set_index("Nombre de commandes")
-    st.bar_chart(tableau_repartition, color=COULEUR_PRIMAIRE)
+        tableau_repartition = pd.DataFrame(lignes_repartition).set_index("Nombre de commandes")
+        st.bar_chart(tableau_repartition, color=COULEUR_PRIMAIRE)
 
     st.write("CSAT support des clients ayant eu au moins un contact, par statut de fidélité :")
 
@@ -2358,7 +2403,12 @@ with onglet_impact:
 
     st.divider()
     st.subheader("Pertes financières directes")
-    st.caption("Basé sur le type de résolution du ticket, montant croisé avec la commande d'origine (fichier Shopify fictif)")
+    st.caption(
+        "Basé sur le type de résolution du ticket, montant estimé par une fraction réaliste du prix de "
+        "la commande d'origine (fichier Shopify fictif) — remboursement intégral, remplacement ou geste "
+        "commercial à coût partiel. Chaque commande n'est comptée qu'une seule fois même si plusieurs "
+        "tickets s'y rattachent."
+    )
 
     groupes_perte = {}
     for ticket in tickets_s2:
@@ -2372,14 +2422,19 @@ with onglet_impact:
 
     lignes_perte = []
     montant_total_pertes = 0
+    commandes_deja_comptees = set()
     for type_perte, tickets_perte in groupes_perte.items():
         pct_perte = len(tickets_perte) / len(tickets_s2) * 100
 
         montants = []
         for ticket in tickets_perte:
-            montant = montant_ticket(ticket, commandes)
+            order_id = ticket["order_id"]
+            if order_id in commandes_deja_comptees:
+                continue
+            montant = montant_perte_estime(ticket, commandes, type_perte)
             if montant is not None:
                 montants.append(montant)
+                commandes_deja_comptees.add(order_id)
 
         ligne = {
             "Type de perte": type_perte,
@@ -2420,13 +2475,19 @@ with onglet_impact:
         )
 
         montants_garantie = []
+        commandes_garantie_deja_comptees = set()
         for ticket in tickets_garantie:
-            montant = montant_ticket(ticket, commandes)
+            order_id = ticket["order_id"]
+            if order_id in commandes_garantie_deja_comptees:
+                continue
+            montant = montant_cout_garantie(ticket, commandes)
             if montant is not None:
                 montants_garantie.append(montant)
+                commandes_garantie_deja_comptees.add(order_id)
 
         if len(montants_garantie) > 0:
-            st.metric("Valeur des produits sous garantie concernés", formater_montant(sum(montants_garantie)))
+            st.metric("Coût de remplacement estimé (produits sous garantie)", formater_montant(sum(montants_garantie)))
+            st.caption("Estimé à partir d'une fraction du prix de vente (coût matière/logistique), pas le prix payé par le client.")
 
     st.divider()
     st.subheader("Pertes de confiance")

@@ -73,6 +73,37 @@ def montant_ticket(ticket, commandes):
     return commandes[order_id]["montant_total"]
 
 
+# Le montant total de la commande n'est pas le coût réel pour l'entreprise :
+# un remboursement rend le prix payé, mais un remplacement ou un geste commercial
+# ne coûtent qu'une fraction du prix de vente (coût matière/logistique, pas le
+# panier complet). Ces fractions évitent de gonfler artificiellement les pertes.
+FRACTION_REMBOURSEMENT = 1.0
+FRACTION_REMPLACEMENT = 0.35
+FRACTION_GESTE_COMMERCIAL = 0.15
+
+FRACTIONS_PERTE = {
+    "Remboursement": FRACTION_REMBOURSEMENT,
+    "Remplacement produit": FRACTION_REMPLACEMENT,
+    "Remplacement accessoire": FRACTION_REMPLACEMENT,
+    "Geste commercial": FRACTION_GESTE_COMMERCIAL,
+}
+
+
+def montant_perte_estime(ticket, commandes, type_perte):
+    montant_commande = montant_ticket(ticket, commandes)
+    if montant_commande is None:
+        return None
+    fraction = FRACTIONS_PERTE.get(type_perte, 1.0)
+    return montant_commande * fraction
+
+
+def montant_cout_garantie(ticket, commandes):
+    montant_commande = montant_ticket(ticket, commandes)
+    if montant_commande is None:
+        return None
+    return montant_commande * FRACTION_REMPLACEMENT
+
+
 def formater_montant(valeur):
     return str(round(valeur)) + " €"
 
