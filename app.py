@@ -347,6 +347,18 @@ def construire_bandeau_info(texte_html):
     )
 
 
+# Style distinct pour LE titre principal de chaque onglet (un seul par onglet, celui qui
+# introduit le sujet central) — les st.subheader() suivants restent la hiérarchie "normale"
+# (déjà assagie par la règle CSS globale h2/h3), pour donner un vrai repère visuel de premier
+# niveau sans devoir reclasser individuellement chaque sous-titre de l'app.
+def titre_section_principale(texte):
+    return (
+        '<div style="border-left:4px solid ' + COULEUR_PRIMAIRE + "; padding-left:14px; margin:10px 0 6px;\">"
+        '<span style="font-size:23px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + texte + "</span>"
+        "</div>"
+    )
+
+
 DOSSIER_EXPORTS = os.path.join(DOSSIER_PROJET, "exports_hebdomadaires")
 FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopify_fictif.xlsx")
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
@@ -717,7 +729,7 @@ with onglet_vue:
     evenements_html = "Événement(s) de la période :<br>" + evenements_texte.replace("  \n", "<br>")
     st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
-    st.subheader("Répartition par famille")
+    st.markdown(titre_section_principale("Répartition par famille"), unsafe_allow_html=True)
     if comparaison_disponible:
         st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
 
@@ -791,7 +803,8 @@ with onglet_vue:
             .configure_view(strokeWidth=0)
             .configure_axisX(labelAngle=-30)
         )
-        st.altair_chart(graphique_categories, width="stretch")
+        with st.container(border=True):
+            st.altair_chart(graphique_categories, width="stretch")
     else:
         lignes_graphique_categories = []
         for ligne in lignes_categories_apercu_triees:
@@ -799,7 +812,8 @@ with onglet_vue:
                 {"Catégorie": ligne["Catégorie"], "Période actuelle": ligne["Tickets"]}
             )
         tableau_graphique_categories = pd.DataFrame(lignes_graphique_categories).set_index("Catégorie")
-        st.bar_chart(tableau_graphique_categories, color=COULEUR_PRIMAIRE)
+        with st.container(border=True):
+            st.bar_chart(tableau_graphique_categories, color=COULEUR_PRIMAIRE)
 
     for ligne in lignes_categories_apercu_triees:
         categorie = ligne["Catégorie"]
@@ -879,13 +893,14 @@ with onglet_tendances:
 
     tableau_tendance = pd.DataFrame(lignes_tendance)
 
-    st.subheader("Volume de tickets")
+    st.markdown(titre_section_principale("Volume de tickets"), unsafe_allow_html=True)
     graphique_volume = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("Tickets:Q"),
         tooltip=["Date:T", "Tickets:Q", "Événement:N"],
     ).properties(height=260).configure_view(strokeWidth=0)
-    st.altair_chart(graphique_volume, width="stretch")
+    with st.container(border=True):
+        st.altair_chart(graphique_volume, width="stretch")
 
     st.subheader("CSAT moyen")
     graphique_csat = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_SECONDAIRE, strokeDash=[4, 4]).encode(
@@ -893,7 +908,8 @@ with onglet_tendances:
         y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
         tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"],
     ).properties(height=260).configure_view(strokeWidth=0)
-    st.altair_chart(graphique_csat, width="stretch")
+    with st.container(border=True):
+        st.altair_chart(graphique_csat, width="stretch")
 
     st.subheader("Temps de 1re réponse moyen")
     graphique_frt = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_ACCENT_FONCE, strokeDash=[4, 4]).encode(
@@ -901,7 +917,8 @@ with onglet_tendances:
         y=alt.Y("1re réponse (min):Q", title="Minutes"),
         tooltip=["Date:T", alt.Tooltip("1re réponse (min):Q", format=".0f"), "Événement:N"],
     ).properties(height=260).configure_view(strokeWidth=0)
-    st.altair_chart(graphique_frt, width="stretch")
+    with st.container(border=True):
+        st.altair_chart(graphique_frt, width="stretch")
 
     st.subheader("Utilisation macro")
     graphique_macro = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
@@ -909,7 +926,8 @@ with onglet_tendances:
         y=alt.Y("Utilisation macro (%):Q", scale=alt.Scale(domain=[0, 100])),
         tooltip=["Date:T", alt.Tooltip("Utilisation macro (%):Q", format=".0f"), "Événement:N"],
     ).properties(height=260).configure_view(strokeWidth=0)
-    st.altair_chart(graphique_macro, width="stretch")
+    with st.container(border=True):
+        st.altair_chart(graphique_macro, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -965,7 +983,8 @@ with onglet_categories:
 
         lignes_categories.append(ligne)
 
-    afficher_tableau_colore(lignes_categories)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_categories)
 
 
 # ------------------------------------------------------------------
@@ -1063,7 +1082,8 @@ with onglet_agents:
         lignes_agents.append(ligne)
 
     lignes_agents_triees = sorted(lignes_agents, key=obtenir_tickets, reverse=True)
-    afficher_tableau_colore(lignes_agents_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_agents_triees)
 
     st.subheader("Détail par agent")
     st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
@@ -1150,7 +1170,7 @@ with onglet_agents:
 # ------------------------------------------------------------------
 
 with onglet_alertes:
-    st.subheader("Alertes")
+    st.markdown(titre_section_principale("Alertes"), unsafe_allow_html=True)
 
     if not comparaison_disponible:
         st.caption("Active « Comparer à une autre période » dans la barre latérale pour faire apparaître les alertes.")
@@ -1191,7 +1211,8 @@ with onglet_alertes:
         if len(alertes) == 0:
             st.write("Aucune catégorie ne dégrade simultanément CSAT et temps de réponse sur cette période.")
         else:
-            st.dataframe(alertes, hide_index=True, width="stretch")
+            with st.container(border=True):
+                st.dataframe(alertes, hide_index=True, width="stretch")
 
     st.divider()
     st.caption("Détail complet par catégorie (CSAT, temps de réponse, macro) → onglet Catégories.")
@@ -1243,7 +1264,8 @@ with onglet_alertes:
         else:
             suggestions_partielle.append(ligne)
 
-    afficher_tableau_colore(suggestions_creation)
+    with st.container(border=True):
+        afficher_tableau_colore(suggestions_creation)
 
     st.subheader("Suggestions - macro à renforcer (adoption partielle)")
     st.caption(
@@ -1252,12 +1274,14 @@ with onglet_alertes:
         "rappel à l'équipe, ou macro pas assez visible/facile à trouver."
     )
 
-    afficher_tableau_colore(suggestions_partielle)
+    with st.container(border=True):
+        afficher_tableau_colore(suggestions_partielle)
 
     st.subheader("Suggestions - macro / process à améliorer")
     st.caption("Macro déjà bien utilisée mais CSAT insatisfaisant quand même")
 
-    afficher_tableau_colore(suggestions_amelioration)
+    with st.container(border=True):
+        afficher_tableau_colore(suggestions_amelioration)
 
     st.subheader("Suggestions - FAQ à créer")
     st.caption(
@@ -1286,7 +1310,8 @@ with onglet_alertes:
             "Échanges moyens": round(replies_moyen, 1),
         })
 
-    afficher_tableau_colore(suggestions_faq)
+    with st.container(border=True):
+        afficher_tableau_colore(suggestions_faq)
 
     st.subheader("Verbatims clients (CSAT bas)")
     st.caption(
@@ -1317,7 +1342,8 @@ with onglet_alertes:
     if len(lignes_verbatims) == 0:
         st.write("Aucun commentaire sur les tickets mal notés de cette période.")
     else:
-        st.dataframe(lignes_verbatims, hide_index=True, width="stretch")
+        with st.container(border=True):
+            st.dataframe(lignes_verbatims, hide_index=True, width="stretch")
 
     with st.expander("Mots fréquents (sujets à faible CSAT)"):
         st.caption(
@@ -1381,7 +1407,8 @@ with onglet_alertes:
                 "Notes": notes,
             })
 
-    afficher_tableau_colore(lignes_suivi)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_suivi)
 
     for sujet, entree in sujets_traites:
         code_macro = extraire_code_macro(entree["notes"])
@@ -1456,7 +1483,7 @@ with onglet_creneaux:
     # Disponibilité des agents vs volume reçu
     # ------------------------------------------------------------------
 
-    st.subheader("Les agents sont-ils disponibles aux bons horaires ?")
+    st.markdown(titre_section_principale("Les agents sont-ils disponibles aux bons horaires ?"), unsafe_allow_html=True)
     st.caption("Sommes-nous assez staffés pour absorber le volume, aux bons horaires et aux bons jours ?")
 
     pct_en_creneau = len(en_creneau) / volume_total_creneaux * 100
@@ -1562,7 +1589,8 @@ with onglet_creneaux:
         lignes_canal_en.append(ligne)
 
     lignes_canal_en_triees = sorted(lignes_canal_en, key=obtenir_tickets, reverse=True)
-    afficher_tableau_colore(lignes_canal_en_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_canal_en_triees)
 
     # ------------------------------------------------------------------
     # Quand / pourquoi / comment les clients contactent hors créneau
@@ -1603,9 +1631,9 @@ with onglet_creneaux:
     lignes_type_triees = sorted(lignes_type, key=obtenir_tickets, reverse=True)
 
     tableau_type_graphique = pd.DataFrame(lignes_type_triees)[["Type", "Tickets"]].set_index("Type")
-    st.bar_chart(tableau_type_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
-
-    st.dataframe(lignes_type_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.bar_chart(tableau_type_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
+        st.dataframe(lignes_type_triees, hide_index=True, width="stretch")
 
     st.subheader("Pourquoi (par catégorie de demande)")
 
@@ -1635,7 +1663,8 @@ with onglet_creneaux:
         lignes_type_categorie.append(ligne)
 
     lignes_type_categorie_triees = sorted(lignes_type_categorie, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_type_categorie_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_type_categorie_triees, hide_index=True, width="stretch")
 
     st.subheader("Comment (par canal)")
 
@@ -1665,7 +1694,8 @@ with onglet_creneaux:
         lignes_type_canal.append(ligne)
 
     lignes_type_canal_triees = sorted(lignes_type_canal, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -1693,7 +1723,8 @@ with onglet_planning:
         role = roles_periode.get(agent, "—")
         lignes_planning.append(construire_ligne_planning(agent, horaires, role))
 
-    st.dataframe(lignes_planning, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_planning, hide_index=True, width="stretch")
 
     st.caption(
         "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "
@@ -1719,7 +1750,7 @@ with onglet_produit:
     tickets_sav_produit_s2 = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
     tickets_sav_produit_s1 = categories_s1.get(CATEGORIE_SAV_PRODUIT, [])
 
-    st.subheader("Composant en cause (SAV produit uniquement)")
+    st.markdown(titre_section_principale("Composant en cause (SAV produit uniquement)"), unsafe_allow_html=True)
 
     par_composant_s2 = grouper_par(tickets_sav_produit_s2, "component")
     par_composant_s1 = grouper_par(tickets_sav_produit_s1, "component")
@@ -1744,7 +1775,8 @@ with onglet_produit:
         lignes_composant_graphique.append({"Composant": composant, "Tickets": len(tickets_composant)})
     lignes_composant_graphique_triees = sorted(lignes_composant_graphique, key=obtenir_tickets, reverse=True)
     tableau_composant_graphique = pd.DataFrame(lignes_composant_graphique_triees).set_index("Composant")
-    st.bar_chart(tableau_composant_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
+    with st.container(border=True):
+        st.bar_chart(tableau_composant_graphique, horizontal=True, color=COULEUR_PRIMAIRE)
 
     lignes_composant = []
 
@@ -1763,10 +1795,12 @@ with onglet_produit:
             "Tickets": len(tickets_composant),
             "% du volume global": formater_pourcentage(pct_composant),
             "CSAT": "N/A",
+            "Niveau CSAT": "",
         }
 
         if csat_composant is not None:
             ligne["CSAT"] = formater_csat(csat_composant)
+            ligne["Niveau CSAT"] = niveau_csat(csat_composant)
 
         if comparaison_disponible:
             tickets_composant_s1 = par_composant_s1.get(composant, [])
@@ -1788,7 +1822,8 @@ with onglet_produit:
         lignes_composant.append(ligne)
 
     lignes_composant_triees = sorted(lignes_composant, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_composant_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_composant_triees)
 
     st.subheader("Par produit")
     st.caption("Diffuseur (appareil) et Recharge sont distingués même pour un même parfum — un souci sur le matériel n'a pas la même gravité qu'un souci sur un consommable.")
@@ -1827,10 +1862,12 @@ with onglet_produit:
             "Tickets": len(tickets_produit),
             "% du volume global": formater_pourcentage(pct_produit),
             "CSAT": "N/A",
+            "Niveau CSAT": "",
         }
 
         if csat_produit is not None:
             ligne["CSAT"] = formater_csat(csat_produit)
+            ligne["Niveau CSAT"] = niveau_csat(csat_produit)
 
         if comparaison_disponible:
             tickets_produit_s1 = par_produit_s1.get(produit, [])
@@ -1852,7 +1889,8 @@ with onglet_produit:
         lignes_produit.append(ligne)
 
     lignes_produit_triees = sorted(lignes_produit, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_produit_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_produit_triees)
 
     st.subheader("Type de résolution des SAV produit")
     st.caption("Beaucoup de \"conseil à distance\" = souci de compréhension d'usage plutôt qu'un vrai défaut. Beaucoup de remplacement = vrai défaut à corriger.")
@@ -1863,7 +1901,8 @@ with onglet_produit:
         lignes_resolution.append({"Type de résolution": resolution, "Tickets": len(tickets_resolution)})
 
     lignes_resolution_triees = sorted(lignes_resolution, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_resolution_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_resolution_triees, hide_index=True, width="stretch")
 
     st.subheader("Nature du problème")
     st.caption("component dit où le défaut se situe, issue_type dit ce qui est réellement cassé — les deux ensemble orientent vers le vrai correctif.")
@@ -1876,7 +1915,8 @@ with onglet_produit:
         lignes_issue.append({"Nature du problème": issue, "Tickets": len(tickets_issue)})
 
     lignes_issue_triees = sorted(lignes_issue, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_issue_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_issue_triees, hide_index=True, width="stretch")
 
     par_composant_issue = {}
     for ticket in tickets_sav_produit_s2:
@@ -1905,7 +1945,8 @@ with onglet_produit:
     for garantie, tickets_garantie in par_garantie.items():
         lignes_garantie.append({"Statut garantie": garantie, "Tickets": len(tickets_garantie)})
 
-    st.dataframe(lignes_garantie, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_garantie, hide_index=True, width="stretch")
 
     with st.expander("Délai entre achat et signalement SAV"):
         st.caption("Un défaut précoce (moins de 30 jours après achat) évoque plutôt un défaut de fabrication ; un défaut tardif évoque plutôt de l'usure normale.")
@@ -1954,11 +1995,12 @@ with onglet_produit:
             lignes_composant_recurrent.append({"Composant": composant, "SAV récurrents": len(tickets_composant_r)})
         lignes_composant_recurrent_triees = sorted(lignes_composant_recurrent, key=obtenir_sav_recurrents, reverse=True)
 
-        colonne_rec_a, colonne_rec_b = st.columns(2)
-        with colonne_rec_a:
-            st.dataframe(lignes_produit_recurrent_triees, hide_index=True, width="stretch")
-        with colonne_rec_b:
-            st.dataframe(lignes_composant_recurrent_triees, hide_index=True, width="stretch")
+        with st.container(border=True):
+            colonne_rec_a, colonne_rec_b = st.columns(2)
+            with colonne_rec_a:
+                st.dataframe(lignes_produit_recurrent_triees, hide_index=True, width="stretch")
+            with colonne_rec_b:
+                st.dataframe(lignes_composant_recurrent_triees, hide_index=True, width="stretch")
 
         st.write("Clients à contacter en priorité (au moins 2 SAV avant celui-ci) :")
 
@@ -1988,7 +2030,8 @@ with onglet_produit:
                 return ligne["SAV au total"]
 
             lignes_clients_recurrents_triees = sorted(lignes_clients_recurrents, key=obtenir_sav_total, reverse=True)
-            st.dataframe(lignes_clients_recurrents_triees, hide_index=True, width="stretch")
+            with st.container(border=True):
+                st.dataframe(lignes_clients_recurrents_triees, hide_index=True, width="stretch")
 
     st.divider()
     st.subheader("Ventes par produit")
@@ -2030,7 +2073,8 @@ with onglet_produit:
             "Tickets (période)": ligne["tickets"],
         })
 
-    st.dataframe(lignes_produit_ventes_affichage, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_produit_ventes_affichage, hide_index=True, width="stretch")
 
     st.divider()
     st.subheader("Opportunités produit — demandes hors catalogue")
@@ -2050,13 +2094,15 @@ with onglet_produit:
         lignes_opportunites = []
         for sujet, tickets_sujet in opportunites:
             csat_opportunite = moyenne(tickets_sujet, "csat")
-            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
+            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A", "Niveau CSAT": ""}
             if csat_opportunite is not None:
                 ligne["CSAT"] = formater_csat(csat_opportunite)
+                ligne["Niveau CSAT"] = niveau_csat(csat_opportunite)
             lignes_opportunites.append(ligne)
 
         lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)
-        st.dataframe(lignes_opportunites_triees, hide_index=True, width="stretch")
+        with st.container(border=True):
+            afficher_tableau_colore(lignes_opportunites_triees)
         st.write(
             "À remonter à l'équipe produit : ce sont des demandes récurrentes pour quelque chose qui "
             "n'existe pas encore au catalogue."
@@ -2125,11 +2171,13 @@ with onglet_livraison:
             "Tickets": volume_s2,
             "% du volume global": formater_pourcentage(pct_sujet_global),
             "CSAT": "N/A",
+            "Niveau CSAT": "",
             "Résolution moyenne": "N/A",
         }
 
         if csat_sujet is not None:
             ligne["CSAT"] = formater_csat(csat_sujet)
+            ligne["Niveau CSAT"] = niveau_csat(csat_sujet)
 
         if resolution_sujet is not None:
             ligne["Résolution moyenne"] = formater_duree(resolution_sujet * 60)
@@ -2145,7 +2193,8 @@ with onglet_livraison:
         lignes_livraison.append(ligne)
 
     lignes_livraison_triees = sorted(lignes_livraison, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_livraison_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_livraison_triees)
 
     st.subheader("Par pays")
     st.caption("Le transporteur est unique sur toute la zone de livraison — un écart marqué sur un pays isole un problème logistique local plutôt qu'un souci transporteur global.")
@@ -2172,7 +2221,8 @@ with onglet_livraison:
         lignes_pays_livraison.append(ligne)
 
     lignes_pays_livraison_triees = sorted(lignes_pays_livraison, key=obtenir_tickets, reverse=True)
-    afficher_tableau_colore(lignes_pays_livraison_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_pays_livraison_triees)
 
 
 # ------------------------------------------------------------------
@@ -2213,10 +2263,11 @@ with onglet_conversion:
                 "Notes": evenement["notes"],
             })
 
-        st.dataframe(lignes_evenements, hide_index=True, width="stretch")
+        with st.container(border=True):
+            st.dataframe(lignes_evenements, hide_index=True, width="stretch")
         st.divider()
 
-    st.subheader("Opportunités - avant-vente")
+    st.markdown(titre_section_principale("Opportunités - avant-vente"), unsafe_allow_html=True)
     st.caption("CSAT élevé = fort potentiel de conclure la vente ; CSAT bas = risque de perdre le prospect")
 
     tickets_avant_vente = categories_s2.get("Avant-vente / conseil", [])
@@ -2276,7 +2327,8 @@ with onglet_conversion:
         lignes_av.append(ligne)
 
     lignes_av_triees = sorted(lignes_av, key=obtenir_tickets, reverse=True)
-    afficher_tableau_colore(lignes_av_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_av_triees)
     st.caption(
         "Taux de conversion réel par sujet (pas une estimation à partir du CSAT) — pour voir quelles "
         "demandes avant-vente convertissent le mieux, indépendamment de leur volume ou de leur note."
@@ -2371,7 +2423,6 @@ with onglet_conversion:
     lignes_conversion_csat_croissant = sorted(lignes_conversion_csat_notees, key=obtenir_csat_pour_tri)
 
     tableau_conversion_csat_graphique = pd.DataFrame(lignes_conversion_csat_croissant)[["CSAT", "Taux (valeur)"]].set_index("CSAT")
-    st.bar_chart(tableau_conversion_csat_graphique, color=COULEUR_PRIMAIRE, y_label="Taux de conversion (%)")
 
     lignes_conversion_csat_affichage = []
     for ligne in lignes_conversion_csat_triees:
@@ -2384,7 +2435,9 @@ with onglet_conversion:
             }
         )
 
-    st.dataframe(lignes_conversion_csat_affichage, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.bar_chart(tableau_conversion_csat_graphique, color=COULEUR_PRIMAIRE, y_label="Taux de conversion (%)")
+        st.dataframe(lignes_conversion_csat_affichage, hide_index=True, width="stretch")
     st.caption("Échantillons parfois petits par note (ex : CSAT 1 ou 2) — à lire comme une tendance, pas un chiffre définitif.")
 
     st.write("Par agent :")
@@ -2419,7 +2472,8 @@ with onglet_conversion:
         return ligne["Convertis"]
 
     lignes_agent_conversion_triees = sorted(lignes_agent_conversion, key=obtenir_convertis, reverse=True)
-    st.dataframe(lignes_agent_conversion_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_agent_conversion_triees, hide_index=True, width="stretch")
 
     montants_silencieux = []
     for order_id in commandes:
@@ -2491,7 +2545,8 @@ with onglet_conversion:
         return ligne["Commandes"]
 
     lignes_canal_triees = sorted(lignes_canal, key=obtenir_commandes_canal, reverse=True)
-    afficher_tableau_colore(lignes_canal_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_canal_triees)
 
     st.divider()
     st.subheader("Par pays (poids support vs poids commandes)")
@@ -2541,7 +2596,8 @@ with onglet_conversion:
         return ligne["Tickets (période)"]
 
     lignes_pays_business_triees = sorted(lignes_pays_business, key=obtenir_tickets_periode, reverse=True)
-    st.dataframe(lignes_pays_business_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_pays_business_triees, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -2551,7 +2607,7 @@ with onglet_conversion:
 with onglet_impact:
     st.caption("Montants € : mêmes données Shopify fictives que l'onglet Conversion & acquisition.")
 
-    st.subheader("Fidélisation & réachat")
+    st.markdown(titre_section_principale("Fidélisation & réachat"), unsafe_allow_html=True)
     st.caption(
         "Sur tout l'historique des commandes (pas filtré par la période affichée) — pour voir si une "
         "bonne expérience support se traduit en réachat."
@@ -2708,7 +2764,8 @@ with onglet_impact:
         lignes_perte.append(ligne)
 
     lignes_perte_triees = sorted(lignes_perte, key=obtenir_tickets, reverse=True)
-    st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
+    with st.container(border=True):
+        st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
 
     if montant_total_pertes > 0:
         st.markdown(
@@ -2782,7 +2839,8 @@ with onglet_impact:
         )
 
     lignes_confiance_triees = sorted(lignes_confiance, key=obtenir_tickets, reverse=True)
-    afficher_tableau_colore(lignes_confiance_triees)
+    with st.container(border=True):
+        afficher_tableau_colore(lignes_confiance_triees)
 
     st.divider()
     st.subheader("Confiance mesurée (NPS)")
@@ -2850,4 +2908,5 @@ with onglet_impact:
         y=alt.Y("NPS:Q"),
         tooltip=["Mois:N", "NPS:Q", "Réponses:Q"],
     ).properties(height=260).configure_view(strokeWidth=0)
-    st.altair_chart(graphique_nps, width="stretch")
+    with st.container(border=True):
+        st.altair_chart(graphique_nps, width="stretch")
