@@ -34,10 +34,20 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Tests
+
+Quelques tests unitaires sur les fonctions de logique métier les plus sensibles (calcul des
+pertes financières, moyennes/taux avec valeurs manquantes, fusion de périodes) :
+
+```bash
+python -m unittest test_outils
+```
+
 ## Structure du projet
 
 - `app.py` — le dashboard Streamlit
 - `outils.py` — logique métier et fonctions de traitement des données
+- `test_outils.py` — tests unitaires de `outils.py`
 - `exports_hebdomadaires/` — exports tickets fictifs (un par mois, ~1 an)
 - `data_shopify/` — commandes et avis NPS fictifs
 - `data_calendrier/` — calendrier marketing/saisonnier fictif

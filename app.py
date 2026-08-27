@@ -297,7 +297,8 @@ def reinitialiser_periode():
 
 
 st.sidebar.header("Période à afficher")
-st.sidebar.caption("Aujourd'hui : " + datetime.date.today().strftime("%d/%m/%Y"))
+date_dernier_export = exports_disponibles[-1][0]
+st.sidebar.caption("Dernières données disponibles : " + date_dernier_export.strftime("%d/%m/%Y"))
 st.sidebar.button("Réinitialiser (dernières données)", on_click=reinitialiser_periode)
 
 st.sidebar.markdown("**Période A**")
