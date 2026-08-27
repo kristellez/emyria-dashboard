@@ -468,12 +468,14 @@ with onglet_contexte:
         st.markdown(
             "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
             "pas un ordre arbitraire :\n"
-            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe\n"
-            "- **Créneaux & délais → Planning** : staffing et couverture horaire\n"
-            "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
-            "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
-            "- **Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)"
+            "- **📊 Vue d'ensemble → 🚨 Alertes** : pilotage hebdomadaire de l'équipe\n"
+            "- **⏱️ Créneaux & délais → 📅 Planning** : staffing et couverture horaire\n"
+            "- **🔧 Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
+            "- **📦 Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
+            "- **💱 Conversion & acquisition** : avant-vente, taux de conversion réel, canaux d'achat\n"
+            "- **🤝 Impact & confiance** : coûts SAV, fidélisation, confiance client (NPS)\n\n"
+            "🎨 Les tableaux utilisent un code couleur (vert/jaune/rouge/bleu/gris) — légende "
+            "dans la barre latérale."
         )
 
     st.divider()
@@ -1748,6 +1750,78 @@ with onglet_produit:
             lignes_clients_recurrents_triees = sorted(lignes_clients_recurrents, key=obtenir_sav_total, reverse=True)
             st.dataframe(lignes_clients_recurrents_triees, hide_index=True, width="stretch")
 
+    st.divider()
+    st.subheader("Ventes par produit")
+    st.caption(
+        "Chiffre d'affaires par parfum (commandes, tout l'historique) croisé au volume de tickets sur "
+        "la période affichée — pour repérer un parfum qui vend bien mais génère disproportionnellement "
+        "du support. Montants € : données Shopify fictives (commandes_shopify_fictif.xlsx)."
+    )
+
+    ca_par_produit = {}
+    for commande in commandes.values():
+        produit_commande = commande["product_name"]
+        if produit_commande in ca_par_produit:
+            ca_par_produit[produit_commande] = ca_par_produit[produit_commande] + commande["montant_total"]
+        else:
+            ca_par_produit[produit_commande] = commande["montant_total"]
+
+    tickets_par_produit_ventes = grouper_par(tickets_s2, "product_name")
+    produits_ventes_a_afficher = cles_combinees(ca_par_produit, tickets_par_produit_ventes)
+
+    lignes_produit_ventes = []
+    for produit_nom in produits_ventes_a_afficher:
+        lignes_produit_ventes.append({
+            "produit": produit_nom,
+            "ca": ca_par_produit.get(produit_nom, 0),
+            "tickets": len(tickets_par_produit_ventes.get(produit_nom, [])),
+        })
+
+    def obtenir_ca(ligne):
+        return ligne["ca"]
+
+    lignes_produit_ventes_triees = sorted(lignes_produit_ventes, key=obtenir_ca, reverse=True)
+
+    lignes_produit_ventes_affichage = []
+    for ligne in lignes_produit_ventes_triees:
+        lignes_produit_ventes_affichage.append({
+            "Produit": ligne["produit"],
+            "CA (historique)": formater_montant(ligne["ca"]),
+            "Tickets (période)": ligne["tickets"],
+        })
+
+    st.dataframe(lignes_produit_ventes_affichage, hide_index=True, width="stretch")
+
+    st.divider()
+    st.subheader("Opportunités produit — demandes hors catalogue")
+    st.caption(
+        "Détecte automatiquement tout sujet marqué « (hors catalogue) » — une demande pour quelque chose "
+        "qu'on ne vend pas (accessoire, personnalisation...). Élargis la Période A dans la barre latérale "
+        "pour voir le seuil se déclencher sur des cadences plus longues."
+    )
+
+    seuil_opportunite = st.slider("Seuil de déclenchement (nombre de tickets sur la période)", 1, 20, 3)
+
+    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, seuil_opportunite)
+
+    if len(opportunites) == 0:
+        st.write("Aucune demande hors catalogue n'atteint le seuil sur cette période.")
+    else:
+        lignes_opportunites = []
+        for sujet, tickets_sujet in opportunites:
+            csat_opportunite = moyenne(tickets_sujet, "csat")
+            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
+            if csat_opportunite is not None:
+                ligne["CSAT"] = formater_csat(csat_opportunite)
+            lignes_opportunites.append(ligne)
+
+        lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)
+        st.dataframe(lignes_opportunites_triees, hide_index=True, width="stretch")
+        st.write(
+            "À remonter à l'équipe produit : ce sont des demandes récurrentes pour quelque chose qui "
+            "n'existe pas encore au catalogue."
+        )
+
 
 # ------------------------------------------------------------------
 # Onglet 8 : Livraison
@@ -2137,7 +2211,7 @@ with onglet_conversion:
     st.dataframe(lignes_canal_triees, hide_index=True, width="stretch")
 
     st.divider()
-    st.subheader("Par pays")
+    st.subheader("Par pays (poids support vs poids commandes)")
     st.caption(
         "Tickets de la période affichée comparés aux commandes de tout l'historique (comme les autres "
         "sections ci-dessus) — un écart marqué signale que les clients d'un pays sollicitent le support "
@@ -2183,54 +2257,8 @@ with onglet_conversion:
 # ------------------------------------------------------------------
 
 with onglet_impact:
-    st.caption(
-        "Les montants € viennent d'un fichier Shopify FICTIF (commandes_shopify_fictif.xlsx), "
-        "croisé aux tickets via order_id — Emyria est une marque fictive, ces chiffres sont des "
-        "ordres de grandeur d'exemple pour la démonstration."
-    )
+    st.caption("Montants € : mêmes données Shopify fictives que l'onglet Conversion & acquisition.")
 
-    st.subheader("Ventes par produit")
-    st.caption(
-        "Chiffre d'affaires par parfum (commandes, tout l'historique) croisé au volume de tickets sur "
-        "la période affichée — pour repérer un parfum qui vend bien mais génère disproportionnellement "
-        "du support."
-    )
-
-    ca_par_produit = {}
-    for commande in commandes.values():
-        produit_commande = commande["product_name"]
-        if produit_commande in ca_par_produit:
-            ca_par_produit[produit_commande] = ca_par_produit[produit_commande] + commande["montant_total"]
-        else:
-            ca_par_produit[produit_commande] = commande["montant_total"]
-
-    tickets_par_produit_business = grouper_par(tickets_s2, "product_name")
-    produits_a_afficher = cles_combinees(ca_par_produit, tickets_par_produit_business)
-
-    lignes_produit_ventes = []
-    for produit_nom in produits_a_afficher:
-        lignes_produit_ventes.append({
-            "produit": produit_nom,
-            "ca": ca_par_produit.get(produit_nom, 0),
-            "tickets": len(tickets_par_produit_business.get(produit_nom, [])),
-        })
-
-    def obtenir_ca(ligne):
-        return ligne["ca"]
-
-    lignes_produit_ventes_triees = sorted(lignes_produit_ventes, key=obtenir_ca, reverse=True)
-
-    lignes_produit_ventes_affichage = []
-    for ligne in lignes_produit_ventes_triees:
-        lignes_produit_ventes_affichage.append({
-            "Produit": ligne["produit"],
-            "CA (historique)": formater_montant(ligne["ca"]),
-            "Tickets (période)": ligne["tickets"],
-        })
-
-    st.dataframe(lignes_produit_ventes_affichage, hide_index=True, width="stretch")
-
-    st.divider()
     st.subheader("Fidélisation & réachat")
     st.caption(
         "Sur tout l'historique des commandes (pas filtré par la période affichée) — pour voir si une "
@@ -2479,33 +2507,3 @@ with onglet_impact:
         tooltip=["Mois:N", "NPS:Q", "Réponses:Q"],
     ).properties(height=260).configure_view(strokeWidth=0)
     st.altair_chart(graphique_nps, width="stretch")
-
-    st.divider()
-    st.subheader("Opportunités produit — demandes hors catalogue")
-    st.caption(
-        "Détecte automatiquement tout sujet marqué « (hors catalogue) » — une demande pour quelque chose "
-        "qu'on ne vend pas (accessoire, personnalisation...). Élargis la Période A dans la barre latérale "
-        "pour voir le seuil se déclencher sur des cadences plus longues."
-    )
-
-    seuil_opportunite = st.slider("Seuil de déclenchement (nombre de tickets sur la période)", 1, 20, 3)
-
-    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, seuil_opportunite)
-
-    if len(opportunites) == 0:
-        st.write("Aucune demande hors catalogue n'atteint le seuil sur cette période.")
-    else:
-        lignes_opportunites = []
-        for sujet, tickets_sujet in opportunites:
-            csat_opportunite = moyenne(tickets_sujet, "csat")
-            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
-            if csat_opportunite is not None:
-                ligne["CSAT"] = formater_csat(csat_opportunite)
-            lignes_opportunites.append(ligne)
-
-        lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)
-        st.dataframe(lignes_opportunites_triees, hide_index=True, width="stretch")
-        st.write(
-            "À remonter à l'équipe produit : ce sont des demandes récurrentes pour quelque chose qui "
-            "n'existe pas encore au catalogue."
-        )
