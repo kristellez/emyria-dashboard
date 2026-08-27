@@ -9,7 +9,7 @@ business (conversion, coûts SAV, fidélisation).
 
 ## Démo en ligne
 
-👉 [Voir le dashboard](LIEN_A_COMPLETER_APRES_DEPLOIEMENT)
+👉 [Voir le dashboard](https://emyria-dashboard-fw9g2v8d7u336av4sc52u6.streamlit.app/)
 
 ## Ce que fait l'outil
 
@@ -28,8 +28,8 @@ business (conversion, coûts SAV, fidélisation).
 ## Lancer en local
 
 ```bash
-git clone <URL_DU_REPO>
-cd emyria-outil-tickets
+git clone https://github.com/kristellez/emyria-dashboard.git
+cd emyria-dashboard
 pip install -r requirements.txt
 streamlit run app.py
 ```
