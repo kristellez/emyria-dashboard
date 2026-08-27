@@ -390,6 +390,15 @@ with st.sidebar.expander("🎨 Comment lire les couleurs"):
 categories_s1 = grouper_par_categorie(tickets_s1)
 categories_s2 = grouper_par_categorie(tickets_s2)
 
+# Chargés une seule fois ici (au lieu de dans un onglet) car utilisés à la fois par
+# "Conversion & acquisition" et "Impact & confiance" — éviter de recharger deux fois.
+commandes = charger_commandes(FICHIER_SHOPIFY)
+
+fichiers_tous_business = []
+for date_export_hist, chemin_hist in exports_disponibles:
+    fichiers_tous_business.append(chemin_hist)
+tickets_historique_business = charger_periode(fichiers_tous_business)
+
 (
     onglet_contexte, onglet_vue, onglet_tendances, onglet_categories, onglet_agents, onglet_alertes,
     onglet_creneaux, onglet_planning, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
@@ -493,18 +502,30 @@ with onglet_vue:
         macro_s1 = taux_rempli(tickets_s1, "macro_applied")
 
         colonne1.metric("Tickets reçus", nombre_s2, delta=nombre_s2 - nombre_s1, delta_color="off")
-        colonne2.metric("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2))
-        colonne3.metric(
-            "1re réponse",
-            formater_duree(frt_s2),
-            delta=str(round(frt_s2 - frt_s1)) + " min",
-            delta_color="inverse",
-        )
-        colonne4.metric(
-            "Utilisation macro",
-            formater_pourcentage(macro_s2),
-            delta=str(round(macro_s2 - macro_s1, 1)) + " pt",
-        )
+
+        if csat_s2 is not None and csat_s1 is not None:
+            colonne2.metric("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2))
+        else:
+            colonne2.metric("CSAT moyen", formater_csat(csat_s2))
+
+        if frt_s2 is not None and frt_s1 is not None:
+            colonne3.metric(
+                "1re réponse",
+                formater_duree(frt_s2),
+                delta=str(round(frt_s2 - frt_s1)) + " min",
+                delta_color="inverse",
+            )
+        else:
+            colonne3.metric("1re réponse", formater_duree(frt_s2))
+
+        if macro_s2 is not None and macro_s1 is not None:
+            colonne4.metric(
+                "Utilisation macro",
+                formater_pourcentage(macro_s2),
+                delta=str(round(macro_s2 - macro_s1, 1)) + " pt",
+            )
+        else:
+            colonne4.metric("Utilisation macro", formater_pourcentage(macro_s2))
     else:
         colonne1.metric("Tickets reçus", nombre_s2)
         colonne2.metric("CSAT moyen", formater_csat(csat_s2))
@@ -853,7 +874,12 @@ with onglet_agents:
     st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
 
     for agent, tickets_agent in par_agent.items():
-        with st.expander(agent):
+        if agent is not None:
+            agent_affiche = agent
+        else:
+            agent_affiche = "Non assigné"
+
+        with st.expander(agent_affiche):
             categories_agent = grouper_par_categorie(tickets_agent)
 
             lignes_categories_agent = []
@@ -885,7 +911,7 @@ with onglet_agents:
 
             noms_categories_agent = list(categories_agent.keys())
             categorie_choisie = st.selectbox(
-                "Détail par sujet pour :", noms_categories_agent, key="categorie_" + agent
+                "Détail par sujet pour :", noms_categories_agent, key="categorie_" + agent_affiche
             )
 
             tickets_cat_choisie = categories_agent[categorie_choisie]
@@ -1754,8 +1780,14 @@ with onglet_livraison:
     sujets_livraison_s2 = grouper_par(tickets_livraison_s2, "subject_cluster")
     sujets_livraison_s1 = grouper_par(tickets_livraison_s1, "subject_cluster")
 
+    if comparaison_disponible:
+        sujets_livraison_a_afficher = cles_combinees(sujets_livraison_s2, sujets_livraison_s1)
+    else:
+        sujets_livraison_a_afficher = list(sujets_livraison_s2.keys())
+
     lignes_livraison = []
-    for sujet, tickets_sujet_s2 in sujets_livraison_s2.items():
+    for sujet in sujets_livraison_a_afficher:
+        tickets_sujet_s2 = sujets_livraison_s2.get(sujet, [])
         volume_s2 = len(tickets_sujet_s2)
         csat_sujet = moyenne(tickets_sujet_s2, "csat")
         resolution_sujet = moyenne(tickets_sujet_s2, "full_resolution_time_hours")
@@ -1819,8 +1851,6 @@ with onglet_livraison:
 # ------------------------------------------------------------------
 
 with onglet_conversion:
-    commandes = charger_commandes(FICHIER_SHOPIFY)
-
     st.caption(
         "Les montants € viennent d'un fichier Shopify FICTIF (commandes_shopify_fictif.xlsx), "
         "croisé aux tickets via order_id — Emyria est une marque fictive, ces chiffres sont des "
@@ -2056,11 +2086,6 @@ with onglet_conversion:
         "fictive illustrative), le contact support et le CSAT — sur tout l'historique disponible, comme "
         "les commandes ci-dessus (pas filtré par la période affichée)."
     )
-
-    fichiers_tous_business = []
-    for date_export_hist, chemin_hist in exports_disponibles:
-        fichiers_tous_business.append(chemin_hist)
-    tickets_historique_business = charger_periode(fichiers_tous_business)
 
     tickets_par_id = {}
     for ticket in tickets_historique_business:

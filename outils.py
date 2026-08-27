@@ -872,6 +872,9 @@ def formater_csat(valeur):
 
 
 def formater_duree(minutes):
+    if minutes is None:
+        return "N/A"
+
     minutes = round(minutes)
     jours = minutes // 1440
     heures = (minutes % 1440) // 60
