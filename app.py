@@ -1,5 +1,6 @@
 import base64
 import datetime
+import os
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -131,8 +132,10 @@ def construire_texte_evenements(exports_disponibles, date_debut, date_fin):
     return "  \n".join(lignes)
 
 
-IMAGE_PRODUIT_ECLATEE = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\assets\produit_vue_eclatee.png"
-IMAGE_PRODUIT_ASSEMBLEE = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\assets\produit_vue_assemblee.png"
+DOSSIER_PROJET = os.path.dirname(os.path.abspath(__file__))
+
+IMAGE_PRODUIT_ECLATEE = os.path.join(DOSSIER_PROJET, "assets", "produit_vue_eclatee.png")
+IMAGE_PRODUIT_ASSEMBLEE = os.path.join(DOSSIER_PROJET, "assets", "produit_vue_assemblee.png")
 
 ZONES_PHOTO_PRODUIT = {
     "Fixation capsule / diffusion parfum": (41, 11),
@@ -238,12 +241,12 @@ COULEUR_PRIMAIRE = "#CC5500"
 COULEUR_SECONDAIRE = "#96234A"
 COULEUR_ACCENT_FONCE = "#8B4513"
 
-DOSSIER_EXPORTS = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\exports_hebdomadaires"
-FICHIER_SHOPIFY = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\data_shopify\commandes_shopify_fictif.xlsx"
-FICHIER_NPS = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\data_shopify\nps_fictif.xlsx"
-FICHIER_SUIVI_SUGGESTIONS = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\data_suivi\suivi_suggestions.xlsx"
-DOSSIER_MACROS = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\knowledge_base\macros"
-FICHIER_CALENDRIER = r"C:\Users\zkris\Kris.Claude\emyria-outil-tickets\data_calendrier\calendrier_evenements.xlsx"
+DOSSIER_EXPORTS = os.path.join(DOSSIER_PROJET, "exports_hebdomadaires")
+FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopify_fictif.xlsx")
+FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
+FICHIER_SUIVI_SUGGESTIONS = os.path.join(DOSSIER_PROJET, "data_suivi", "suivi_suggestions.xlsx")
+DOSSIER_MACROS = os.path.join(DOSSIER_PROJET, "knowledge_base", "macros")
+FICHIER_CALENDRIER = os.path.join(DOSSIER_PROJET, "data_calendrier", "calendrier_evenements.xlsx")
 FENETRE_CONVERSION_JOURS = 30
 
 COUT_ACQUISITION_PAR_CANAL = {
