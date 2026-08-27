@@ -1493,16 +1493,22 @@ with onglet_creneaux:
 # ------------------------------------------------------------------
 
 with onglet_planning:
-    st.caption("Qui a travaillé sur cette période, avec quel rôle, et combien d'heures — lu depuis l'onglet PLANNING du dernier export de la période")
+    st.caption("Qui est programmé sur cette période, avec quel rôle, et combien d'heures — lu depuis l'onglet PLANNING du dernier export de la période (complété par les assignees de tickets non présents dans ce planning)")
 
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
     lignes_planning = [
         construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
     ]
 
+    # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
+    # n'a clôturé aucun ticket ne doit pas disparaître de sa propre ligne de planning) ;
+    # les assignees de tickets non présents dans le planning sont ajoutés en complément.
     agents_de_la_periode = grouper_par(tickets_s2, "assignee")
+    agents_a_afficher = cles_combinees(planning_s2_dernier, agents_de_la_periode)
 
-    for agent in agents_de_la_periode:
+    for agent in agents_a_afficher:
+        if agent == NOM_AGENT_DEFAUT:
+            continue
         horaires = horaires_agent(planning_s2_dernier, agent)
         role = roles_periode.get(agent, "—")
         lignes_planning.append(construire_ligne_planning(agent, horaires, role))
@@ -2271,6 +2277,11 @@ with onglet_conversion:
         "Tickets de la période affichée comparés aux commandes de tout l'historique (comme les autres "
         "sections ci-dessus) — un écart marqué signale que les clients d'un pays sollicitent le support "
         "disproportionnellement plus (ou moins) que leur poids réel dans les ventes."
+    )
+    st.caption(
+        "Échantillon parfois petit côté tickets sur une seule semaine (vs des commandes cumulées sur "
+        "tout l'historique) — à lire comme une tendance à confirmer sur plusieurs périodes, pas un "
+        "écart définitif."
     )
 
     tickets_par_pays = grouper_par(tickets_s2, "country")
