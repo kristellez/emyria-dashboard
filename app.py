@@ -283,54 +283,11 @@ def construire_ligne_planning(nom_affiche, horaires, role):
     return ligne
 
 
-HEURE_DEBUT_GRILLE = 7
-HEURE_FIN_GRILLE = 22
-
-
-def construire_grille_couverture(planning, agents_grille):
-    grille = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        ligne_jour = {}
-        for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
-            ligne_jour[heure] = 0
-        grille[nom_jour] = ligne_jour
-
-    for agent in agents_grille:
-        horaires_grille = horaires_agent(planning, agent)
-        for nom_jour, numero_jour in JOURS_ORDRE:
-            plages = horaires_grille.get(numero_jour, [])
-            for debut, fin in plages:
-                for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
-                    if debut <= heure < fin:
-                        grille[nom_jour][heure] = grille[nom_jour][heure] + 1
-
-    return grille
-
-
-def couleur_fond_couverture(nombre_agents):
-    if nombre_agents == 0:
-        return "background-color: #f7c6c2"
-    elif nombre_agents == 1:
-        return "background-color: #ffe8a1"
+def couleur_disponibilite_jour(valeur):
+    if valeur == "-":
+        return couleur_niveau("DISPARU")
     else:
-        return "background-color: #c6f0d2"
-
-
-def afficher_grille_couverture(grille):
-    colonnes_heures = []
-    for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
-        colonnes_heures.append(str(heure) + "h")
-
-    lignes_grille = []
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        ligne = {"Jour": nom_jour}
-        for heure in range(HEURE_DEBUT_GRILLE, HEURE_FIN_GRILLE):
-            ligne[str(heure) + "h"] = grille[nom_jour][heure]
-        lignes_grille.append(ligne)
-
-    tableau_grille = pd.DataFrame(lignes_grille).set_index("Jour")
-    tableau_grille_stylise = tableau_grille.style.map(couleur_fond_couverture, subset=colonnes_heures)
-    st.dataframe(tableau_grille_stylise, width="stretch")
+        return couleur_niveau("OK")
 
 
 COULEUR_PRIMAIRE = "#CC5500"
@@ -1744,18 +1701,37 @@ with onglet_creneaux:
     st.subheader("Par canal, en créneau")
 
     par_canal_en = grouper_par(en_creneau, "via_channel")
-    lignes_canal_en = []
+    lignes_canal_en_avec_niveaux = []
     for canal, tickets_canal in par_canal_en.items():
         frt_canal = moyenne(tickets_canal, "first_reply_time_min")
-        ligne = {"Canal": canal, "Tickets": len(tickets_canal), "1re réponse moyenne": "N/A", "Niveau": ""}
+        ligne = {"Canal": canal, "Tickets": len(tickets_canal), "1re réponse moyenne": "N/A"}
+
+        niveau_reponse_canal = ""
         if frt_canal is not None:
             ligne["1re réponse moyenne"] = formater_duree(frt_canal)
-            ligne["Niveau"] = niveau_reponse_ouvree(frt_canal)
-        lignes_canal_en.append(ligne)
+            niveau_reponse_canal = niveau_reponse_ouvree(frt_canal)
 
-    lignes_canal_en_triees = sorted(lignes_canal_en, key=obtenir_tickets, reverse=True)
+        lignes_canal_en_avec_niveaux.append((ligne, niveau_reponse_canal))
+
+    def obtenir_tickets_canal_avec_niveau(item):
+        ligne_canal, niveau_reponse_item = item
+        return ligne_canal["Tickets"]
+
+    lignes_canal_en_avec_niveaux_triees = sorted(
+        lignes_canal_en_avec_niveaux, key=obtenir_tickets_canal_avec_niveau, reverse=True
+    )
+
+    lignes_canal_en_triees = []
+    niveaux_reponse_canal = []
+    for ligne_canal, niveau_reponse_item in lignes_canal_en_avec_niveaux_triees:
+        lignes_canal_en_triees.append(ligne_canal)
+        niveaux_reponse_canal.append(niveau_reponse_item)
+
     with st.container(border=True):
-        afficher_tableau_colore(lignes_canal_en_triees)
+        afficher_tableau_colore(
+            lignes_canal_en_triees,
+            colonnes_couleur_bloc={"1re réponse moyenne": niveaux_reponse_canal},
+        )
 
     # ------------------------------------------------------------------
     # Quand / pourquoi / comment les clients contactent hors créneau
@@ -1860,8 +1836,9 @@ with onglet_creneaux:
     st.divider()
     st.markdown(titre_section_principale("Planning de l'équipe"), unsafe_allow_html=True)
     st.caption(
-        "Nombre d'agents couvrant chaque créneau, lu depuis l'onglet PLANNING du dernier export de la "
-        "période — pour voir d'un coup d'œil où la couverture est faible avant de modifier des horaires."
+        "Horaires par agent, lus depuis l'onglet PLANNING du dernier export de la période — jour coloré "
+        "= présent, jour gris = absent, pour voir d'un coup d'œil qui est là et à quelle heure avant de "
+        "modifier des horaires."
     )
 
     # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
@@ -1875,23 +1852,25 @@ with onglet_creneaux:
         if agent != NOM_AGENT_DEFAUT:
             agents_grille.append(agent)
 
+    horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
+    lignes_planning = [
+        construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
+    ]
+
+    for agent in agents_grille:
+        horaires = horaires_agent(planning_s2_dernier, agent)
+        role = roles_periode.get(agent, "—")
+        lignes_planning.append(construire_ligne_planning(agent, horaires, role))
+
+    colonnes_jours_planning = []
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        colonnes_jours_planning.append(nom_jour)
+
+    tableau_planning = pd.DataFrame(lignes_planning)
+    tableau_planning_stylise = tableau_planning.style.map(couleur_disponibilite_jour, subset=colonnes_jours_planning)
+
     with st.container(border=True):
-        grille_couverture = construire_grille_couverture(planning_s2_dernier, agents_grille)
-        afficher_grille_couverture(grille_couverture)
-        st.caption("Nombre d'agents planifiés sur ce créneau — 0 = rouge, 1 = jaune, 2+ = vert.")
-
-    with st.expander("Détail horaires par agent"):
-        horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
-        lignes_planning = [
-            construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
-        ]
-
-        for agent in agents_grille:
-            horaires = horaires_agent(planning_s2_dernier, agent)
-            role = roles_periode.get(agent, "—")
-            lignes_planning.append(construire_ligne_planning(agent, horaires, role))
-
-        st.dataframe(lignes_planning, hide_index=True, width="stretch")
+        st.dataframe(tableau_planning_stylise, hide_index=True, width="stretch")
         st.caption(
             "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "
             "agent, jour, heure_debut, heure_fin, role) : les horaires et le rôle d'un agent, mais aussi "
