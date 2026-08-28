@@ -553,7 +553,7 @@ categories_s1 = grouper_par_categorie(tickets_s1)
 categories_s2 = grouper_par_categorie(tickets_s2)
 
 # Chargés une seule fois ici (au lieu de dans un onglet) car utilisés à la fois par
-# "Conversion & acquisition" et "Impact & confiance" — éviter de recharger deux fois.
+# "Avant-vente & conversion" et "Impact & confiance" — éviter de recharger deux fois.
 commandes = charger_commandes(FICHIER_SHOPIFY)
 
 fichiers_tous_business = []
@@ -579,7 +579,7 @@ for chemin_role in fichiers_actuels:
     [
         "Contexte", "Vue d'ensemble", "Tendances", "Agents",
         "Alertes & suggestions", "Staffing & réactivité", "Produit", "Livraison",
-        "Conversion & acquisition", "Impact & confiance",
+        "Avant-vente & conversion", "Impact & confiance",
     ]
 )
 
@@ -652,7 +652,7 @@ with onglet_contexte:
             "- **Staffing & réactivité** : couverture horaire, SLA, planning de l'équipe\n"
             "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **Conversion & acquisition** : conversion réelle après contact avant-vente\n"
+            "- **Avant-vente & conversion** : conversion réelle après contact avant-vente\n"
             "- **Impact & confiance** : coûts SAV, confiance client (NPS)\n\n"
             "CSAT noté sur une échelle de 0 à 5."
         )
@@ -2278,7 +2278,7 @@ with onglet_livraison:
 
 
 # ------------------------------------------------------------------
-# Onglet 8 : Conversion & acquisition
+# Onglet 8 : Avant-vente & conversion
 # ------------------------------------------------------------------
 
 with onglet_conversion:
@@ -2338,22 +2338,35 @@ with onglet_conversion:
     for ticket, commande in resultats_conversion:
         cle = (ticket["assignee"], ticket["country"])
         if cle not in par_agent_pays:
-            par_agent_pays[cle] = {"total": 0, "convertis": 0}
+            par_agent_pays[cle] = {"total": 0, "convertis": 0, "montants": [], "quantites": []}
         par_agent_pays[cle]["total"] = par_agent_pays[cle]["total"] + 1
         if commande is not None:
             par_agent_pays[cle]["convertis"] = par_agent_pays[cle]["convertis"] + 1
+            par_agent_pays[cle]["montants"].append(commande["montant_total"])
+            par_agent_pays[cle]["quantites"].append(commande["quantite"])
 
     lignes_agent_pays = []
     for cle, stats in par_agent_pays.items():
         agent, pays = cle
         if stats["total"] < SEUIL_MINIMUM_SUJET:
             continue
+
+        montant_moyen = None
+        if len(stats["montants"]) > 0:
+            montant_moyen = sum(stats["montants"]) / len(stats["montants"])
+
+        quantite_moyenne = None
+        if len(stats["quantites"]) > 0:
+            quantite_moyenne = sum(stats["quantites"]) / len(stats["quantites"])
+
         lignes_agent_pays.append({
             "agent": agent,
             "pays": pays,
             "tickets": stats["total"],
             "convertis": stats["convertis"],
             "taux": stats["convertis"] / stats["total"] * 100,
+            "montant_moyen": montant_moyen,
+            "quantite_moyenne": quantite_moyenne,
         })
 
     def obtenir_tri_agent_pays(ligne):
@@ -2363,12 +2376,22 @@ with onglet_conversion:
 
     lignes_agent_pays_affichage = []
     for ligne in lignes_agent_pays_triees:
+        montant_texte = "N/A"
+        if ligne["montant_moyen"] is not None:
+            montant_texte = formater_montant(ligne["montant_moyen"])
+
+        quantite_texte = "N/A"
+        if ligne["quantite_moyenne"] is not None:
+            quantite_texte = str(round(ligne["quantite_moyenne"], 1))
+
         lignes_agent_pays_affichage.append({
             "Agent": ligne["agent"],
             "Pays": ligne["pays"],
             "Tickets avant-vente": ligne["tickets"],
             "Convertis": ligne["convertis"],
             "Taux de conversion": formater_pourcentage(ligne["taux"]),
+            "Panier moyen": montant_texte,
+            "Qté article moyenne": quantite_texte,
         })
 
     with st.container(border=True):
