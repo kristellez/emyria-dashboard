@@ -510,6 +510,63 @@ def construire_cellule_heatmap(entree):
     )
 
 
+# Première heure d'ouverture et dernière heure de fermeture, toutes plages/jours confondus dans
+# le planning standard — sert à savoir quelles heures, avant l'ouverture et après la fermeture,
+# peuvent être regroupées en un seul bloc dans la heatmap plutôt qu'affichées heure par heure.
+def determiner_bornes_ouverture(horaires_standard):
+    premiere_ouverture = None
+    derniere_fermeture = None
+
+    for jour in range(7):
+        plages = horaires_standard.get(jour, [])
+        for debut, fin in plages:
+            if premiere_ouverture is None or debut < premiere_ouverture:
+                premiere_ouverture = debut
+            if derniere_fermeture is None or fin > derniere_fermeture:
+                derniere_fermeture = fin
+
+    return premiere_ouverture, derniere_fermeture
+
+
+# Découpe la plage 7h-21h en "bandes" à afficher dans la heatmap : les heures avant la première
+# ouverture et après la dernière fermeture sont regroupées en un seul bloc chacune (toujours
+# fermées par conception, quel que soit le jour), les heures effectivement couvertes par au moins
+# un jour restent détaillées heure par heure. Si aucune ouverture n'est définie, pas de
+# regroupement (repli sur le détail heure par heure complet).
+def construire_bandes_heatmap(premiere_ouverture, derniere_fermeture):
+    bandes = []
+
+    if premiere_ouverture is None or derniere_fermeture is None:
+        for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+            bandes.append(("HEURE", heure, heure + 1))
+        return bandes
+
+    if premiere_ouverture > HEURE_DEBUT_HOTSPOTS:
+        bandes.append(("AVANT_OUVERTURE", HEURE_DEBUT_HOTSPOTS, premiere_ouverture))
+
+    borne_basse = max(HEURE_DEBUT_HOTSPOTS, premiere_ouverture)
+    borne_haute = min(HEURE_FIN_HOTSPOTS, derniere_fermeture)
+    for heure in range(borne_basse, borne_haute):
+        bandes.append(("HEURE", heure, heure + 1))
+
+    if derniere_fermeture < HEURE_FIN_HOTSPOTS:
+        bandes.append(("APRES_FERMETURE", derniere_fermeture, HEURE_FIN_HOTSPOTS))
+
+    return bandes
+
+
+def construire_cellule_heatmap_bande(demandes_total):
+    if demandes_total > 0:
+        contenu = '<div class="hm-muted">' + str(demandes_total) + " demandes</div>"
+    else:
+        contenu = '<div class="hm-muted">—</div>'
+
+    return (
+        '<div class="hm-cell hm-cell-bande" style="background-color:' + COULEUR_HEATMAP_HORS_COUVERTURE + ';">'
+        + contenu + "</div>"
+    )
+
+
 def construire_carte_situation(entree, est_pic_semaine):
     titre = entree["jour"] + " · " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
 
@@ -2624,6 +2681,7 @@ with onglet_creneaux:
         "display: flex; align-items: center; justify-content: center; padding: 2px; }"
         ".hm-cell { border-radius: 5px; padding: 3px 4px; text-align: center; line-height: 1.25; "
         "min-height: 40px; display: flex; flex-direction: column; justify-content: center; }"
+        ".hm-cell-bande { min-height: 22px; }"
         ".hm-line-agents { font-weight: 600; font-size: 10px; color: " + COULEUR_TEXTE_VALEUR + "; }"
         ".hm-line-demandes { font-size: 9px; color: " + COULEUR_TEXTE_LABEL + "; }"
         ".hm-line-ratio { font-size: 10px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
@@ -2635,18 +2693,42 @@ with onglet_creneaux:
     for nom_jour, numero_jour in JOURS_ORDRE:
         html_heatmap = html_heatmap + '<div class="hm-day-header">' + nom_jour[:3] + "</div>"
 
-    index_entree = 0
-    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-        html_heatmap = html_heatmap + '<div class="hm-hour-label">' + str(heure) + "h</div>"
-        for nom_jour, numero_jour in JOURS_ORDRE:
-            html_heatmap = html_heatmap + construire_cellule_heatmap(grille_creneaux[index_entree])
-            index_entree = index_entree + 1
+    grille_par_jour_heure = {}
+    for entree in grille_creneaux:
+        grille_par_jour_heure[(entree["jour"], entree["heure"])] = entree
+
+    premiere_ouverture, derniere_fermeture = determiner_bornes_ouverture(horaires_standard)
+    bandes_heatmap = construire_bandes_heatmap(premiere_ouverture, derniere_fermeture)
+
+    for type_bande, heure_debut_bande, heure_fin_bande in bandes_heatmap:
+        if type_bande == "HEURE":
+            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + str(heure_debut_bande) + "h</div>"
+            for nom_jour, numero_jour in JOURS_ORDRE:
+                entree = grille_par_jour_heure[(nom_jour, heure_debut_bande)]
+                html_heatmap = html_heatmap + construire_cellule_heatmap(entree)
+        else:
+            if type_bande == "AVANT_OUVERTURE":
+                label_bande = "<" + str(heure_fin_bande) + "h"
+            else:
+                label_bande = str(heure_debut_bande) + "h+"
+            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + label_bande + "</div>"
+            for nom_jour, numero_jour in JOURS_ORDRE:
+                demandes_bande = 0
+                for heure_b in range(heure_debut_bande, heure_fin_bande):
+                    demandes_bande = demandes_bande + grille_par_jour_heure[(nom_jour, heure_b)]["demandes"]
+                html_heatmap = html_heatmap + construire_cellule_heatmap_bande(demandes_bande)
+
     html_heatmap = html_heatmap + "</div>"
 
     with st.container(border=True):
         st.markdown(html_heatmap, unsafe_allow_html=True)
 
-    st.caption("Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau.")
+    st.caption(
+        "Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau. Les "
+        "heures avant l'ouverture et après la fermeture sont regroupées en un seul bloc — volume "
+        "cumulé sur la plage, sans détail heure par heure (détail disponible dans la section "
+        "\"Demande hors couverture\" plus haut)."
+    )
 
     st.markdown("**Tensions de couverture**")
     if len(situations_tension_triees) > 0:
