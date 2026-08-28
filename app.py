@@ -46,6 +46,9 @@ from outils import (
     CATEGORIE_SAV_PRODUIT,
     couleur_texte_csat,
     niveau_macro,
+    niveau_charge_agent,
+    SEUIL_CHARGE_CONFORTABLE,
+    SEUIL_CHARGE_SURVEILLER,
     niveau_reponse_ouvree,
     niveau_hausse_sujet,
     couleur_niveau,
@@ -253,7 +256,13 @@ def afficher_tableau_colore(lignes, colonne_figee=None, colonnes_couleur_bloc=No
 
     configuration_colonnes = None
     if colonne_figee is not None:
-        configuration_colonnes = {colonne_figee: st.column_config.Column(pinned=True)}
+        colonnes_figees = colonne_figee
+        if isinstance(colonnes_figees, str):
+            colonnes_figees = [colonnes_figees]
+
+        configuration_colonnes = {}
+        for nom_colonne_figee in colonnes_figees:
+            configuration_colonnes[nom_colonne_figee] = st.column_config.Column(pinned=True)
 
     st.dataframe(
         tableau_stylise,
@@ -288,6 +297,48 @@ def couleur_disponibilite_jour(valeur):
         return couleur_niveau("DISPARU")
     else:
         return couleur_niveau("OK")
+
+
+HEURE_DEBUT_HOTSPOTS = 7
+HEURE_FIN_HOTSPOTS = 21
+
+
+# Statut basé sur l'horaire standard (ligne DEFAUT) d'un seul jour de référence (lundi),
+# pas jour par jour — l'horaire standard d'Emyria est identique du lundi au vendredi, et le
+# week-end n'a pas d'horaire standard du tout (couverture ponctuelle type renfort saisonnier).
+def statut_creneau_standard(horaires_standard, heure):
+    jour_reference = 0
+    plages = horaires_standard.get(jour_reference, [])
+
+    for debut, fin in plages:
+        if debut <= heure < fin:
+            return "Couverture requise"
+
+    if len(plages) > 0:
+        premiere_debut = plages[0][0]
+        derniere_fin = plages[-1][1]
+        if premiere_debut <= heure < derniere_fin:
+            return "Pause déjeuner"
+
+    return "Hors standard"
+
+
+def agents_en_poste(planning, agents_grille, jour, heure):
+    presents = []
+    for agent in agents_grille:
+        # Volontairement pas horaires_agent() ici : sa bascule vers l'horaire DEFAUT pour un
+        # agent absent du planning gonflerait artificiellement les effectifs des semaines dont
+        # le PLANNING est incomplet (ex : premiers exports, sans ligne par agent) — un agent
+        # sans ligne cette semaine-là doit compter pour 0 heure, pas suivre le créneau standard.
+        if agent not in planning:
+            continue
+
+        plages = planning[agent].get(jour, [])
+        for debut, fin in plages:
+            if debut <= heure < fin:
+                presents.append(agent)
+                break
+    return presents
 
 
 COULEUR_PRIMAIRE = "#CC5500"
@@ -1834,16 +1885,19 @@ with onglet_creneaux:
         st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
     st.divider()
-    st.markdown(titre_section_principale("Planning de l'équipe"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Planning de couverture & hotspots"), unsafe_allow_html=True)
     st.caption(
-        "Horaires par agent, lus depuis l'onglet PLANNING du dernier export de la période — jour coloré "
-        "= présent, jour gris = absent, pour voir d'un coup d'œil qui est là et à quelle heure avant de "
-        "modifier des horaires."
+        "Charge par agent, heure par heure (7h-21h, lundi à dimanche) : nombre d'agents planifiés "
+        "vs volume de tickets reçus sur la période. Vert = charge confortable ("
+        + str(SEUIL_CHARGE_CONFORTABLE) + " demandes/agent ou moins), jaune = à surveiller (jusqu'à "
+        + str(SEUIL_CHARGE_SURVEILLER) + "), rouge = hotspot (au-delà). Le statut \"standard\" reflète "
+        "l'horaire de référence lundi-vendredi (identique ces jours-là) — le week-end n'a pas d'horaire "
+        "standard par défaut, sa couverture est ponctuelle (ex : renfort saisonnier)."
     )
 
     # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
-    # n'a clôturé aucun ticket ne doit pas disparaître de sa propre ligne de planning) ;
-    # les assignees de tickets non présents dans le planning sont ajoutés en complément.
+    # n'a clôturé aucun ticket ne doit pas disparaître de la grille) ; les assignees de tickets
+    # non présents dans le planning sont ajoutés en complément.
     agents_de_la_periode = grouper_par(tickets_s2, "assignee")
     agents_a_afficher = cles_combinees(planning_s2_dernier, agents_de_la_periode)
 
@@ -1853,23 +1907,126 @@ with onglet_creneaux:
             agents_grille.append(agent)
 
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
-    lignes_planning = [
-        construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
-    ]
 
-    for agent in agents_grille:
-        horaires = horaires_agent(planning_s2_dernier, agent)
-        role = roles_periode.get(agent, "—")
-        lignes_planning.append(construire_ligne_planning(agent, horaires, role))
-
-    colonnes_jours_planning = []
+    demandes_par_jour_heure = {}
     for nom_jour, numero_jour in JOURS_ORDRE:
-        colonnes_jours_planning.append(nom_jour)
+        demandes_par_jour_heure[numero_jour] = {}
+        for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+            demandes_par_jour_heure[numero_jour][heure] = 0
 
-    tableau_planning = pd.DataFrame(lignes_planning)
-    tableau_planning_stylise = tableau_planning.style.map(couleur_disponibilite_jour, subset=colonnes_jours_planning)
+    for ticket in tickets_s2:
+        moment = ticket["created_at"]
+        jour_ticket = moment.weekday()
+        heure_ticket = moment.hour
+        if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
+            demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
+
+    lignes_grille_hotspots = []
+    niveaux_charge_par_colonne = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        niveaux_charge_par_colonne[nom_jour + " - Dem./agent"] = []
+
+    hotspot_par_jour = {}
+    totaux_volume_par_jour = {}
+    totaux_ratios_par_jour = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        hotspot_par_jour[nom_jour] = None
+        totaux_volume_par_jour[nom_jour] = 0
+        totaux_ratios_par_jour[nom_jour] = []
+
+    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+        ligne = {
+            "Créneau": str(heure) + "h-" + str(heure + 1) + "h",
+            "Statut": statut_creneau_standard(horaires_standard, heure),
+        }
+
+        for nom_jour, numero_jour in JOURS_ORDRE:
+            presents = agents_en_poste(planning_s2_dernier, agents_grille, numero_jour, heure)
+            nb_agents = len(presents)
+            demandes = demandes_par_jour_heure[numero_jour][heure]
+
+            if nb_agents > 0:
+                ratio = demandes / nb_agents
+                agents_texte = " + ".join(presents)
+                ratio_texte = str(round(ratio, 1))
+            else:
+                ratio = None
+                agents_texte = "-"
+                ratio_texte = "N/A"
+
+            ligne[nom_jour + " - Agents"] = agents_texte
+            ligne[nom_jour + " - Nb agents"] = nb_agents
+            ligne[nom_jour + " - Demandes"] = demandes
+            ligne[nom_jour + " - Dem./agent"] = ratio_texte
+
+            niveaux_charge_par_colonne[nom_jour + " - Dem./agent"].append(niveau_charge_agent(ratio))
+
+            totaux_volume_par_jour[nom_jour] = totaux_volume_par_jour[nom_jour] + demandes
+            if ratio is not None:
+                totaux_ratios_par_jour[nom_jour].append(ratio)
+                hotspot_actuel = hotspot_par_jour[nom_jour]
+                if hotspot_actuel is None or ratio > hotspot_actuel[1]:
+                    hotspot_par_jour[nom_jour] = (heure, ratio)
+
+        lignes_grille_hotspots.append(ligne)
 
     with st.container(border=True):
+        afficher_tableau_colore(
+            lignes_grille_hotspots,
+            colonne_figee=["Créneau", "Statut"],
+            colonnes_couleur_bloc=niveaux_charge_par_colonne,
+        )
+
+    lignes_hotspots = []
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        hotspot = hotspot_par_jour[nom_jour]
+        if hotspot is not None:
+            heure_hotspot, ratio_hotspot = hotspot
+            lignes_hotspots.append({
+                "Jour": nom_jour,
+                "Créneau le plus chargé": str(heure_hotspot) + "h-" + str(heure_hotspot + 1) + "h",
+                "Dem./agent": str(round(ratio_hotspot, 1)),
+            })
+
+    lignes_totaux_jour = []
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        ratios_jour = totaux_ratios_par_jour[nom_jour]
+        if len(ratios_jour) > 0:
+            moyenne_texte = str(round(sum(ratios_jour) / len(ratios_jour), 1))
+        else:
+            moyenne_texte = "N/A"
+
+        lignes_totaux_jour.append({
+            "Jour": nom_jour,
+            "Volume total": totaux_volume_par_jour[nom_jour],
+            "Dem./agent moyen": moyenne_texte,
+        })
+
+    colonne_hotspots, colonne_totaux = st.columns(2)
+    with colonne_hotspots:
+        st.markdown("**Hotspots — créneau le plus chargé par jour**")
+        st.dataframe(lignes_hotspots, hide_index=True, width="stretch")
+    with colonne_totaux:
+        st.markdown("**Total par jour**")
+        st.dataframe(lignes_totaux_jour, hide_index=True, width="stretch")
+
+    with st.expander("Détail horaires par agent (référence texte)"):
+        lignes_planning = [
+            construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
+        ]
+
+        for agent in agents_grille:
+            horaires = horaires_agent(planning_s2_dernier, agent)
+            role = roles_periode.get(agent, "—")
+            lignes_planning.append(construire_ligne_planning(agent, horaires, role))
+
+        colonnes_jours_planning = []
+        for nom_jour, numero_jour in JOURS_ORDRE:
+            colonnes_jours_planning.append(nom_jour)
+
+        tableau_planning = pd.DataFrame(lignes_planning)
+        tableau_planning_stylise = tableau_planning.style.map(couleur_disponibilite_jour, subset=colonnes_jours_planning)
+
         st.dataframe(tableau_planning_stylise, hide_index=True, width="stretch")
         st.caption(
             "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "

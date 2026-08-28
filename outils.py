@@ -674,6 +674,21 @@ def niveau_macro(valeur):
         return "OK"
 
 
+SEUIL_CHARGE_CONFORTABLE = 15
+SEUIL_CHARGE_SURVEILLER = 30
+
+
+def niveau_charge_agent(valeur):
+    if valeur is None:
+        return ""
+    if valeur <= SEUIL_CHARGE_CONFORTABLE:
+        return "OK"
+    elif valeur <= SEUIL_CHARGE_SURVEILLER:
+        return "A SURVEILLER"
+    else:
+        return "CRITIQUE"
+
+
 def couleur_niveau(valeur):
     if valeur in ("OK", "CORRECT", "Correct", "EXCELLENT", "Excellent", "En créneau", "Fort potentiel"):
         return "background-color: #D9EDDD"
