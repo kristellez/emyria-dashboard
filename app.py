@@ -295,12 +295,8 @@ HEURE_DEBUT_HOTSPOTS = 7
 HEURE_FIN_HOTSPOTS = 21
 
 
-# Statut basé sur l'horaire standard (ligne DEFAUT) d'un seul jour de référence (lundi),
-# pas jour par jour — l'horaire standard d'Emyria est identique du lundi au vendredi, et le
-# week-end n'a pas d'horaire standard du tout (couverture ponctuelle type renfort saisonnier).
-def statut_creneau_standard(horaires_standard, heure):
-    jour_reference = 0
-    plages = horaires_standard.get(jour_reference, [])
+def statut_creneau_standard(horaires_standard, jour, heure):
+    plages = horaires_standard.get(jour, [])
 
     for debut, fin in plages:
         if debut <= heure < fin:
@@ -356,16 +352,17 @@ COULEUR_BORDURE_BANDEAU = "#EAD9C4"
 # plutôt qu'un fond de cellule de tableau — même langage de statut, contexte différent.
 COULEUR_ACCENT_OK = "#3FA76B"
 COULEUR_ACCENT_SURVEILLER = "#E0A72E"
-COULEUR_ACCENT_SOUS_COUVERTURE = "#D9822E"
+# Distinct du rouge (tension pendant l'ouverture) : la question "hors couverture" est d'une
+# autre nature — pas un débordement de l'équipe en poste, une question de capacité/horaires.
+COULEUR_ACCENT_HORS_COUVERTURE = "#D9822E"
 COULEUR_ACCENT_CRITIQUE = "#D1483B"
 COULEUR_ACCENT_DEBORDEMENT = "#A6291E"
 
 # Fonds de cellule pour la heatmap de couverture (onglet Staffing & réactivité) — même
-# progression vert/jaune/orange/rouge que les accents ci-dessus, en teinte pâle pour un
-# fond de cellule plutôt qu'un liseré.
+# langage de couleur que les accents ci-dessus, en teinte pâle pour un fond de cellule
+# plutôt qu'un liseré.
 COULEUR_HEATMAP_CONFORTABLE = "#D9EDDD"
 COULEUR_HEATMAP_SURVEILLER = "#F7E2B8"
-COULEUR_HEATMAP_SOUS_COUVERTURE = "#F5D0A8"
 COULEUR_HEATMAP_HOTSPOT = "#F3D2CB"
 COULEUR_HEATMAP_HORS_COUVERTURE = "#F4F2EE"
 
@@ -455,36 +452,22 @@ def titre_section_principale(texte):
     )
 
 
-def obtenir_canal_dominant(compteur_canal):
-    canal_dominant = None
-    plus_grand_compte = 0
-    for canal, compte in compteur_canal.items():
-        if compte > plus_grand_compte:
-            plus_grand_compte = compte
-            canal_dominant = canal
-    return canal_dominant, plus_grand_compte
-
-
-def obtenir_icone_canal(canal):
-    if canal == "Téléphone":
-        return "☎"
-    elif canal == "Email":
-        return "✉"
-    elif canal == "Chat":
-        return "💬"
-    elif canal == "WhatsApp":
-        return "📱"
-    else:
-        return "•"
-
-
 COULEUR_FOND_HEATMAP_PAR_NIVEAU = {
     "CONFORTABLE": COULEUR_HEATMAP_CONFORTABLE,
     "A_SURVEILLER": COULEUR_HEATMAP_SURVEILLER,
-    "SOUS_COUVERTURE": COULEUR_HEATMAP_SOUS_COUVERTURE,
     "HOTSPOT": COULEUR_HEATMAP_HOTSPOT,
     "HORS_COUVERTURE": COULEUR_HEATMAP_HORS_COUVERTURE,
 }
+
+
+# Au-delà de 3 prénoms, la cellule tronque ("+N") pour rester compacte — la liste
+# complète reste disponible via l'attribut title (tooltip au survol).
+def construire_texte_agents_cellule(agents):
+    if len(agents) == 0:
+        return ""
+    if len(agents) <= 3:
+        return " · ".join(agents)
+    return " · ".join(agents[:3]) + " +" + str(len(agents) - 3)
 
 
 def construire_cellule_heatmap(entree):
@@ -495,25 +478,31 @@ def construire_cellule_heatmap(entree):
         titre_tooltip = ", ".join(entree["agents"])
 
     if entree["niveau"] == "HORS_COUVERTURE":
+        # Fermé par conception (horaire standard, pause, week-end) : le volume peut
+        # attendre la réouverture, pas de couleur de tension ni de mention d'effectif.
         if entree["demandes"] > 0:
-            contenu = '<div class="hm-muted">' + str(entree["demandes"]) + "</div>"
+            contenu = '<div class="hm-muted">' + str(entree["demandes"]) + " demandes</div>"
         else:
             contenu = '<div class="hm-muted">—</div>'
-    else:
+    elif entree["nb_agents"] > 0:
+        texte_agents = construire_texte_agents_cellule(entree["agents"])
+        if entree["nb_agents"] == 1:
+            texte_effectif = "1 agent"
+        else:
+            texte_effectif = str(entree["nb_agents"]) + " agents"
+
         contenu = (
-            '<div class="hm-line-agents">' + str(entree["nb_agents"]) + " agent(s)</div>"
+            '<div class="hm-line-agents">' + texte_agents + "</div>"
+            '<div class="hm-line-demandes">' + texte_effectif + " · " + str(entree["demandes"]) + " demandes</div>"
+            '<div class="hm-line-ratio">' + str(round(entree["ratio"], 1)) + " / agent</div>"
+        )
+    else:
+        # Créneau censé être couvert mais personne en poste — anomalie réelle, pas une
+        # fermeture assumée : on la montre, pas de ratio calculable.
+        contenu = (
+            '<div class="hm-line-agents">Aucun agent en poste</div>'
             '<div class="hm-line-demandes">' + str(entree["demandes"]) + " demandes</div>"
         )
-
-        if entree["ratio"] is not None:
-            contenu = contenu + '<div class="hm-line-ratio">' + str(round(entree["ratio"], 1)) + " / agent</div>"
-
-        if entree["niveau"] in ("SOUS_COUVERTURE", "HOTSPOT") and entree["canal_dominant"] is not None:
-            texte_canal = (
-                obtenir_icone_canal(entree["canal_dominant"]) + " "
-                + str(round(entree["part_canal_dominant"])) + "% " + entree["canal_dominant"].lower()
-            )
-            contenu = contenu + '<div class="hm-line-canal">' + texte_canal + "</div>"
 
     return (
         '<div class="hm-cell" style="background-color:' + couleur_fond + ';" title="' + titre_tooltip + '">'
@@ -521,30 +510,167 @@ def construire_cellule_heatmap(entree):
     )
 
 
-def construire_carte_situation(entree):
-    titre = entree["jour"] + " " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
+def construire_carte_situation(entree, est_pic_semaine):
+    titre = entree["jour"] + " · " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
 
-    if entree["niveau"] == "SOUS_COUVERTURE":
-        if entree["canal_dominant"] is not None:
-            ligne_detail = (
-                str(entree["demandes"]) + " demandes · " + entree["canal_dominant"] + " "
-                + str(round(entree["part_canal_dominant"])) + "%"
-            )
+    texte_agents = construire_texte_agents_cellule(entree["agents"])
+    if texte_agents == "":
+        texte_agents = "Aucun agent en poste"
+
+    if entree["ratio"] is not None:
+        ligne_detail = str(entree["demandes"]) + " demandes · " + str(round(entree["ratio"], 1)) + " / agent"
+        if est_pic_semaine:
+            verdict = "Charge la plus élevée de la semaine"
         else:
-            ligne_detail = str(entree["demandes"]) + " demandes"
-        verdict = "Couverture insuffisante"
-        accent = COULEUR_ACCENT_SOUS_COUVERTURE
+            verdict = str(round(entree["ratio"], 1)) + " demandes / agent"
     else:
-        ligne_detail = str(entree["demandes"]) + " demandes · " + str(entree["nb_agents"]) + " agent(s)"
-        verdict = str(round(entree["ratio"], 1)) + " demandes / agent"
-        accent = COULEUR_ACCENT_CRITIQUE
+        ligne_detail = str(entree["demandes"]) + " demandes"
+        verdict = "Aucun agent en poste"
 
     return (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
-        "border-left:6px solid " + accent + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        "border-left:6px solid " + COULEUR_ACCENT_CRITIQUE + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
         '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + titre + "</div>"
-        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + ligne_detail + "</div>"
-        '<div style="font-size:12px; font-weight:600; color:' + accent + '; margin-top:4px;">' + verdict + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + texte_agents + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_detail + "</div>"
+        '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:4px;">'
+        + verdict + "</div>"
+        "</div>"
+    )
+
+
+NB_SEMAINES_BASELINE_HORS_COUVERTURE = 6
+SEUIL_VOLUME_HORS_COUVERTURE_MIN = 20
+SEUIL_DELTA_HORS_COUVERTURE_PCT = 25
+
+
+# Volume "hors couverture" (pause, avant/après horaire standard, week-end) des N derniers
+# exports disponibles AVANT la période affichée — sert de référence pour juger si le volume
+# hors couverture de la période actuelle est inhabituel, plutôt que de réagir à un seul
+# samedi chargé.
+def calculer_baseline_hors_couverture(exports_disponibles, date_a_debut, nb_semaines):
+    exports_avant_periode = []
+    for date_export, chemin in exports_disponibles:
+        if date_export < date_a_debut:
+            exports_avant_periode.append((date_export, chemin))
+
+    exports_baseline = exports_avant_periode[-nb_semaines:]
+
+    volumes_baseline = []
+    for date_export, chemin in exports_baseline:
+        tickets_semaine = charger_tickets(chemin)
+        planning_semaine = construire_plannings_periode([chemin], exports_disponibles)
+        en_creneau_semaine, pause_semaine, hors_semaine = separer_creneau(tickets_semaine, planning_semaine)
+        volumes_baseline.append(len(pause_semaine) + len(hors_semaine))
+
+    return volumes_baseline
+
+
+def hors_couverture_est_significatif(volume_actuel, moyenne_baseline):
+    if volume_actuel < SEUIL_VOLUME_HORS_COUVERTURE_MIN:
+        return False
+
+    if moyenne_baseline is None or moyenne_baseline == 0:
+        return True
+
+    delta_pct = (volume_actuel - moyenne_baseline) / moyenne_baseline * 100
+    return delta_pct >= SEUIL_DELTA_HORS_COUVERTURE_PCT
+
+
+# Distinction volontairement simple (pas une vraie analyse de tendance) : si la majorité
+# des semaines de référence étaient déjà au-dessus du seuil, ce n'est pas un pic isolé.
+def type_signal_hors_couverture(volumes_baseline):
+    if len(volumes_baseline) == 0:
+        return "Volume à surveiller"
+
+    nb_semaines_elevees = 0
+    for volume in volumes_baseline:
+        if volume >= SEUIL_VOLUME_HORS_COUVERTURE_MIN:
+            nb_semaines_elevees = nb_semaines_elevees + 1
+
+    if nb_semaines_elevees / len(volumes_baseline) >= 0.5:
+        return "Pattern récurrent depuis plusieurs semaines"
+    return "Volume à surveiller"
+
+
+def construire_repartition_jours_texte(tickets):
+    compteur_jour = {}
+    for ticket in tickets:
+        numero_jour = ticket["created_at"].weekday()
+        if numero_jour in compteur_jour:
+            compteur_jour[numero_jour] = compteur_jour[numero_jour] + 1
+        else:
+            compteur_jour[numero_jour] = 1
+
+    morceaux = []
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        if numero_jour in compteur_jour:
+            morceaux.append(str(compteur_jour[numero_jour]) + " " + nom_jour.lower())
+
+    return " · ".join(morceaux)
+
+
+def construire_repartition_canaux_texte(tickets):
+    compteur_canal = {}
+    total = len(tickets)
+    for ticket in tickets:
+        canal = ticket["via_channel"]
+        if canal in compteur_canal:
+            compteur_canal[canal] = compteur_canal[canal] + 1
+        else:
+            compteur_canal[canal] = 1
+
+    parts = []
+    for canal, compte in compteur_canal.items():
+        parts.append((canal, compte / total * 100))
+
+    def obtenir_part(item):
+        canal, part = item
+        return part
+
+    parts_triees = sorted(parts, key=obtenir_part, reverse=True)
+
+    morceaux = []
+    for canal, part in parts_triees:
+        morceaux.append(str(round(part)) + "% " + canal)
+
+    return " · ".join(morceaux)
+
+
+def construire_carte_hors_couverture(volume_actuel, moyenne_baseline, nb_semaines_baseline, type_signal, tickets_hors_tout):
+    ligne_volume = str(volume_actuel) + " demandes reçues hors couverture"
+
+    if moyenne_baseline is not None and moyenne_baseline > 0:
+        delta_pct = (volume_actuel - moyenne_baseline) / moyenne_baseline * 100
+        ligne_delta = (
+            "+" + str(round(delta_pct)) + "% vs moyenne des " + str(nb_semaines_baseline)
+            + " derniers exports disponibles"
+        )
+    else:
+        ligne_delta = "Pas d'historique de comparaison disponible sur cette période"
+
+    lignes_detail = ""
+    repartition_jours = construire_repartition_jours_texte(tickets_hors_tout)
+    if repartition_jours != "":
+        lignes_detail = lignes_detail + (
+            '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + repartition_jours + "</div>"
+        )
+
+    repartition_canaux = construire_repartition_canaux_texte(tickets_hors_tout)
+    if repartition_canaux != "":
+        lignes_detail = lignes_detail + (
+            '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + repartition_canaux + "</div>"
+        )
+
+    return (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        "border-left:6px solid " + COULEUR_ACCENT_HORS_COUVERTURE + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">Hors couverture</div>'
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + ligne_volume + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_delta + "</div>"
+        + lignes_detail
+        + '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_HORS_COUVERTURE + '; margin-top:4px;">'
+        + type_signal + "</div>"
         "</div>"
     )
 
@@ -1983,9 +2109,10 @@ with onglet_creneaux:
     st.divider()
     st.markdown(titre_section_principale("Couverture & hotspots"), unsafe_allow_html=True)
     st.caption(
-        "Où la couverture est-elle sous tension par rapport au volume reçu ? 🟢 Confortable · "
-        "🟡 À surveiller · 🟠 Couverture insuffisante · 🔴 Hotspot de volume. Les créneaux hors "
-        "horaire standard (y compris le week-end, sans horaire standard par défaut) sont grisés."
+        "Où la couverture est-elle sous tension par rapport au volume reçu, pendant les horaires "
+        "ouverts ? 🟢 Confortable · 🟡 À surveiller · 🔴 Hotspot. Les créneaux fermés (horaire "
+        "standard, pause, week-end) sont grisés — ce volume peut attendre la réouverture ; il est "
+        "suivi à part, agrégé sur la période, plus bas."
     )
 
     # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
@@ -2002,13 +2129,10 @@ with onglet_creneaux:
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
 
     demandes_par_jour_heure = {}
-    canaux_par_jour_heure = {}
     for nom_jour, numero_jour in JOURS_ORDRE:
         demandes_par_jour_heure[numero_jour] = {}
-        canaux_par_jour_heure[numero_jour] = {}
         for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
             demandes_par_jour_heure[numero_jour][heure] = 0
-            canaux_par_jour_heure[numero_jour][heure] = {}
 
     for ticket in tickets_s2:
         moment = ticket["created_at"]
@@ -2016,13 +2140,6 @@ with onglet_creneaux:
         heure_ticket = moment.hour
         if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
             demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
-
-            canal = ticket["via_channel"]
-            compteur_canal = canaux_par_jour_heure[jour_ticket][heure_ticket]
-            if canal in compteur_canal:
-                compteur_canal[canal] = compteur_canal[canal] + 1
-            else:
-                compteur_canal[canal] = 1
 
     # Une entrée par (jour, heure), construite heure par heure puis jour par jour — cet
     # ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
@@ -2033,7 +2150,7 @@ with onglet_creneaux:
             presents = agents_en_poste(planning_s2_dernier, agents_grille, numero_jour, heure)
             nb_agents = len(presents)
             demandes = demandes_par_jour_heure[numero_jour][heure]
-            statut = statut_creneau_standard(horaires_standard, heure)
+            statut = statut_creneau_standard(horaires_standard, numero_jour, heure)
 
             if nb_agents > 0:
                 ratio = demandes / nb_agents
@@ -2041,12 +2158,6 @@ with onglet_creneaux:
                 ratio = None
 
             niveau = niveau_charge_creneau(statut, nb_agents, ratio)
-
-            canal_dominant = None
-            part_canal_dominant = None
-            if demandes > 0:
-                canal_dominant, plus_grand_compte = obtenir_canal_dominant(canaux_par_jour_heure[numero_jour][heure])
-                part_canal_dominant = plus_grand_compte / demandes * 100
 
             grille_creneaux.append({
                 "jour": nom_jour,
@@ -2056,22 +2167,19 @@ with onglet_creneaux:
                 "demandes": demandes,
                 "ratio": ratio,
                 "niveau": niveau,
-                "canal_dominant": canal_dominant,
-                "part_canal_dominant": part_canal_dominant,
             })
 
     html_heatmap = (
         "<style>"
-        ".hm-grid { display: grid; grid-template-columns: 44px repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }"
-        ".hm-day-header, .hm-hour-label, .hm-corner { font-size: 11px; font-weight: 600; color: " + COULEUR_TEXTE_LABEL + "; "
-        "display: flex; align-items: center; justify-content: center; padding: 4px 2px; }"
-        ".hm-cell { border-radius: 6px; padding: 6px 4px; text-align: center; line-height: 1.35; "
-        "min-height: 58px; display: flex; flex-direction: column; justify-content: center; }"
-        ".hm-line-agents { font-weight: 600; font-size: 11px; color: " + COULEUR_TEXTE_VALEUR + "; }"
-        ".hm-line-demandes { font-size: 10px; color: " + COULEUR_TEXTE_LABEL + "; }"
-        ".hm-line-ratio { font-size: 11px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
-        ".hm-line-canal { font-size: 9px; color: " + COULEUR_TEXTE_LABEL + "; margin-top: 2px; }"
-        ".hm-muted { font-size: 10px; color: #B7AFA3; }"
+        ".hm-grid { display: grid; grid-template-columns: 40px repeat(7, 1fr); gap: 3px; margin-bottom: 8px; }"
+        ".hm-day-header, .hm-hour-label, .hm-corner { font-size: 10px; font-weight: 600; color: " + COULEUR_TEXTE_LABEL + "; "
+        "display: flex; align-items: center; justify-content: center; padding: 2px; }"
+        ".hm-cell { border-radius: 5px; padding: 3px 4px; text-align: center; line-height: 1.25; "
+        "min-height: 40px; display: flex; flex-direction: column; justify-content: center; }"
+        ".hm-line-agents { font-weight: 600; font-size: 10px; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-line-demandes { font-size: 9px; color: " + COULEUR_TEXTE_LABEL + "; }"
+        ".hm-line-ratio { font-size: 10px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-muted { font-size: 9px; color: #B7AFA3; }"
         "</style>"
     )
 
@@ -2090,19 +2198,17 @@ with onglet_creneaux:
     with st.container(border=True):
         st.markdown(html_heatmap, unsafe_allow_html=True)
 
-    st.caption("Survolez une cellule pour voir les agents en poste sur ce créneau.")
+    st.caption("Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau.")
 
     # ------------------------------------------------------------------
     # Vue semaine — 4 chiffres clés, pas un tableau de 7 lignes
     # ------------------------------------------------------------------
 
-    volume_total_semaine = 0
     totaux_jour = {}
     for nom_jour, numero_jour in JOURS_ORDRE:
         totaux_jour[nom_jour] = 0
 
     for entree in grille_creneaux:
-        volume_total_semaine = volume_total_semaine + entree["demandes"]
         totaux_jour[entree["jour"]] = totaux_jour[entree["jour"]] + entree["demandes"]
 
     jour_le_plus_charge = None
@@ -2119,20 +2225,23 @@ with onglet_creneaux:
             ratio_max = entree["ratio"]
             creneau_le_plus_charge = entree
 
-    compteur_canal_semaine = {}
-    for ticket in tickets_s2:
-        canal = ticket["via_channel"]
-        if canal in compteur_canal_semaine:
-            compteur_canal_semaine[canal] = compteur_canal_semaine[canal] + 1
-        else:
-            compteur_canal_semaine[canal] = 1
-
-    canal_dominant_semaine, compte_dominant_semaine = obtenir_canal_dominant(compteur_canal_semaine)
+    # tickets_hors_tout (pause + hors créneau, toutes heures confondues) est déjà calculé
+    # plus haut dans cet onglet, pour la section "Volume hors créneau".
+    volume_hors_couverture_actuel = len(tickets_hors_tout)
+    volumes_baseline_hors_couverture = calculer_baseline_hors_couverture(
+        exports_disponibles, date_a_debut, NB_SEMAINES_BASELINE_HORS_COUVERTURE
+    )
+    if len(volumes_baseline_hors_couverture) > 0:
+        moyenne_baseline_hors_couverture = (
+            sum(volumes_baseline_hors_couverture) / len(volumes_baseline_hors_couverture)
+        )
+    else:
+        moyenne_baseline_hors_couverture = None
 
     st.markdown("**Vue semaine**")
     colonne_v1, colonne_v2, colonne_v3, colonne_v4 = st.columns(4)
     colonne_v1.markdown(
-        construire_carte_kpi("Volume total (7h-21h)", formater_nombre_espace(volume_total_semaine)),
+        construire_carte_kpi("Demandes reçues", formater_nombre_espace(len(tickets_s2))),
         unsafe_allow_html=True,
     )
     if jour_le_plus_charge is not None:
@@ -2150,28 +2259,29 @@ with onglet_creneaux:
         )
         colonne_v3.markdown(
             construire_carte_kpi(
-                "Créneau le plus chargé", texte_creneau_max,
+                "Pic de charge", texte_creneau_max,
                 sous_texte=str(round(creneau_le_plus_charge["ratio"], 1)) + " demandes/agent",
             ),
             unsafe_allow_html=True,
         )
-    if canal_dominant_semaine is not None and len(tickets_s2) > 0:
-        part_dominant_semaine = compte_dominant_semaine / len(tickets_s2) * 100
+    if len(tickets_s2) > 0:
+        part_hors_couverture = volume_hors_couverture_actuel / len(tickets_s2) * 100
         colonne_v4.markdown(
             construire_carte_kpi(
-                "Canal dominant", canal_dominant_semaine,
-                sous_texte=formater_pourcentage(part_dominant_semaine) + " du volume",
+                "Reçues hors couverture", formater_nombre_espace(volume_hors_couverture_actuel),
+                sous_texte=formater_pourcentage(part_hors_couverture) + " du volume",
             ),
             unsafe_allow_html=True,
         )
 
     # ------------------------------------------------------------------
-    # Hotspots à surveiller — seulement les situations réellement critiques
+    # Deux catégories seulement : tension pendant l'ouverture (par créneau) et
+    # volume hors couverture (agrégé sur la période, jamais créneau par créneau).
     # ------------------------------------------------------------------
 
     situations_tension = []
     for entree in grille_creneaux:
-        if entree["niveau"] in ("SOUS_COUVERTURE", "HOTSPOT"):
+        if entree["niveau"] == "HOTSPOT":
             situations_tension.append(entree)
 
     def obtenir_ratio_tri_situation(entree):
@@ -2181,10 +2291,26 @@ with onglet_creneaux:
 
     situations_tension_triees = sorted(situations_tension, key=obtenir_ratio_tri_situation, reverse=True)
 
+    st.markdown("**Tensions de couverture**")
     if len(situations_tension_triees) > 0:
-        st.markdown("**Hotspots à surveiller**")
         for entree in situations_tension_triees[:5]:
-            st.markdown(construire_carte_situation(entree), unsafe_allow_html=True)
+            est_pic_semaine = creneau_le_plus_charge is not None and (
+                entree["jour"] == creneau_le_plus_charge["jour"] and entree["heure"] == creneau_le_plus_charge["heure"]
+            )
+            st.markdown(construire_carte_situation(entree, est_pic_semaine), unsafe_allow_html=True)
+    else:
+        st.caption("Aucune tension de couverture significative sur cette période.")
+
+    if hors_couverture_est_significatif(volume_hors_couverture_actuel, moyenne_baseline_hors_couverture):
+        st.markdown("**Demande hors horaires**")
+        type_signal = type_signal_hors_couverture(volumes_baseline_hors_couverture)
+        st.markdown(
+            construire_carte_hors_couverture(
+                volume_hors_couverture_actuel, moyenne_baseline_hors_couverture,
+                len(volumes_baseline_hors_couverture), type_signal, tickets_hors_tout,
+            ),
+            unsafe_allow_html=True,
+        )
 
     with st.expander("Détail horaires par agent (référence texte)"):
         lignes_planning = [

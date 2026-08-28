@@ -178,19 +178,19 @@ class TestNiveauChargeCreneau(unittest.TestCase):
         # Un statut hors "Couverture requise" reste muet même avec un volume élevé.
         self.assertEqual(niveau_charge_creneau("Hors standard", 0, None), "HORS_COUVERTURE")
 
-    def test_zero_agent_en_couverture_requise_est_sous_couverture(self):
-        self.assertEqual(niveau_charge_creneau("Couverture requise", 0, None), "SOUS_COUVERTURE")
+    def test_zero_agent_en_couverture_requise_est_hotspot(self):
+        # Anomalie reelle (personne en poste alors que le creneau devrait etre couvert),
+        # distincte d'une fermeture assumee (HORS_COUVERTURE).
+        self.assertEqual(niveau_charge_creneau("Couverture requise", 0, None), "HOTSPOT")
 
     def test_un_agent_charge_confortable_est_confortable(self):
         self.assertEqual(niveau_charge_creneau("Couverture requise", 1, 10), "CONFORTABLE")
 
-    def test_un_agent_charge_a_surveiller_reste_a_surveiller(self):
-        # Le seuil bas de charge (16-30) ne bascule pas en sous-couverture, même a 1 agent -
-        # la degradation par effectif ne s'applique qu'au-dela du seuil critique (>30).
+    def test_charge_a_surveiller_reste_a_surveiller(self):
         self.assertEqual(niveau_charge_creneau("Couverture requise", 1, 20), "A_SURVEILLER")
 
-    def test_un_agent_charge_critique_est_sous_couverture(self):
-        self.assertEqual(niveau_charge_creneau("Couverture requise", 1, 35), "SOUS_COUVERTURE")
+    def test_un_agent_charge_critique_est_hotspot(self):
+        self.assertEqual(niveau_charge_creneau("Couverture requise", 1, 35), "HOTSPOT")
 
     def test_deux_agents_charge_critique_est_hotspot(self):
         self.assertEqual(niveau_charge_creneau("Couverture requise", 2, 35), "HOTSPOT")

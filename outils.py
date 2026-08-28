@@ -689,23 +689,22 @@ def niveau_charge_agent(valeur):
         return "CRITIQUE"
 
 
-# En dessous de ce nombre d'agents, une charge critique se lit comme un manque de
-# couverture (le problème, c'est l'effectif) plutôt qu'un hotspot de volume pur (le
-# problème, c'est le nombre de demandes malgré un effectif déjà correct).
-AGENTS_MINIMUM_COUVERTURE = 1
-
-
+# Un créneau "hors couverture" (fermé par conception : horaire standard, pause, week-end)
+# n'est jamais une tension de couverture, quel que soit le volume reçu — ces demandes
+# attendent la réouverture, ce n'est pas une anomalie. Ce volume est évalué à part, agrégé
+# sur la période et comparé à l'historique (voir calculer_baseline_hors_couverture côté
+# app.py), pas créneau par créneau ici.
 def niveau_charge_creneau(statut, nb_agents, ratio):
     if statut != "Couverture requise":
         return "HORS_COUVERTURE"
 
     if nb_agents == 0:
-        return "SOUS_COUVERTURE"
+        # Anomalie réelle : personne en poste pendant un horaire censé être couvert
+        # (à distinguer d'une fermeture assumée, qui elle est HORS_COUVERTURE ci-dessus).
+        return "HOTSPOT"
 
     niveau_ratio = niveau_charge_agent(ratio)
     if niveau_ratio == "CRITIQUE":
-        if nb_agents <= AGENTS_MINIMUM_COUVERTURE:
-            return "SOUS_COUVERTURE"
         return "HOTSPOT"
     elif niveau_ratio == "A SURVEILLER":
         return "A_SURVEILLER"
