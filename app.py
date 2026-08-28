@@ -205,7 +205,21 @@ def construire_schema_composants(par_composant, couleur):
     )
 
 
-def afficher_tableau_colore(lignes, colonne_figee=None):
+def construire_fonction_couleur_bloc(colonne_valeur, niveaux_par_ligne):
+    def appliquer_couleur_bloc(ligne):
+        couleur = couleur_niveau(niveaux_par_ligne[ligne.name])
+        styles = []
+        for nom_colonne in ligne.index:
+            if nom_colonne == colonne_valeur:
+                styles.append(couleur)
+            else:
+                styles.append("")
+        return styles
+
+    return appliquer_couleur_bloc
+
+
+def afficher_tableau_colore(lignes, colonne_figee=None, colonnes_couleur_bloc=None):
     if len(lignes) == 0:
         st.write("Aucune donnée.")
         return
@@ -226,6 +240,16 @@ def afficher_tableau_colore(lignes, colonne_figee=None):
     # cohérent partout où une colonne "CSAT" existe, pas besoin de le déclarer à chaque appel.
     if "CSAT" in tableau.columns:
         tableau_stylise = tableau_stylise.map(couleur_texte_csat, subset=["CSAT"])
+
+    # colonnes_couleur_bloc : {colonne affichée à colorer: liste des niveaux, un par ligne,
+    # dans le même ordre que `lignes`} — pour colorer le bloc d'une valeur (ex: un temps, un %)
+    # directement, sans colonne "Niveau ..." séparée. Les niveaux sont passés à part (pas comme
+    # colonne du tableau) car Styler.hide() n'est pas respecté par le rendu st.dataframe.
+    if colonnes_couleur_bloc is not None:
+        for colonne_valeur, niveaux_par_ligne in colonnes_couleur_bloc.items():
+            tableau_stylise = tableau_stylise.apply(
+                construire_fonction_couleur_bloc(colonne_valeur, niveaux_par_ligne), axis=1
+            )
 
     configuration_colonnes = None
     if colonne_figee is not None:
@@ -905,8 +929,15 @@ with onglet_vue:
     st.divider()
     st.markdown(titre_section_principale("Performance par catégorie"), unsafe_allow_html=True)
     st.caption(DEFINITION_EN_CRENEAU)
+    st.caption(
+        "* 1re réponse en créneau : sous 1h30 (OK), 1h30-2h (à surveiller), au-delà de 2h "
+        "(critique) — le bloc se colore selon ce seuil. Utilisation macro : objectif minimum "
+        "70 % des demandes traitées via macro, au moins une fois dans la conversation."
+    )
 
     lignes_categories = []
+    niveaux_reponse_categories = []
+    niveaux_macro_categories = []
 
     if comparaison_disponible:
         categories_a_afficher_perf = cles_combinees(categories_s2, categories_s1)
@@ -921,12 +952,10 @@ with onglet_vue:
         macro_cat_s2 = taux_rempli(tickets_cat_s2, "macro_applied")
 
         if len(tickets_cat_s2) > 0:
-            en_creneau_cat, pause_cat, hors_cat = separer_creneau(tickets_cat_s2, planning_s2)
+            en_creneau_cat = separer_creneau(tickets_cat_s2, planning_s2)[0]
             frt_en_creneau_cat = moyenne(en_creneau_cat, "first_reply_time_min")
-            pct_hors_creneau_cat = (len(pause_cat) + len(hors_cat)) / len(tickets_cat_s2) * 100
         else:
             frt_en_creneau_cat = None
-            pct_hors_creneau_cat = None
 
         ligne = {"Catégorie": categorie}
 
@@ -936,22 +965,28 @@ with onglet_vue:
         ligne["Volume période actuelle"] = len(tickets_cat_s2)
         ligne["CSAT"] = "N/A"
         ligne["1re réponse (en créneau)"] = "N/A"
-        ligne["Niveau réponse"] = ""
-        ligne["% hors créneau"] = formater_pourcentage(pct_hors_creneau_cat)
         ligne["Utilisation macro (%)"] = formater_pourcentage(macro_cat_s2)
-        ligne["Niveau utilisation macro"] = niveau_macro(macro_cat_s2)
 
         if csat_cat_s2 is not None:
             ligne["CSAT"] = formater_csat(csat_cat_s2)
 
+        niveau_reponse_categorie = ""
         if frt_en_creneau_cat is not None:
             ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_cat)
-            ligne["Niveau réponse"] = niveau_reponse_ouvree(frt_en_creneau_cat)
+            niveau_reponse_categorie = niveau_reponse_ouvree(frt_en_creneau_cat)
 
         lignes_categories.append(ligne)
+        niveaux_reponse_categories.append(niveau_reponse_categorie)
+        niveaux_macro_categories.append(niveau_macro(macro_cat_s2))
 
     with st.container(border=True):
-        afficher_tableau_colore(lignes_categories)
+        afficher_tableau_colore(
+            lignes_categories,
+            colonnes_couleur_bloc={
+                "1re réponse (en créneau)": niveaux_reponse_categories,
+                "Utilisation macro (%)": niveaux_macro_categories,
+            },
+        )
 
 
 # ------------------------------------------------------------------
