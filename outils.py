@@ -676,15 +676,15 @@ def niveau_macro(valeur):
 
 def couleur_niveau(valeur):
     if valeur in ("OK", "CORRECT", "Correct", "EXCELLENT", "Excellent", "En créneau", "Fort potentiel"):
-        return "background-color: #c6f0d2"
+        return "background-color: #D9EDDD"
     elif valeur in ("A SURVEILLER", "À surveiller", "Potentiel moyen"):
-        return "background-color: #ffe8a1"
+        return "background-color: #F7E2B8"
     elif valeur in ("CRITIQUE", "Critique", "DEBORDEMENT", "Débordement", "Risque de perte du prospect"):
-        return "background-color: #f7c6c2"
+        return "background-color: #F3D2CB"
     elif valeur in ("NOUVEAU", "Nouveau"):
-        return "background-color: #c6dcf7"
+        return "background-color: #D3E1F0"
     elif valeur in ("DISPARU", "Disparu"):
-        return "background-color: #e0e0e0"
+        return "background-color: #E4E1DB"
     else:
         return ""
 

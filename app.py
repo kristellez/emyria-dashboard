@@ -567,16 +567,6 @@ st.caption(periode_texte)
 if comparer and not comparaison_disponible:
     st.caption("Aucun export disponible sur la période B choisie — pas de comparaison possible.")
 
-with st.sidebar.expander("🎨 Comment lire les couleurs", expanded=True):
-    st.markdown(
-        "🟢 **Vert** — OK / Correct / Excellent / Fort potentiel : rien à faire\n\n"
-        "🟡 **Jaune** — À surveiller / Potentiel moyen : à garder à l'œil\n\n"
-        "🔴 **Rouge** — Critique / Débordement / Risque de perte du prospect : action recommandée\n\n"
-        "🔵 **Bleu** — Nouveau : sujet apparu depuis la période précédente\n\n"
-        "⚪ **Gris** — Disparu : sujet qui n'apparaît plus sur la période actuelle"
-    )
-    st.caption("CSAT noté sur une échelle de 0 à 5.")
-
 categories_s1 = grouper_par_categorie(tickets_s1)
 categories_s2 = grouper_par_categorie(tickets_s2)
 
@@ -682,8 +672,7 @@ with onglet_contexte:
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
             "- **Conversion & acquisition** : conversion réelle après contact avant-vente\n"
             "- **Impact & confiance** : coûts SAV, confiance client (NPS)\n\n"
-            "Les tableaux utilisent un code couleur (vert/jaune/rouge/bleu/gris) — légende "
-            "dans la barre latérale."
+            "CSAT noté sur une échelle de 0 à 5."
         )
 
     st.divider()
