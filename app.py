@@ -314,7 +314,7 @@ COULEUR_BORDURE_BANDEAU = "#EAD9C4"
 COULEUR_ACCENT_OK = "#3FA76B"
 COULEUR_ACCENT_SURVEILLER = "#E0A72E"
 COULEUR_ACCENT_CRITIQUE = "#D1483B"
-COULEUR_ACCENT_DEBORDEMENT = "#8B2E24"
+COULEUR_ACCENT_DEBORDEMENT = "#A6291E"
 
 
 def formater_delta_kpi(delta, delta_couleur):
@@ -353,7 +353,7 @@ def construire_carte_kpi(label, valeur, delta=None, delta_couleur="normal", sous
     if accent is None:
         bordure_gauche = "border-left:1px solid " + COULEUR_BORDURE_CARTE + ";"
     else:
-        bordure_gauche = "border-left:3px solid " + accent + ";"
+        bordure_gauche = "border-left:6px solid " + accent + ";"
 
     html = (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
