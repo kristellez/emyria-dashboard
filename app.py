@@ -46,9 +46,7 @@ from outils import (
     CATEGORIE_SAV_PRODUIT,
     couleur_texte_csat,
     niveau_macro,
-    niveau_charge_agent,
-    SEUIL_CHARGE_CONFORTABLE,
-    SEUIL_CHARGE_SURVEILLER,
+    niveau_charge_creneau,
     niveau_reponse_ouvree,
     niveau_hausse_sujet,
     couleur_niveau,
@@ -256,13 +254,7 @@ def afficher_tableau_colore(lignes, colonne_figee=None, colonnes_couleur_bloc=No
 
     configuration_colonnes = None
     if colonne_figee is not None:
-        colonnes_figees = colonne_figee
-        if isinstance(colonnes_figees, str):
-            colonnes_figees = [colonnes_figees]
-
-        configuration_colonnes = {}
-        for nom_colonne_figee in colonnes_figees:
-            configuration_colonnes[nom_colonne_figee] = st.column_config.Column(pinned=True)
+        configuration_colonnes = {colonne_figee: st.column_config.Column(pinned=True)}
 
     st.dataframe(
         tableau_stylise,
@@ -364,8 +356,18 @@ COULEUR_BORDURE_BANDEAU = "#EAD9C4"
 # plutôt qu'un fond de cellule de tableau — même langage de statut, contexte différent.
 COULEUR_ACCENT_OK = "#3FA76B"
 COULEUR_ACCENT_SURVEILLER = "#E0A72E"
+COULEUR_ACCENT_SOUS_COUVERTURE = "#D9822E"
 COULEUR_ACCENT_CRITIQUE = "#D1483B"
 COULEUR_ACCENT_DEBORDEMENT = "#A6291E"
+
+# Fonds de cellule pour la heatmap de couverture (onglet Staffing & réactivité) — même
+# progression vert/jaune/orange/rouge que les accents ci-dessus, en teinte pâle pour un
+# fond de cellule plutôt qu'un liseré.
+COULEUR_HEATMAP_CONFORTABLE = "#D9EDDD"
+COULEUR_HEATMAP_SURVEILLER = "#F7E2B8"
+COULEUR_HEATMAP_SOUS_COUVERTURE = "#F5D0A8"
+COULEUR_HEATMAP_HOTSPOT = "#F3D2CB"
+COULEUR_HEATMAP_HORS_COUVERTURE = "#F4F2EE"
 
 
 def formater_delta_kpi(delta, delta_couleur):
@@ -449,6 +451,100 @@ def titre_section_principale(texte):
     return (
         '<div style="border-left:4px solid ' + COULEUR_PRIMAIRE + "; padding-left:14px; margin:10px 0 6px;\">"
         '<span style="font-size:23px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + texte + "</span>"
+        "</div>"
+    )
+
+
+def obtenir_canal_dominant(compteur_canal):
+    canal_dominant = None
+    plus_grand_compte = 0
+    for canal, compte in compteur_canal.items():
+        if compte > plus_grand_compte:
+            plus_grand_compte = compte
+            canal_dominant = canal
+    return canal_dominant, plus_grand_compte
+
+
+def obtenir_icone_canal(canal):
+    if canal == "Téléphone":
+        return "☎"
+    elif canal == "Email":
+        return "✉"
+    elif canal == "Chat":
+        return "💬"
+    elif canal == "WhatsApp":
+        return "📱"
+    else:
+        return "•"
+
+
+COULEUR_FOND_HEATMAP_PAR_NIVEAU = {
+    "CONFORTABLE": COULEUR_HEATMAP_CONFORTABLE,
+    "A_SURVEILLER": COULEUR_HEATMAP_SURVEILLER,
+    "SOUS_COUVERTURE": COULEUR_HEATMAP_SOUS_COUVERTURE,
+    "HOTSPOT": COULEUR_HEATMAP_HOTSPOT,
+    "HORS_COUVERTURE": COULEUR_HEATMAP_HORS_COUVERTURE,
+}
+
+
+def construire_cellule_heatmap(entree):
+    couleur_fond = COULEUR_FOND_HEATMAP_PAR_NIVEAU[entree["niveau"]]
+
+    titre_tooltip = ""
+    if len(entree["agents"]) > 0:
+        titre_tooltip = ", ".join(entree["agents"])
+
+    if entree["niveau"] == "HORS_COUVERTURE":
+        if entree["demandes"] > 0:
+            contenu = '<div class="hm-muted">' + str(entree["demandes"]) + "</div>"
+        else:
+            contenu = '<div class="hm-muted">—</div>'
+    else:
+        contenu = (
+            '<div class="hm-line-agents">' + str(entree["nb_agents"]) + " agent(s)</div>"
+            '<div class="hm-line-demandes">' + str(entree["demandes"]) + " demandes</div>"
+        )
+
+        if entree["ratio"] is not None:
+            contenu = contenu + '<div class="hm-line-ratio">' + str(round(entree["ratio"], 1)) + " / agent</div>"
+
+        if entree["niveau"] in ("SOUS_COUVERTURE", "HOTSPOT") and entree["canal_dominant"] is not None:
+            texte_canal = (
+                obtenir_icone_canal(entree["canal_dominant"]) + " "
+                + str(round(entree["part_canal_dominant"])) + "% " + entree["canal_dominant"].lower()
+            )
+            contenu = contenu + '<div class="hm-line-canal">' + texte_canal + "</div>"
+
+    return (
+        '<div class="hm-cell" style="background-color:' + couleur_fond + ';" title="' + titre_tooltip + '">'
+        + contenu + "</div>"
+    )
+
+
+def construire_carte_situation(entree):
+    titre = entree["jour"] + " " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
+
+    if entree["niveau"] == "SOUS_COUVERTURE":
+        if entree["canal_dominant"] is not None:
+            ligne_detail = (
+                str(entree["demandes"]) + " demandes · " + entree["canal_dominant"] + " "
+                + str(round(entree["part_canal_dominant"])) + "%"
+            )
+        else:
+            ligne_detail = str(entree["demandes"]) + " demandes"
+        verdict = "Couverture insuffisante"
+        accent = COULEUR_ACCENT_SOUS_COUVERTURE
+    else:
+        ligne_detail = str(entree["demandes"]) + " demandes · " + str(entree["nb_agents"]) + " agent(s)"
+        verdict = str(round(entree["ratio"], 1)) + " demandes / agent"
+        accent = COULEUR_ACCENT_CRITIQUE
+
+    return (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        "border-left:6px solid " + accent + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + titre + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + ligne_detail + "</div>"
+        '<div style="font-size:12px; font-weight:600; color:' + accent + '; margin-top:4px;">' + verdict + "</div>"
         "</div>"
     )
 
@@ -1885,14 +1981,11 @@ with onglet_creneaux:
         st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
     st.divider()
-    st.markdown(titre_section_principale("Planning de couverture & hotspots"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Couverture & hotspots"), unsafe_allow_html=True)
     st.caption(
-        "Charge par agent, heure par heure (7h-21h, lundi à dimanche) : nombre d'agents planifiés "
-        "vs volume de tickets reçus sur la période. Vert = charge confortable ("
-        + str(SEUIL_CHARGE_CONFORTABLE) + " demandes/agent ou moins), jaune = à surveiller (jusqu'à "
-        + str(SEUIL_CHARGE_SURVEILLER) + "), rouge = hotspot (au-delà). Le statut \"standard\" reflète "
-        "l'horaire de référence lundi-vendredi (identique ces jours-là) — le week-end n'a pas d'horaire "
-        "standard par défaut, sa couverture est ponctuelle (ex : renfort saisonnier)."
+        "Où la couverture est-elle sous tension par rapport au volume reçu ? 🟢 Confortable · "
+        "🟡 À surveiller · 🟠 Couverture insuffisante · 🔴 Hotspot de volume. Les créneaux hors "
+        "horaire standard (y compris le week-end, sans horaire standard par défaut) sont grisés."
     )
 
     # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
@@ -1909,10 +2002,13 @@ with onglet_creneaux:
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
 
     demandes_par_jour_heure = {}
+    canaux_par_jour_heure = {}
     for nom_jour, numero_jour in JOURS_ORDRE:
         demandes_par_jour_heure[numero_jour] = {}
+        canaux_par_jour_heure[numero_jour] = {}
         for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
             demandes_par_jour_heure[numero_jour][heure] = 0
+            canaux_par_jour_heure[numero_jour][heure] = {}
 
     for ticket in tickets_s2:
         moment = ticket["created_at"]
@@ -1921,94 +2017,174 @@ with onglet_creneaux:
         if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
             demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
 
-    lignes_grille_hotspots = []
-    niveaux_charge_par_colonne = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        niveaux_charge_par_colonne[nom_jour + " - Dem./agent"] = []
+            canal = ticket["via_channel"]
+            compteur_canal = canaux_par_jour_heure[jour_ticket][heure_ticket]
+            if canal in compteur_canal:
+                compteur_canal[canal] = compteur_canal[canal] + 1
+            else:
+                compteur_canal[canal] = 1
 
-    hotspot_par_jour = {}
-    totaux_volume_par_jour = {}
-    totaux_ratios_par_jour = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        hotspot_par_jour[nom_jour] = None
-        totaux_volume_par_jour[nom_jour] = 0
-        totaux_ratios_par_jour[nom_jour] = []
-
+    # Une entrée par (jour, heure), construite heure par heure puis jour par jour — cet
+    # ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
+    # "auto-flow: row", qui suit l'ordre du DOM).
+    grille_creneaux = []
     for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-        ligne = {
-            "Créneau": str(heure) + "h-" + str(heure + 1) + "h",
-            "Statut": statut_creneau_standard(horaires_standard, heure),
-        }
-
         for nom_jour, numero_jour in JOURS_ORDRE:
             presents = agents_en_poste(planning_s2_dernier, agents_grille, numero_jour, heure)
             nb_agents = len(presents)
             demandes = demandes_par_jour_heure[numero_jour][heure]
+            statut = statut_creneau_standard(horaires_standard, heure)
 
             if nb_agents > 0:
                 ratio = demandes / nb_agents
-                agents_texte = " + ".join(presents)
-                ratio_texte = str(round(ratio, 1))
             else:
                 ratio = None
-                agents_texte = "-"
-                ratio_texte = "N/A"
 
-            ligne[nom_jour + " - Agents"] = agents_texte
-            ligne[nom_jour + " - Nb agents"] = nb_agents
-            ligne[nom_jour + " - Demandes"] = demandes
-            ligne[nom_jour + " - Dem./agent"] = ratio_texte
+            niveau = niveau_charge_creneau(statut, nb_agents, ratio)
 
-            niveaux_charge_par_colonne[nom_jour + " - Dem./agent"].append(niveau_charge_agent(ratio))
+            canal_dominant = None
+            part_canal_dominant = None
+            if demandes > 0:
+                canal_dominant, plus_grand_compte = obtenir_canal_dominant(canaux_par_jour_heure[numero_jour][heure])
+                part_canal_dominant = plus_grand_compte / demandes * 100
 
-            totaux_volume_par_jour[nom_jour] = totaux_volume_par_jour[nom_jour] + demandes
-            if ratio is not None:
-                totaux_ratios_par_jour[nom_jour].append(ratio)
-                hotspot_actuel = hotspot_par_jour[nom_jour]
-                if hotspot_actuel is None or ratio > hotspot_actuel[1]:
-                    hotspot_par_jour[nom_jour] = (heure, ratio)
-
-        lignes_grille_hotspots.append(ligne)
-
-    with st.container(border=True):
-        afficher_tableau_colore(
-            lignes_grille_hotspots,
-            colonne_figee=["Créneau", "Statut"],
-            colonnes_couleur_bloc=niveaux_charge_par_colonne,
-        )
-
-    lignes_hotspots = []
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        hotspot = hotspot_par_jour[nom_jour]
-        if hotspot is not None:
-            heure_hotspot, ratio_hotspot = hotspot
-            lignes_hotspots.append({
-                "Jour": nom_jour,
-                "Créneau le plus chargé": str(heure_hotspot) + "h-" + str(heure_hotspot + 1) + "h",
-                "Dem./agent": str(round(ratio_hotspot, 1)),
+            grille_creneaux.append({
+                "jour": nom_jour,
+                "heure": heure,
+                "nb_agents": nb_agents,
+                "agents": presents,
+                "demandes": demandes,
+                "ratio": ratio,
+                "niveau": niveau,
+                "canal_dominant": canal_dominant,
+                "part_canal_dominant": part_canal_dominant,
             })
 
-    lignes_totaux_jour = []
+    html_heatmap = (
+        "<style>"
+        ".hm-grid { display: grid; grid-template-columns: 44px repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }"
+        ".hm-day-header, .hm-hour-label, .hm-corner { font-size: 11px; font-weight: 600; color: " + COULEUR_TEXTE_LABEL + "; "
+        "display: flex; align-items: center; justify-content: center; padding: 4px 2px; }"
+        ".hm-cell { border-radius: 6px; padding: 6px 4px; text-align: center; line-height: 1.35; "
+        "min-height: 58px; display: flex; flex-direction: column; justify-content: center; }"
+        ".hm-line-agents { font-weight: 600; font-size: 11px; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-line-demandes { font-size: 10px; color: " + COULEUR_TEXTE_LABEL + "; }"
+        ".hm-line-ratio { font-size: 11px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-line-canal { font-size: 9px; color: " + COULEUR_TEXTE_LABEL + "; margin-top: 2px; }"
+        ".hm-muted { font-size: 10px; color: #B7AFA3; }"
+        "</style>"
+    )
+
+    html_heatmap = html_heatmap + '<div class="hm-grid">' + '<div class="hm-corner"></div>'
     for nom_jour, numero_jour in JOURS_ORDRE:
-        ratios_jour = totaux_ratios_par_jour[nom_jour]
-        if len(ratios_jour) > 0:
-            moyenne_texte = str(round(sum(ratios_jour) / len(ratios_jour), 1))
+        html_heatmap = html_heatmap + '<div class="hm-day-header">' + nom_jour[:3] + "</div>"
+
+    index_entree = 0
+    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+        html_heatmap = html_heatmap + '<div class="hm-hour-label">' + str(heure) + "h</div>"
+        for nom_jour, numero_jour in JOURS_ORDRE:
+            html_heatmap = html_heatmap + construire_cellule_heatmap(grille_creneaux[index_entree])
+            index_entree = index_entree + 1
+    html_heatmap = html_heatmap + "</div>"
+
+    with st.container(border=True):
+        st.markdown(html_heatmap, unsafe_allow_html=True)
+
+    st.caption("Survolez une cellule pour voir les agents en poste sur ce créneau.")
+
+    # ------------------------------------------------------------------
+    # Vue semaine — 4 chiffres clés, pas un tableau de 7 lignes
+    # ------------------------------------------------------------------
+
+    volume_total_semaine = 0
+    totaux_jour = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        totaux_jour[nom_jour] = 0
+
+    for entree in grille_creneaux:
+        volume_total_semaine = volume_total_semaine + entree["demandes"]
+        totaux_jour[entree["jour"]] = totaux_jour[entree["jour"]] + entree["demandes"]
+
+    jour_le_plus_charge = None
+    volume_max_jour = -1
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        if totaux_jour[nom_jour] > volume_max_jour:
+            volume_max_jour = totaux_jour[nom_jour]
+            jour_le_plus_charge = nom_jour
+
+    creneau_le_plus_charge = None
+    ratio_max = -1
+    for entree in grille_creneaux:
+        if entree["ratio"] is not None and entree["ratio"] > ratio_max:
+            ratio_max = entree["ratio"]
+            creneau_le_plus_charge = entree
+
+    compteur_canal_semaine = {}
+    for ticket in tickets_s2:
+        canal = ticket["via_channel"]
+        if canal in compteur_canal_semaine:
+            compteur_canal_semaine[canal] = compteur_canal_semaine[canal] + 1
         else:
-            moyenne_texte = "N/A"
+            compteur_canal_semaine[canal] = 1
 
-        lignes_totaux_jour.append({
-            "Jour": nom_jour,
-            "Volume total": totaux_volume_par_jour[nom_jour],
-            "Dem./agent moyen": moyenne_texte,
-        })
+    canal_dominant_semaine, compte_dominant_semaine = obtenir_canal_dominant(compteur_canal_semaine)
 
-    colonne_hotspots, colonne_totaux = st.columns(2)
-    with colonne_hotspots:
-        st.markdown("**Hotspots — créneau le plus chargé par jour**")
-        st.dataframe(lignes_hotspots, hide_index=True, width="stretch")
-    with colonne_totaux:
-        st.markdown("**Total par jour**")
-        st.dataframe(lignes_totaux_jour, hide_index=True, width="stretch")
+    st.markdown("**Vue semaine**")
+    colonne_v1, colonne_v2, colonne_v3, colonne_v4 = st.columns(4)
+    colonne_v1.markdown(
+        construire_carte_kpi("Volume total (7h-21h)", formater_nombre_espace(volume_total_semaine)),
+        unsafe_allow_html=True,
+    )
+    if jour_le_plus_charge is not None:
+        colonne_v2.markdown(
+            construire_carte_kpi(
+                "Jour le plus chargé", jour_le_plus_charge,
+                sous_texte=formater_nombre_espace(volume_max_jour) + " demandes",
+            ),
+            unsafe_allow_html=True,
+        )
+    if creneau_le_plus_charge is not None:
+        texte_creneau_max = (
+            creneau_le_plus_charge["jour"] + " " + str(creneau_le_plus_charge["heure"]) + "h-"
+            + str(creneau_le_plus_charge["heure"] + 1) + "h"
+        )
+        colonne_v3.markdown(
+            construire_carte_kpi(
+                "Créneau le plus chargé", texte_creneau_max,
+                sous_texte=str(round(creneau_le_plus_charge["ratio"], 1)) + " demandes/agent",
+            ),
+            unsafe_allow_html=True,
+        )
+    if canal_dominant_semaine is not None and len(tickets_s2) > 0:
+        part_dominant_semaine = compte_dominant_semaine / len(tickets_s2) * 100
+        colonne_v4.markdown(
+            construire_carte_kpi(
+                "Canal dominant", canal_dominant_semaine,
+                sous_texte=formater_pourcentage(part_dominant_semaine) + " du volume",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Hotspots à surveiller — seulement les situations réellement critiques
+    # ------------------------------------------------------------------
+
+    situations_tension = []
+    for entree in grille_creneaux:
+        if entree["niveau"] in ("SOUS_COUVERTURE", "HOTSPOT"):
+            situations_tension.append(entree)
+
+    def obtenir_ratio_tri_situation(entree):
+        if entree["ratio"] is None:
+            return float("inf")
+        return entree["ratio"]
+
+    situations_tension_triees = sorted(situations_tension, key=obtenir_ratio_tri_situation, reverse=True)
+
+    if len(situations_tension_triees) > 0:
+        st.markdown("**Hotspots à surveiller**")
+        for entree in situations_tension_triees[:5]:
+            st.markdown(construire_carte_situation(entree), unsafe_allow_html=True)
 
     with st.expander("Détail horaires par agent (référence texte)"):
         lignes_planning = [
