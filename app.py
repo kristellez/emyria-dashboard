@@ -675,6 +675,339 @@ def construire_carte_hors_couverture(volume_actuel, moyenne_baseline, nb_semaine
     )
 
 
+SLA_OBJECTIF_PCT = 85
+SEUIL_PIC_EXCEPTIONNEL_PCT = 30
+
+
+# Agents à afficher dans la grille de couverture : priorité au planning réellement déclaré
+# (un agent programmé cette semaine mais qui n'a clôturé aucun ticket ne doit pas disparaître),
+# les assignees de tickets non présents dans le planning sont ajoutés en complément.
+def construire_agents_grille(tickets, planning_dernier):
+    agents_de_la_periode = grouper_par(tickets, "assignee")
+    agents_a_afficher = cles_combinees(planning_dernier, agents_de_la_periode)
+
+    agents_grille = []
+    for agent in agents_a_afficher:
+        if agent != NOM_AGENT_DEFAUT:
+            agents_grille.append(agent)
+    return agents_grille
+
+
+# Une entrée par (jour, heure) 7h-21h, dans l'ordre heure par heure puis jour par jour — cet
+# ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
+# "auto-flow: row", qui suit l'ordre du DOM).
+def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaires_standard):
+    demandes_par_jour_heure = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        demandes_par_jour_heure[numero_jour] = {}
+        for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+            demandes_par_jour_heure[numero_jour][heure] = 0
+
+    for ticket in tickets:
+        moment = ticket["created_at"]
+        jour_ticket = moment.weekday()
+        heure_ticket = moment.hour
+        if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
+            demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
+
+    grille = []
+    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
+        for nom_jour, numero_jour in JOURS_ORDRE:
+            presents = agents_en_poste(planning_dernier, agents_grille, numero_jour, heure)
+            nb_agents = len(presents)
+            demandes = demandes_par_jour_heure[numero_jour][heure]
+            statut = statut_creneau_standard(horaires_standard, numero_jour, heure)
+
+            if nb_agents > 0:
+                ratio = demandes / nb_agents
+            else:
+                ratio = None
+
+            niveau = niveau_charge_creneau(statut, nb_agents, ratio)
+
+            grille.append({
+                "jour": nom_jour,
+                "heure": heure,
+                "nb_agents": nb_agents,
+                "agents": presents,
+                "demandes": demandes,
+                "ratio": ratio,
+                "niveau": niveau,
+            })
+    return grille
+
+
+# Distingue un pic exceptionnel (une semaine précise très au-dessus du rythme habituel) du
+# rythme habituel lui-même (déjà agrégé sur toute la période sélectionnée) — seulement pertinent
+# quand plusieurs semaines sont sélectionnées. Recharge chaque fichier individuellement (même
+# schéma que calculer_baseline_hors_couverture) pour comparer semaine par semaine plutôt que sur
+# l'agrégat.
+def detecter_pic_exceptionnel(fichiers_actuels, agents_grille, ratio_habituel, jour_habituel, heure_habituel):
+    if len(fichiers_actuels) <= 1 or ratio_habituel is None or ratio_habituel <= 0:
+        return None
+
+    meilleur_ratio = -1
+    meilleur_jour = None
+    meilleur_heure = None
+
+    for chemin in fichiers_actuels:
+        tickets_fichier = charger_tickets(chemin)
+        planning_fichier = charger_planning(chemin)
+        horaires_standard_fichier = planning_fichier.get(NOM_AGENT_DEFAUT, {})
+        grille_fichier = construire_grille_creneaux(
+            tickets_fichier, planning_fichier, agents_grille, horaires_standard_fichier
+        )
+        for entree in grille_fichier:
+            if entree["ratio"] is not None and entree["ratio"] > meilleur_ratio:
+                meilleur_ratio = entree["ratio"]
+                meilleur_jour = entree["jour"]
+                meilleur_heure = entree["heure"]
+
+    if meilleur_jour is None:
+        return None
+
+    delta_pct = (meilleur_ratio - ratio_habituel) / ratio_habituel * 100
+    meme_creneau = meilleur_jour == jour_habituel and meilleur_heure == heure_habituel
+
+    if delta_pct >= SEUIL_PIC_EXCEPTIONNEL_PCT and not meme_creneau:
+        return {"jour": meilleur_jour, "heure": meilleur_heure, "ratio": meilleur_ratio}
+    return None
+
+
+RANG_NIVEAU_REPONSE = {"OK": 0, "A SURVEILLER": 1, "CRITIQUE": 2, "DEBORDEMENT": 3}
+
+
+# Le canal qui contribue le plus au retard : le pire niveau de réponse, départagé par volume
+# en cas d'égalité — sert de base à l'insight de la section SLA, à celui de la section Canal, et
+# à la conclusion de l'onglet (une seule détermination, réutilisée, pas trois calculs différents).
+def canal_le_plus_problematique(lignes_canal, niveaux_canal):
+    pire_canal = None
+    pire_rang = -1
+
+    for index in range(len(lignes_canal)):
+        ligne = lignes_canal[index]
+        niveau = niveaux_canal[index]
+        if niveau == "":
+            continue
+
+        rang = RANG_NIVEAU_REPONSE[niveau]
+        if rang > pire_rang:
+            pire_rang = rang
+            pire_canal = ligne
+        elif rang == pire_rang and pire_canal is not None and ligne["Tickets"] > pire_canal["Tickets"]:
+            pire_canal = ligne
+
+    return pire_canal
+
+
+def construire_barre_progression_sla(taux, objectif):
+    largeur = min(taux, 100)
+    if taux >= objectif:
+        couleur = COULEUR_ACCENT_OK
+    elif taux >= objectif - 10:
+        couleur = COULEUR_ACCENT_SURVEILLER
+    else:
+        couleur = COULEUR_ACCENT_CRITIQUE
+
+    return (
+        '<div style="position:relative; width:100%; height:8px; background-color:' + COULEUR_NEUTRE_FOND + '; '
+        'border-radius:4px; margin:10px 0 6px;">'
+        '<div style="position:absolute; left:0; top:0; height:100%; width:' + str(largeur) + '%; '
+        "background-color:" + couleur + '; border-radius:4px;"></div>'
+        '<div style="position:absolute; left:' + str(objectif) + '%; top:-3px; height:14px; width:2px; '
+        'background-color:' + COULEUR_TEXTE_VALEUR + ';" title="Objectif ' + str(objectif) + ' %"></div>'
+        "</div>"
+    )
+
+
+def construire_carte_sla(taux, objectif, delta=None):
+    ecart = round(taux - objectif, 1)
+    if ecart >= 0:
+        texte_ecart = "+" + str(ecart) + " pts au-dessus de l'objectif"
+        couleur_ecart = COULEUR_HAUSSE_TEXTE
+    else:
+        texte_ecart = str(ecart) + " pts sous l'objectif"
+        couleur_ecart = COULEUR_BAISSE_TEXTE
+
+    html = (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        'border-radius:10px; padding:20px 22px 16px;">'
+        '<div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_TEXTE_LABEL + "; "
+        'font-weight:600;">SLA respecté</div>'
+        '<div style="font-size:40px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + '; line-height:1.15; margin-top:2px;">'
+        + formater_pourcentage(taux) + "</div>"
+    )
+
+    html = html + construire_barre_progression_sla(taux, objectif)
+
+    html = html + (
+        '<div style="font-size:12px; color:' + couleur_ecart + '; font-weight:600;">' + texte_ecart + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">Objectif : ' + str(objectif) + " %</div>"
+    )
+
+    if delta is not None:
+        texte_delta, fond_delta, couleur_delta = formater_delta_kpi(delta, "normal")
+        html = html + (
+            '<div style="display:inline-block; margin-top:8px; padding:2px 9px; border-radius:12px; '
+            "font-size:12px; font-weight:600; background-color:" + fond_delta + "; color:" + couleur_delta + ';">'
+            + texte_delta + " pts vs période précédente</div>"
+        )
+
+    html = html + "</div>"
+    return html
+
+
+def construire_barre_empilee_reponse(compte_niveaux, total):
+    segments = [
+        ("Dans le SLA", "OK", COULEUR_ACCENT_OK),
+        ("Léger dépassement", "A SURVEILLER", COULEUR_ACCENT_SURVEILLER),
+        ("Retard important", "CRITIQUE", COULEUR_ACCENT_CRITIQUE),
+        ("Débordement", "DEBORDEMENT", COULEUR_ACCENT_DEBORDEMENT),
+    ]
+
+    html = '<div style="display:flex; width:100%; height:14px; border-radius:7px; overflow:hidden; margin-bottom:10px;">'
+    for label, cle, couleur in segments:
+        compte = compte_niveaux[cle]
+        if total > 0:
+            largeur = compte / total * 100
+        else:
+            largeur = 0
+        if largeur > 0:
+            html = html + '<div style="width:' + str(largeur) + '%; background-color:' + couleur + ';" title="' + label + '"></div>'
+    html = html + "</div>"
+
+    html = html + '<div style="display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">'
+    for label, cle, couleur in segments:
+        compte = compte_niveaux[cle]
+        if total > 0:
+            pct = compte / total * 100
+        else:
+            pct = 0
+        html = html + (
+            '<div><span style="display:inline-block; width:8px; height:8px; border-radius:2px; '
+            'background-color:' + couleur + '; margin-right:5px;"></span>'
+            + label + " — " + str(round(pct)) + " % (" + str(compte) + ")</div>"
+        )
+    html = html + "</div>"
+    return html
+
+
+def construire_insight_sla(taux, objectif, pire_canal):
+    if taux is None:
+        return None
+    if taux >= objectif:
+        return "Le SLA dépasse l'objectif sur cette période."
+    if pire_canal is not None:
+        return "Le SLA reste sous l'objectif, principalement en raison du canal " + pire_canal["Canal"] + "."
+    return "Le SLA reste sous l'objectif de " + str(objectif) + " %."
+
+
+def construire_insight_canal(pire_canal):
+    if pire_canal is None:
+        return None
+    return (
+        "Le canal " + pire_canal["Canal"] + " concentre le principal retard de réponse : "
+        + str(pire_canal["Tickets"]) + " demandes et " + pire_canal["1re réponse moyenne"]
+        + " de 1re réponse moyenne."
+    )
+
+
+def obtenir_volume_ligne(ligne):
+    return ligne["Volume"]
+
+
+# Périodes hors couverture mutuellement exclusives (type_hors_creneau_detaille ne retourne
+# jamais "Jour sans couverture" pour un samedi/dimanche, donc pas de double comptage). Une ligne
+# "Week-end" agrégée est ajoutée en tête si samedi et/ou dimanche sont présents, pour donner le
+# chiffre de synthèse avant le détail — le détail par jour reste disponible juste en dessous.
+def construire_lignes_hors_couverture(tickets_hors_tout, planning_ref, volume_total_creneaux):
+    groupes_type = {}
+    for ticket in tickets_hors_tout:
+        type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_ref)
+        if type_detail in groupes_type:
+            groupes_type[type_detail].append(ticket)
+        else:
+            groupes_type[type_detail] = [ticket]
+
+    tickets_weekend = []
+    if "Samedi" in groupes_type:
+        tickets_weekend = tickets_weekend + groupes_type["Samedi"]
+    if "Dimanche" in groupes_type:
+        tickets_weekend = tickets_weekend + groupes_type["Dimanche"]
+
+    lignes = []
+
+    if len(tickets_weekend) > 0:
+        pct_weekend = len(tickets_weekend) / volume_total_creneaux * 100
+        frt_weekend = moyenne(tickets_weekend, "first_reply_time_min")
+        ligne_weekend = {
+            "Période": "Week-end", "Volume": len(tickets_weekend),
+            "Part du volume": formater_pourcentage(pct_weekend), "Délai moyen de rattrapage": "N/A",
+        }
+        if frt_weekend is not None:
+            ligne_weekend["Délai moyen de rattrapage"] = formater_duree(frt_weekend)
+        lignes.append(ligne_weekend)
+
+    lignes_detail = []
+    for type_detail, tickets_type in groupes_type.items():
+        frt_type = moyenne(tickets_type, "first_reply_time_min")
+        pct_type = len(tickets_type) / volume_total_creneaux * 100
+        ligne = {
+            "Période": type_detail, "Volume": len(tickets_type),
+            "Part du volume": formater_pourcentage(pct_type), "Délai moyen de rattrapage": "N/A",
+        }
+        if frt_type is not None:
+            ligne["Délai moyen de rattrapage"] = formater_duree(frt_type)
+        lignes_detail.append(ligne)
+
+    lignes_detail_triees = sorted(lignes_detail, key=obtenir_volume_ligne, reverse=True)
+    return lignes + lignes_detail_triees
+
+
+# 3 observations maximum, chacune dérivée des chiffres déjà calculés plus haut dans l'onglet —
+# aucun nouveau calcul, uniquement de la synthèse textuelle (donnée -> signal -> insight).
+def construire_conclusion_onglet(
+    taux_sla_global, objectif, nb_tensions, pire_canal, part_hors_couverture, hors_couverture_significatif
+):
+    observations = []
+
+    if nb_tensions == 0:
+        observations.append((
+            "Ce qui va bien",
+            "La couverture actuelle absorbe correctement les volumes pendant les horaires ouverts.",
+        ))
+    elif taux_sla_global is not None and taux_sla_global >= objectif:
+        observations.append((
+            "Ce qui va bien",
+            "Le SLA dépasse l'objectif malgré les tensions ponctuelles identifiées sur la période.",
+        ))
+
+    if pire_canal is not None:
+        observations.append((
+            "À surveiller",
+            "Le délai du canal " + pire_canal["Canal"] + " reste le principal point de friction de la période.",
+        ))
+    elif nb_tensions > 0:
+        observations.append((
+            "À surveiller", str(nb_tensions) + " créneau(x) en tension identifié(s) cette période.",
+        ))
+
+    if hors_couverture_significatif:
+        observations.append((
+            "À comprendre",
+            formater_pourcentage(part_hors_couverture) + " des demandes arrivent hors couverture, avec un "
+            + "volume en hausse significative par rapport à l'historique récent.",
+        ))
+    else:
+        observations.append((
+            "À comprendre",
+            formater_pourcentage(part_hors_couverture) + " des demandes arrivent hors couverture, sans créer "
+            + "pour l'instant de tension significative à la réouverture.",
+        ))
+
+    return observations[:3]
+
+
 DOSSIER_EXPORTS = os.path.join(DOSSIER_PROJET, "exports_hebdomadaires")
 FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopify_fictif.xlsx")
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
@@ -814,6 +1147,7 @@ planning_s2 = construire_plannings_periode(fichiers_actuels, exports_disponibles
 if comparaison_disponible:
     tickets_s1 = charger_periode(fichiers_precedents)
     planning_s1_dernier = charger_planning(fichiers_precedents[-1])
+    planning_s1 = construire_plannings_periode(fichiers_precedents, exports_disponibles)
     agents_s1_liste = list(grouper_par(tickets_s1, "assignee").keys())
     agents_s2_liste = list(grouper_par(tickets_s2, "assignee").keys())
     changements_planning = detecter_changements_planning(agents_s1_liste, agents_s2_liste, planning_s1_dernier, planning_s2_dernier)
@@ -1875,107 +2209,84 @@ with onglet_creneaux:
     en_creneau, pause_dejeuner, hors_creneau = separer_creneau(tickets_s2, planning_s2)
     tickets_hors_tout = pause_dejeuner + hors_creneau
     volume_total_creneaux = len(tickets_s2)
-
-    # ------------------------------------------------------------------
-    # Disponibilité des agents vs volume reçu
-    # ------------------------------------------------------------------
-
-    st.markdown(titre_section_principale("Couverture & respect du SLA"), unsafe_allow_html=True)
-    st.caption("Sommes-nous assez staffés pour absorber le volume, aux bons horaires et aux bons jours ?")
-
     pct_en_creneau = len(en_creneau) / volume_total_creneaux * 100
-    pct_hors_dispo = len(tickets_hors_tout) / volume_total_creneaux * 100
-    frt_en_creneau_global = moyenne(en_creneau, "first_reply_time_min")
 
-    with st.container(border=True):
-        colonne_a, colonne_b, colonne_c = st.columns(3)
-        colonne_a.markdown(
-            construire_carte_kpi(
-                "Reçus en créneau ouvré", formater_nombre_espace(len(en_creneau)),
-                sous_texte=formater_pourcentage(pct_en_creneau) + " du volume",
-            ),
-            unsafe_allow_html=True,
-        )
-        colonne_b.markdown(
-            construire_carte_kpi(
-                "Reçus hors dispo agents", formater_nombre_espace(len(tickets_hors_tout)),
-                sous_texte=formater_pourcentage(pct_hors_dispo) + " du volume",
-            ),
-            unsafe_allow_html=True,
-        )
-        if frt_en_creneau_global is not None:
-            colonne_c.markdown(
-                construire_carte_kpi("Traitement moyen en créneau", formater_duree(frt_en_creneau_global)),
-                unsafe_allow_html=True,
-            )
+    en_creneau_s1 = []
+    tickets_hors_tout_s1 = []
+    part_hors_couverture_s1 = None
+    if comparaison_disponible:
+        en_creneau_s1, pause_dejeuner_s1, hors_creneau_s1 = separer_creneau(tickets_s1, planning_s1)
+        tickets_hors_tout_s1 = pause_dejeuner_s1 + hors_creneau_s1
+        if len(tickets_s1) > 0:
+            part_hors_couverture_s1 = len(tickets_hors_tout_s1) / len(tickets_s1) * 100
 
-    st.subheader("Respect du SLA")
-    st.caption(
-        "SLA : en créneau ouvré, 1re réponse sous 1h. Hors créneau, réponse attendue au plus tard à la "
-        "fin de la 1re plage horaire du prochain jour disponible — ex : message reçu vendredi 19h, "
-        "réponse due lundi avant 12h (avant l'ouverture ou pendant la pause déjeuner : réponse due "
-        "avant la fin du jour même)."
-    )
+    # ------------------------------------------------------------------
+    # Données de couverture partagées par plusieurs sections plus bas (grille heure x jour,
+    # taux SLA, répartition par canal, volume hors couverture) — calculées une seule fois ici.
+    # ------------------------------------------------------------------
+
+    agents_grille = construire_agents_grille(tickets_s2, planning_s2_dernier)
+    horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
+    grille_creneaux = construire_grille_creneaux(tickets_s2, planning_s2_dernier, agents_grille, horaires_standard)
+
+    totaux_jour = {}
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        totaux_jour[nom_jour] = 0
+    for entree in grille_creneaux:
+        totaux_jour[entree["jour"]] = totaux_jour[entree["jour"]] + entree["demandes"]
+
+    jour_le_plus_charge = None
+    volume_max_jour = -1
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        if totaux_jour[nom_jour] > volume_max_jour:
+            volume_max_jour = totaux_jour[nom_jour]
+            jour_le_plus_charge = nom_jour
+
+    creneau_le_plus_charge = None
+    ratio_max = -1
+    for entree in grille_creneaux:
+        if entree["ratio"] is not None and entree["ratio"] > ratio_max:
+            ratio_max = entree["ratio"]
+            creneau_le_plus_charge = entree
+
+    situations_tension = []
+    for entree in grille_creneaux:
+        if entree["niveau"] == "HOTSPOT":
+            situations_tension.append(entree)
+
+    def obtenir_ratio_tri_situation(entree):
+        if entree["ratio"] is None:
+            return float("inf")
+        return entree["ratio"]
+
+    situations_tension_triees = sorted(situations_tension, key=obtenir_ratio_tri_situation, reverse=True)
 
     taux_sla_global = taux_sla(tickets_s2, planning_s2)
-    if taux_sla_global is not None:
-        st.markdown(
-            construire_carte_kpi("SLA respecté", formater_pourcentage(taux_sla_global)), unsafe_allow_html=True
+    taux_sla_s1 = None
+    nb_tensions_s1 = None
+    if comparaison_disponible:
+        taux_sla_s1 = taux_sla(tickets_s1, planning_s1)
+        agents_grille_s1 = construire_agents_grille(tickets_s1, planning_s1_dernier)
+        horaires_standard_s1 = planning_s1_dernier.get(NOM_AGENT_DEFAUT, {})
+        grille_creneaux_s1 = construire_grille_creneaux(
+            tickets_s1, planning_s1_dernier, agents_grille_s1, horaires_standard_s1
         )
-
-    tickets_sla_connu = []
-    for ticket in tickets_s2:
-        if ticket["sla_met"] is not None:
-            tickets_sla_connu.append(ticket)
-
-    if len(tickets_sla_connu) > 0:
-        respectes_bruts = 0
-        for ticket in tickets_sla_connu:
-            if ticket["sla_met"] == "Oui":
-                respectes_bruts = respectes_bruts + 1
-        taux_brut = respectes_bruts / len(tickets_sla_connu) * 100
-        st.caption(
-            "Le fichier source contient aussi son propre indicateur sla_met : "
-            + formater_pourcentage(taux_brut) + ". L'écart avec le taux ci-dessus vient de la "
-            + "définition de SLA détaillée plus haut, propre à cet outil — pas d'une erreur de données."
-        )
-
-    st.divider()
-    st.subheader("Répartition des temps de réponse, tickets reçus en créneau")
-
-    compte_niveaux = {"OK": 0, "A SURVEILLER": 0, "CRITIQUE": 0, "DEBORDEMENT": 0}
-    for ticket in en_creneau:
-        frt_ticket = ticket["first_reply_time_min"]
-        if frt_ticket is not None:
-            niveau = niveau_reponse_ouvree(frt_ticket)
-            compte_niveaux[niveau] = compte_niveaux[niveau] + 1
-
-    with st.container(border=True):
-        colonne_d, colonne_e, colonne_f, colonne_g = st.columns(4)
-        colonne_d.markdown(
-            construire_carte_kpi("OK (< 1h30)", compte_niveaux["OK"], accent=COULEUR_ACCENT_OK),
-            unsafe_allow_html=True,
-        )
-        colonne_e.markdown(
-            construire_carte_kpi(
-                "À surveiller (1h30-2h)", compte_niveaux["A SURVEILLER"], accent=COULEUR_ACCENT_SURVEILLER
-            ),
-            unsafe_allow_html=True,
-        )
-        colonne_f.markdown(
-            construire_carte_kpi("Critique (> 2h)", compte_niveaux["CRITIQUE"], accent=COULEUR_ACCENT_CRITIQUE),
-            unsafe_allow_html=True,
-        )
-        colonne_g.markdown(
-            construire_carte_kpi(
-                "Débordement (> 8h)", compte_niveaux["DEBORDEMENT"], accent=COULEUR_ACCENT_DEBORDEMENT
-            ),
-            unsafe_allow_html=True,
-        )
-
-    st.subheader("Par canal, en créneau")
+        nb_tensions_s1 = 0
+        for entree in grille_creneaux_s1:
+            if entree["niveau"] == "HOTSPOT":
+                nb_tensions_s1 = nb_tensions_s1 + 1
 
     par_canal_en = grouper_par(en_creneau, "via_channel")
+    par_canal_en_s1 = grouper_par(en_creneau_s1, "via_channel")
+
+    def formater_delta_duree_min(delta_minutes):
+        if delta_minutes >= 0:
+            fleche = "↑ +"
+        else:
+            fleche = "↓ "
+            delta_minutes = -delta_minutes
+        return fleche + formater_duree(round(delta_minutes))
+
     lignes_canal_en_avec_niveaux = []
     for canal, tickets_canal in par_canal_en.items():
         frt_canal = moyenne(tickets_canal, "first_reply_time_min")
@@ -1985,6 +2296,14 @@ with onglet_creneaux:
         if frt_canal is not None:
             ligne["1re réponse moyenne"] = formater_duree(frt_canal)
             niveau_reponse_canal = niveau_reponse_ouvree(frt_canal)
+
+        if comparaison_disponible:
+            tickets_canal_s1 = par_canal_en_s1.get(canal, [])
+            frt_canal_s1 = moyenne(tickets_canal_s1, "first_reply_time_min")
+            if frt_canal is not None and frt_canal_s1 is not None:
+                ligne["Évolution"] = formater_delta_duree_min(frt_canal - frt_canal_s1)
+            else:
+                ligne["Évolution"] = "N/A"
 
         lignes_canal_en_avec_niveaux.append((ligne, niveau_reponse_canal))
 
@@ -2002,52 +2321,233 @@ with onglet_creneaux:
         lignes_canal_en_triees.append(ligne_canal)
         niveaux_reponse_canal.append(niveau_reponse_item)
 
+    pire_canal = canal_le_plus_problematique(lignes_canal_en_triees, niveaux_reponse_canal)
+
+    volume_hors_couverture_actuel = len(tickets_hors_tout)
+    part_hors_couverture = volume_hors_couverture_actuel / volume_total_creneaux * 100
+
+    volumes_baseline_hors_couverture = calculer_baseline_hors_couverture(
+        exports_disponibles, date_a_debut, NB_SEMAINES_BASELINE_HORS_COUVERTURE
+    )
+    if len(volumes_baseline_hors_couverture) > 0:
+        moyenne_baseline_hors_couverture = (
+            sum(volumes_baseline_hors_couverture) / len(volumes_baseline_hors_couverture)
+        )
+    else:
+        moyenne_baseline_hors_couverture = None
+
+    hors_couverture_significatif = hors_couverture_est_significatif(
+        volume_hors_couverture_actuel, moyenne_baseline_hors_couverture
+    )
+
+    # ------------------------------------------------------------------
+    # Synthèse de la période — 4 chiffres, la question directrice de tout l'onglet.
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Synthèse de la période"), unsafe_allow_html=True)
+
+    colonne_s1, colonne_s2, colonne_s3, colonne_s4 = st.columns(4)
+
+    if comparaison_disponible:
+        colonne_s1.markdown(
+            construire_carte_kpi(
+                "Demandes reçues", formater_nombre_espace(volume_total_creneaux),
+                delta=volume_total_creneaux - len(tickets_s1), delta_couleur="off",
+            ),
+            unsafe_allow_html=True,
+        )
+    else:
+        colonne_s1.markdown(
+            construire_carte_kpi("Demandes reçues", formater_nombre_espace(volume_total_creneaux)),
+            unsafe_allow_html=True,
+        )
+
+    if taux_sla_global is not None:
+        if comparaison_disponible and taux_sla_s1 is not None:
+            colonne_s2.markdown(
+                construire_carte_kpi(
+                    "SLA respecté", formater_pourcentage(taux_sla_global),
+                    delta=round(taux_sla_global - taux_sla_s1, 1),
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            colonne_s2.markdown(
+                construire_carte_kpi("SLA respecté", formater_pourcentage(taux_sla_global)),
+                unsafe_allow_html=True,
+            )
+
+    if jour_le_plus_charge is not None:
+        if len(fichiers_actuels) > 1:
+            volume_jour_affiche = round(volume_max_jour / len(fichiers_actuels))
+            suffixe_jour = " demandes en moyenne"
+        else:
+            volume_jour_affiche = volume_max_jour
+            suffixe_jour = " demandes"
+        colonne_s3.markdown(
+            construire_carte_kpi(
+                "Jour le plus chargé", jour_le_plus_charge,
+                sous_texte=formater_nombre_espace(volume_jour_affiche) + suffixe_jour,
+            ),
+            unsafe_allow_html=True,
+        )
+
+    if creneau_le_plus_charge is not None:
+        texte_creneau_max = (
+            creneau_le_plus_charge["jour"] + " " + str(creneau_le_plus_charge["heure"]) + "h-"
+            + str(creneau_le_plus_charge["heure"] + 1) + "h"
+        )
+        if len(fichiers_actuels) > 1:
+            ratio_affiche = ratio_max / len(fichiers_actuels)
+            suffixe_ratio = " demandes/agent en moyenne"
+        else:
+            ratio_affiche = ratio_max
+            suffixe_ratio = " demandes/agent"
+        colonne_s4.markdown(
+            construire_carte_kpi(
+                "Créneau habituellement le plus chargé", texte_creneau_max,
+                sous_texte=str(round(ratio_affiche, 1)) + suffixe_ratio,
+            ),
+            unsafe_allow_html=True,
+        )
+
+    pic_exceptionnel = None
+    if creneau_le_plus_charge is not None:
+        pic_exceptionnel = detecter_pic_exceptionnel(
+            fichiers_actuels, agents_grille, creneau_le_plus_charge["ratio"],
+            creneau_le_plus_charge["jour"], creneau_le_plus_charge["heure"],
+        )
+    if pic_exceptionnel is not None:
+        st.caption(
+            "Pic exceptionnel observé : " + pic_exceptionnel["jour"] + " " + str(pic_exceptionnel["heure"])
+            + "h-" + str(pic_exceptionnel["heure"] + 1) + "h, " + str(round(pic_exceptionnel["ratio"], 1))
+            + " demandes/agent — nettement au-dessus du rythme habituel."
+        )
+
+    # ------------------------------------------------------------------
+    # Réactivité & SLA
+    # ------------------------------------------------------------------
+
+    st.divider()
+    st.markdown(titre_section_principale("Réactivité & SLA"), unsafe_allow_html=True)
+    st.caption(
+        "SLA : en créneau ouvert, 1re réponse sous 1h. Hors créneau, réponse attendue au plus tard à la "
+        "fin de la 1re plage horaire du prochain jour disponible — ex : message reçu vendredi 19h, "
+        "réponse due lundi avant 12h (avant l'ouverture ou pendant la pause déjeuner : réponse due "
+        "avant la fin du jour même)."
+    )
+
+    if taux_sla_global is not None:
+        delta_sla = None
+        if comparaison_disponible and taux_sla_s1 is not None:
+            delta_sla = round(taux_sla_global - taux_sla_s1, 1)
+        st.markdown(construire_carte_sla(taux_sla_global, SLA_OBJECTIF_PCT, delta=delta_sla), unsafe_allow_html=True)
+
+        insight_sla = construire_insight_sla(taux_sla_global, SLA_OBJECTIF_PCT, pire_canal)
+        if insight_sla is not None:
+            st.caption(insight_sla)
+
+    st.markdown("**Répartition des temps de réponse, tickets reçus en créneau**")
+
+    compte_niveaux = {"OK": 0, "A SURVEILLER": 0, "CRITIQUE": 0, "DEBORDEMENT": 0}
+    for ticket in en_creneau:
+        frt_ticket = ticket["first_reply_time_min"]
+        if frt_ticket is not None:
+            niveau = niveau_reponse_ouvree(frt_ticket)
+            compte_niveaux[niveau] = compte_niveaux[niveau] + 1
+
+    st.markdown(construire_barre_empilee_reponse(compte_niveaux, len(en_creneau)), unsafe_allow_html=True)
+
+    # ------------------------------------------------------------------
+    # Performance par canal
+    # ------------------------------------------------------------------
+
+    st.divider()
+    st.markdown(titre_section_principale("Performance par canal"), unsafe_allow_html=True)
+
     with st.container(border=True):
         afficher_tableau_colore(
             lignes_canal_en_triees,
             colonnes_couleur_bloc={"1re réponse moyenne": niveaux_reponse_canal},
         )
 
+    insight_canal = construire_insight_canal(pire_canal)
+    if insight_canal is not None:
+        st.caption(insight_canal)
+
     # ------------------------------------------------------------------
-    # Quand / pourquoi / comment les clients contactent hors créneau
+    # Demande hors couverture
     # ------------------------------------------------------------------
 
     st.divider()
-    st.markdown(titre_section_principale("Volume hors créneau"), unsafe_allow_html=True)
-    st.caption("Pour décider s'il faut élargir les horaires d'ouverture ou couvrir le week-end")
+    st.markdown(titre_section_principale("Demande hors couverture"), unsafe_allow_html=True)
+    st.caption("La demande reçue hors couverture justifie-t-elle une adaptation des horaires ?")
 
-    groupes_type = {}
-    for ticket in tickets_hors_tout:
-        type_detail = type_hors_creneau_detaille(ticket["created_at"], ticket["assignee"], planning_s2)
-        if type_detail in groupes_type:
-            groupes_type[type_detail].append(ticket)
+    frt_en_creneau_global = moyenne(en_creneau, "first_reply_time_min")
+    frt_en_creneau_global_s1 = None
+    if comparaison_disponible:
+        frt_en_creneau_global_s1 = moyenne(en_creneau_s1, "first_reply_time_min")
+
+    colonne_h1, colonne_h2, colonne_h3 = st.columns(3)
+    colonne_h1.markdown(
+        construire_carte_kpi(
+            "Reçus pendant la couverture", formater_nombre_espace(len(en_creneau)),
+            sous_texte=formater_pourcentage(pct_en_creneau) + " du volume",
+        ),
+        unsafe_allow_html=True,
+    )
+
+    delta_part_hors_couverture = None
+    if part_hors_couverture_s1 is not None:
+        delta_part_hors_couverture = round(part_hors_couverture - part_hors_couverture_s1, 1)
+
+    if delta_part_hors_couverture is not None:
+        html_carte_hors_couv = construire_carte_kpi(
+            "Reçus hors couverture", formater_nombre_espace(volume_hors_couverture_actuel),
+            delta=delta_part_hors_couverture, delta_couleur="inverse",
+            sous_texte=formater_pourcentage(part_hors_couverture) + " du volume",
+        )
+    else:
+        html_carte_hors_couv = construire_carte_kpi(
+            "Reçus hors couverture", formater_nombre_espace(volume_hors_couverture_actuel),
+            sous_texte=formater_pourcentage(part_hors_couverture) + " du volume",
+        )
+    colonne_h2.markdown(html_carte_hors_couv, unsafe_allow_html=True)
+
+    if frt_en_creneau_global is not None:
+        delta_frt_couverture = None
+        if frt_en_creneau_global_s1 is not None:
+            delta_frt_couverture = round(frt_en_creneau_global - frt_en_creneau_global_s1)
+
+        if delta_frt_couverture is not None:
+            html_carte_frt_couverture = construire_carte_kpi(
+                "Délai moyen de 1re réponse en couverture", formater_duree(frt_en_creneau_global),
+                delta=str(delta_frt_couverture) + " min", delta_couleur="inverse",
+            )
         else:
-            groupes_type[type_detail] = [ticket]
+            html_carte_frt_couverture = construire_carte_kpi(
+                "Délai moyen de 1re réponse en couverture", formater_duree(frt_en_creneau_global),
+            )
+        colonne_h3.markdown(html_carte_frt_couverture, unsafe_allow_html=True)
 
-    lignes_type = []
-    for type_detail, tickets_type in groupes_type.items():
-        frt_type = moyenne(tickets_type, "first_reply_time_min")
-        csat_type = moyenne(tickets_type, "csat")
-        pct_type = len(tickets_type) / volume_total_creneaux * 100
-
-        ligne = {
-            "Type": type_detail,
-            "Tickets": len(tickets_type),
-            "% du volume global": formater_pourcentage(pct_type),
-            "Délai de rattrapage": "N/A",
-            "CSAT": "N/A",
-        }
-        if frt_type is not None:
-            ligne["Délai de rattrapage"] = formater_duree(frt_type)
-        if csat_type is not None:
-            ligne["CSAT"] = formater_csat(csat_type)
-
-        lignes_type.append(ligne)
-
-    lignes_type_triees = sorted(lignes_type, key=obtenir_tickets, reverse=True)
-
+    lignes_hors_couverture = construire_lignes_hors_couverture(tickets_hors_tout, planning_s2, volume_total_creneaux)
     with st.container(border=True):
-        st.dataframe(lignes_type_triees, hide_index=True, width="stretch")
+        st.dataframe(lignes_hors_couverture, hide_index=True, width="stretch")
+
+    if hors_couverture_significatif:
+        type_signal = type_signal_hors_couverture(volumes_baseline_hors_couverture)
+        st.markdown(
+            construire_carte_hors_couverture(
+                volume_hors_couverture_actuel, moyenne_baseline_hors_couverture,
+                len(volumes_baseline_hors_couverture), type_signal, tickets_hors_tout,
+            ),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption(
+            "Le volume hors couverture reste dans la norme historique — pas de signal justifiant une "
+            "adaptation des horaires actuellement."
+        )
 
     with st.expander("Détail : pourquoi et comment"):
         groupes_type_categorie = {}
@@ -2109,67 +2609,13 @@ with onglet_creneaux:
         st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
     st.divider()
-    st.markdown(titre_section_principale("Couverture & hotspots"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Couverture horaire"), unsafe_allow_html=True)
     st.caption(
         "Où la couverture est-elle sous tension par rapport au volume reçu, pendant les horaires "
         "ouverts ? 🟢 Confortable · 🟡 À surveiller · 🔴 Hotspot. Les créneaux fermés (horaire "
         "standard, pause, week-end) sont grisés — ce volume peut attendre la réouverture ; il est "
-        "suivi à part, agrégé sur la période, plus bas."
+        "suivi à part, agrégé sur la période, dans la section \"Demande hors couverture\" plus haut."
     )
-
-    # Priorité au planning réellement déclaré (un agent programmé cette semaine mais qui
-    # n'a clôturé aucun ticket ne doit pas disparaître de la grille) ; les assignees de tickets
-    # non présents dans le planning sont ajoutés en complément.
-    agents_de_la_periode = grouper_par(tickets_s2, "assignee")
-    agents_a_afficher = cles_combinees(planning_s2_dernier, agents_de_la_periode)
-
-    agents_grille = []
-    for agent in agents_a_afficher:
-        if agent != NOM_AGENT_DEFAUT:
-            agents_grille.append(agent)
-
-    horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
-
-    demandes_par_jour_heure = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        demandes_par_jour_heure[numero_jour] = {}
-        for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-            demandes_par_jour_heure[numero_jour][heure] = 0
-
-    for ticket in tickets_s2:
-        moment = ticket["created_at"]
-        jour_ticket = moment.weekday()
-        heure_ticket = moment.hour
-        if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
-            demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
-
-    # Une entrée par (jour, heure), construite heure par heure puis jour par jour — cet
-    # ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
-    # "auto-flow: row", qui suit l'ordre du DOM).
-    grille_creneaux = []
-    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-        for nom_jour, numero_jour in JOURS_ORDRE:
-            presents = agents_en_poste(planning_s2_dernier, agents_grille, numero_jour, heure)
-            nb_agents = len(presents)
-            demandes = demandes_par_jour_heure[numero_jour][heure]
-            statut = statut_creneau_standard(horaires_standard, numero_jour, heure)
-
-            if nb_agents > 0:
-                ratio = demandes / nb_agents
-            else:
-                ratio = None
-
-            niveau = niveau_charge_creneau(statut, nb_agents, ratio)
-
-            grille_creneaux.append({
-                "jour": nom_jour,
-                "heure": heure,
-                "nb_agents": nb_agents,
-                "agents": presents,
-                "demandes": demandes,
-                "ratio": ratio,
-                "niveau": niveau,
-            })
 
     html_heatmap = (
         "<style>"
@@ -2202,97 +2648,6 @@ with onglet_creneaux:
 
     st.caption("Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau.")
 
-    # ------------------------------------------------------------------
-    # Vue semaine — 4 chiffres clés, pas un tableau de 7 lignes
-    # ------------------------------------------------------------------
-
-    totaux_jour = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        totaux_jour[nom_jour] = 0
-
-    for entree in grille_creneaux:
-        totaux_jour[entree["jour"]] = totaux_jour[entree["jour"]] + entree["demandes"]
-
-    jour_le_plus_charge = None
-    volume_max_jour = -1
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        if totaux_jour[nom_jour] > volume_max_jour:
-            volume_max_jour = totaux_jour[nom_jour]
-            jour_le_plus_charge = nom_jour
-
-    creneau_le_plus_charge = None
-    ratio_max = -1
-    for entree in grille_creneaux:
-        if entree["ratio"] is not None and entree["ratio"] > ratio_max:
-            ratio_max = entree["ratio"]
-            creneau_le_plus_charge = entree
-
-    # tickets_hors_tout (pause + hors créneau, toutes heures confondues) est déjà calculé
-    # plus haut dans cet onglet, pour la section "Volume hors créneau".
-    volume_hors_couverture_actuel = len(tickets_hors_tout)
-    volumes_baseline_hors_couverture = calculer_baseline_hors_couverture(
-        exports_disponibles, date_a_debut, NB_SEMAINES_BASELINE_HORS_COUVERTURE
-    )
-    if len(volumes_baseline_hors_couverture) > 0:
-        moyenne_baseline_hors_couverture = (
-            sum(volumes_baseline_hors_couverture) / len(volumes_baseline_hors_couverture)
-        )
-    else:
-        moyenne_baseline_hors_couverture = None
-
-    st.markdown("**Vue semaine**")
-    colonne_v1, colonne_v2, colonne_v3, colonne_v4 = st.columns(4)
-    colonne_v1.markdown(
-        construire_carte_kpi("Demandes reçues", formater_nombre_espace(len(tickets_s2))),
-        unsafe_allow_html=True,
-    )
-    if jour_le_plus_charge is not None:
-        colonne_v2.markdown(
-            construire_carte_kpi(
-                "Jour le plus chargé", jour_le_plus_charge,
-                sous_texte=formater_nombre_espace(volume_max_jour) + " demandes",
-            ),
-            unsafe_allow_html=True,
-        )
-    if creneau_le_plus_charge is not None:
-        texte_creneau_max = (
-            creneau_le_plus_charge["jour"] + " " + str(creneau_le_plus_charge["heure"]) + "h-"
-            + str(creneau_le_plus_charge["heure"] + 1) + "h"
-        )
-        colonne_v3.markdown(
-            construire_carte_kpi(
-                "Pic de charge", texte_creneau_max,
-                sous_texte=str(round(creneau_le_plus_charge["ratio"], 1)) + " demandes/agent",
-            ),
-            unsafe_allow_html=True,
-        )
-    if len(tickets_s2) > 0:
-        part_hors_couverture = volume_hors_couverture_actuel / len(tickets_s2) * 100
-        colonne_v4.markdown(
-            construire_carte_kpi(
-                "Reçues hors couverture", formater_nombre_espace(volume_hors_couverture_actuel),
-                sous_texte=formater_pourcentage(part_hors_couverture) + " du volume",
-            ),
-            unsafe_allow_html=True,
-        )
-
-    # ------------------------------------------------------------------
-    # Deux catégories seulement : tension pendant l'ouverture (par créneau) et
-    # volume hors couverture (agrégé sur la période, jamais créneau par créneau).
-    # ------------------------------------------------------------------
-
-    situations_tension = []
-    for entree in grille_creneaux:
-        if entree["niveau"] == "HOTSPOT":
-            situations_tension.append(entree)
-
-    def obtenir_ratio_tri_situation(entree):
-        if entree["ratio"] is None:
-            return float("inf")
-        return entree["ratio"]
-
-    situations_tension_triees = sorted(situations_tension, key=obtenir_ratio_tri_situation, reverse=True)
-
     st.markdown("**Tensions de couverture**")
     if len(situations_tension_triees) > 0:
         for entree in situations_tension_triees[:5]:
@@ -2300,21 +2655,26 @@ with onglet_creneaux:
                 entree["jour"] == creneau_le_plus_charge["jour"] and entree["heure"] == creneau_le_plus_charge["heure"]
             )
             st.markdown(construire_carte_situation(entree, est_pic_semaine), unsafe_allow_html=True)
+        if comparaison_disponible and nb_tensions_s1 is not None:
+            st.caption(
+                str(len(situations_tension_triees)) + " tension(s) détectée(s), contre " + str(nb_tensions_s1)
+                + " sur la période précédente."
+            )
     else:
-        st.caption("Aucune tension de couverture significative sur cette période.")
+        if comparaison_disponible and nb_tensions_s1 is not None and nb_tensions_s1 > 0:
+            st.caption(
+                "Aucune tension de couverture significative sur cette période, contre " + str(nb_tensions_s1)
+                + " sur la période précédente."
+            )
+        elif comparaison_disponible:
+            st.caption(
+                "Aucune tension de couverture significative sur cette période. Situation stable par "
+                "rapport à la période précédente."
+            )
+        else:
+            st.caption("Aucune tension de couverture significative sur cette période.")
 
-    if hors_couverture_est_significatif(volume_hors_couverture_actuel, moyenne_baseline_hors_couverture):
-        st.markdown("**Demande hors horaires**")
-        type_signal = type_signal_hors_couverture(volumes_baseline_hors_couverture)
-        st.markdown(
-            construire_carte_hors_couverture(
-                volume_hors_couverture_actuel, moyenne_baseline_hors_couverture,
-                len(volumes_baseline_hors_couverture), type_signal, tickets_hors_tout,
-            ),
-            unsafe_allow_html=True,
-        )
-
-    with st.expander("Détail horaires par agent (référence texte)"):
+    with st.expander("Voir le détail du planning"):
         lignes_planning = [
             construire_ligne_planning("Créneau standard (référence)", horaires_standard, "—")
         ]
@@ -2339,6 +2699,27 @@ with onglet_creneaux:
             "un mois donné, ou ajoute des heures supplémentaires. Les arrivées/départs/absences se notent "
             "dans la colonne evenement_semaine de l'onglet RAW_TICKETS."
         )
+
+    # ------------------------------------------------------------------
+    # Conclusion
+    # ------------------------------------------------------------------
+
+    observations_conclusion = construire_conclusion_onglet(
+        taux_sla_global, SLA_OBJECTIF_PCT, len(situations_tension_triees), pire_canal,
+        part_hors_couverture, hors_couverture_significatif,
+    )
+
+    if len(observations_conclusion) > 0:
+        st.divider()
+        st.markdown(titre_section_principale("Conclusion"), unsafe_allow_html=True)
+        for titre_observation, texte_observation in observations_conclusion:
+            st.markdown(
+                '<div style="margin-bottom:10px;"><span style="font-size:11px; font-weight:700; '
+                'text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_PRIMAIRE + ';">'
+                + titre_observation + '</span><br><span style="font-size:14px; color:' + COULEUR_TEXTE_VALEUR + ';">'
+                + texte_observation + "</span></div>",
+                unsafe_allow_html=True,
+            )
 
 
 # ------------------------------------------------------------------
