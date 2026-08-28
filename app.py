@@ -73,7 +73,7 @@ def obtenir_sav_recurrents(ligne):
 DEFINITION_EN_CRENEAU = (
     "« En créneau » = uniquement les tickets arrivés pendant les horaires de travail planifiés. "
     "Ça isole la vraie performance de l'équipe, sans le délai dû aux horaires hors couverture "
-    "(voir l'onglet Staffing & réactivité pour le détail du planning et du hors créneau)."
+    "(voir l'onglet Couverture & réactivité pour le détail du planning et du hors créneau)."
 )
 
 ROLE_RESPONSABLE_EQUIPE = "Responsable d'équipe"
@@ -358,7 +358,7 @@ COULEUR_ACCENT_HORS_COUVERTURE = "#D9822E"
 COULEUR_ACCENT_CRITIQUE = "#D1483B"
 COULEUR_ACCENT_DEBORDEMENT = "#A6291E"
 
-# Fonds de cellule pour la heatmap de couverture (onglet Staffing & réactivité) — même
+# Fonds de cellule pour la heatmap de couverture (onglet Couverture & réactivité) — même
 # langage de couleur que les accents ci-dessus, en teinte pâle pour un fond de cellule
 # plutôt qu'un liseré.
 COULEUR_HEATMAP_CONFORTABLE = "#D9EDDD"
@@ -834,7 +834,7 @@ for date_export_hist, chemin_hist in exports_disponibles:
     fichiers_tous_business.append(chemin_hist)
 tickets_historique_business = charger_periode(fichiers_tous_business)
 
-# Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Staffing & réactivité".
+# Chargé ici (au lieu de dans un onglet) car utilisé à la fois par "Agents" et "Couverture & réactivité".
 # Fusionné sur tous les fichiers de la période (pas seulement le dernier) : avec "Étendre
 # sur plusieurs semaines" coché, un agent peut ne pas apparaître dans le rôle du dernier
 # export pris isolément (rôle non renseigné ce jour-là, agent parti avant le dernier export...).
@@ -851,7 +851,7 @@ for chemin_role in fichiers_actuels:
 ) = st.tabs(
     [
         "Contexte", "Vue d'ensemble", "Tendances", "Agents",
-        "Alertes & suggestions", "Staffing & réactivité", "Produit", "Livraison",
+        "Alertes & suggestions", "Couverture & réactivité", "Produit", "Livraison",
         "Avant-vente & conversion", "Impact & confiance",
     ]
 )
@@ -911,7 +911,7 @@ with onglet_contexte:
         st.subheader("Ce que fait cet outil")
         st.markdown(
             "- Suivi de la performance support à la semaine, au mois, au trimestre ou à l'année\n"
-            "- Alertes automatiques : SLA, satisfaction, staffing par créneau horaire\n"
+            "- Alertes automatiques : SLA, satisfaction, couverture par créneau horaire\n"
             "- Suggestions de macros/FAQ à créer, basées sur les irritants récurrents\n"
             "- Volet business : conversion avant-vente, coûts SAV, confiance client (NPS), "
             "opportunités produit hors catalogue"
@@ -922,7 +922,7 @@ with onglet_contexte:
             "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
             "pas un ordre arbitraire :\n"
             "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe (catégories incluses)\n"
-            "- **Staffing & réactivité** : couverture horaire, SLA, planning de l'équipe\n"
+            "- **Couverture & réactivité** : disponibilité de l'équipe, SLA, tensions de couverture\n"
             "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
             "- **Avant-vente & conversion** : conversion réelle après contact avant-vente\n"
@@ -1864,10 +1864,12 @@ with onglet_alertes:
 
 
 # ------------------------------------------------------------------
-# Onglet 5 : Staffing & réactivité
+# Onglet 5 : Couverture & réactivité
 # ------------------------------------------------------------------
 
 with onglet_creneaux:
+    st.markdown(titre_section_principale("Couverture & réactivité"), unsafe_allow_html=True)
+    st.caption("Sommes-nous disponibles aux bons moments et répondons-nous suffisamment vite ?")
     st.caption(DEFINITION_EN_CRENEAU)
 
     en_creneau, pause_dejeuner, hors_creneau = separer_creneau(tickets_s2, planning_s2)
