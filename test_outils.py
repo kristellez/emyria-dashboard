@@ -4,6 +4,7 @@ import unittest
 from outils import (
     cles_combinees,
     delai_jours,
+    dernier_ticket_avant,
     formater_csat,
     formater_duree,
     formater_pourcentage,
@@ -14,6 +15,7 @@ from outils import (
     niveau_macro,
     niveau_reponse_ouvree,
     taux_rempli,
+    tickets_par_email,
 )
 
 
@@ -79,42 +81,110 @@ class TestClesCombinees(unittest.TestCase):
 
 class TestMontantPerteEstime(unittest.TestCase):
     def setUp(self):
-        self.commandes = {"EMY-1": {"montant_total": 200}}
+        self.commandes = {
+            "EMY-1": {"montant_total": 200, "product_category": "Diffuseur", "product_name": "Cocon"},
+        }
+        self.couts_produits = {
+            ("Diffuseur", "Cocon"): {
+                "prix_vente_ttc": 200,
+                "cout_revient_produit": 80,
+                "cout_logistique_remplacement": 10,
+                "cout_retour": 5,
+            },
+        }
 
     def test_ticket_sans_order_id_retourne_none(self):
         ticket = {"order_id": None}
-        self.assertIsNone(montant_perte_estime(ticket, self.commandes, "Remboursement"))
+        self.assertIsNone(montant_perte_estime(ticket, self.commandes, "Remboursement", self.couts_produits))
 
     def test_order_id_absent_des_commandes_retourne_none(self):
         ticket = {"order_id": "EMY-INCONNU"}
-        self.assertIsNone(montant_perte_estime(ticket, self.commandes, "Remboursement"))
+        self.assertIsNone(montant_perte_estime(ticket, self.commandes, "Remboursement", self.couts_produits))
 
     def test_remboursement_est_le_montant_complet(self):
         ticket = {"order_id": "EMY-1"}
-        self.assertEqual(montant_perte_estime(ticket, self.commandes, "Remboursement"), 200)
+        self.assertEqual(montant_perte_estime(ticket, self.commandes, "Remboursement", self.couts_produits), 200)
 
-    def test_remplacement_produit_est_une_fraction(self):
+    def test_remplacement_produit_utilise_cout_de_revient_plus_logistique_et_retour(self):
+        # ratio_cout = 80/200 = 0.4 ; 200*0.4 + logistique 10 + retour 5 = 95
         ticket = {"order_id": "EMY-1"}
-        self.assertEqual(montant_perte_estime(ticket, self.commandes, "Remplacement produit"), 70)
+        self.assertEqual(
+            montant_perte_estime(ticket, self.commandes, "Remplacement produit", self.couts_produits), 95
+        )
 
-    def test_geste_commercial_est_une_fraction_plus_faible(self):
+    def test_remplacement_accessoire_exclut_le_cout_de_retour(self):
+        # 200*0.4 + logistique 10, pas de retour = 90
         ticket = {"order_id": "EMY-1"}
-        self.assertEqual(montant_perte_estime(ticket, self.commandes, "Geste commercial"), 30)
+        self.assertEqual(
+            montant_perte_estime(ticket, self.commandes, "Remplacement accessoire", self.couts_produits), 90
+        )
+
+    def test_geste_commercial_est_une_fraction_du_prix_de_vente(self):
+        ticket = {"order_id": "EMY-1"}
+        self.assertEqual(
+            montant_perte_estime(ticket, self.commandes, "Geste commercial", self.couts_produits), 30
+        )
 
     def test_type_perte_inconnu_retombe_sur_le_montant_complet(self):
         ticket = {"order_id": "EMY-1"}
-        self.assertEqual(montant_perte_estime(ticket, self.commandes, "Type jamais vu"), 200)
+        self.assertEqual(
+            montant_perte_estime(ticket, self.commandes, "Type jamais vu", self.couts_produits), 200
+        )
+
+    def test_produit_absent_du_catalogue_de_couts_retourne_none(self):
+        ticket = {"order_id": "EMY-1"}
+        self.assertIsNone(montant_perte_estime(ticket, self.commandes, "Remplacement produit", {}))
 
 
 class TestMontantCoutGarantie(unittest.TestCase):
-    def test_utilise_la_fraction_remplacement(self):
-        commandes = {"EMY-1": {"montant_total": 200}}
+    def test_utilise_le_cout_de_revient_reel(self):
+        commandes = {
+            "EMY-1": {"montant_total": 200, "product_category": "Diffuseur", "product_name": "Cocon"},
+        }
+        couts_produits = {
+            ("Diffuseur", "Cocon"): {
+                "prix_vente_ttc": 200,
+                "cout_revient_produit": 80,
+                "cout_logistique_remplacement": 10,
+                "cout_retour": 5,
+            },
+        }
         ticket = {"order_id": "EMY-1"}
-        self.assertEqual(montant_cout_garantie(ticket, commandes), 70)
+        self.assertEqual(montant_cout_garantie(ticket, commandes, couts_produits), 95)
 
     def test_sans_commande_retourne_none(self):
         ticket = {"order_id": None}
-        self.assertIsNone(montant_cout_garantie(ticket, {}))
+        self.assertIsNone(montant_cout_garantie(ticket, {}, {}))
+
+
+class TestDernierTicketAvant(unittest.TestCase):
+    def setUp(self):
+        self.tickets = [
+            {"requester_email": "a@x.com", "created_at": datetime.datetime(2026, 1, 1)},
+            {"requester_email": "a@x.com", "created_at": datetime.datetime(2026, 1, 20)},
+            {"requester_email": "a@x.com", "created_at": datetime.datetime(2026, 3, 1)},
+            {"requester_email": "b@x.com", "created_at": datetime.datetime(2026, 1, 25)},
+        ]
+        self.index = tickets_par_email(self.tickets)
+
+    def test_prend_le_ticket_le_plus_recent_dans_la_fenetre(self):
+        reponse = {"email_client": "a@x.com", "date_reponse": datetime.datetime(2026, 1, 28)}
+        resultat = dernier_ticket_avant(reponse, self.index, 30)
+        self.assertEqual(resultat["created_at"], datetime.datetime(2026, 1, 20))
+
+    def test_ignore_un_ticket_hors_fenetre(self):
+        reponse = {"email_client": "a@x.com", "date_reponse": datetime.datetime(2026, 1, 5)}
+        resultat = dernier_ticket_avant(reponse, self.index, 3)
+        self.assertIsNone(resultat)
+
+    def test_ignore_un_ticket_apres_la_reponse(self):
+        reponse = {"email_client": "a@x.com", "date_reponse": datetime.datetime(2026, 1, 10)}
+        resultat = dernier_ticket_avant(reponse, self.index, 30)
+        self.assertEqual(resultat["created_at"], datetime.datetime(2026, 1, 1))
+
+    def test_client_sans_ticket_retourne_none(self):
+        reponse = {"email_client": "inconnu@x.com", "date_reponse": datetime.datetime(2026, 1, 28)}
+        self.assertIsNone(dernier_ticket_avant(reponse, self.index, 30))
 
 
 class TestDelaiJours(unittest.TestCase):

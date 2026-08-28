@@ -12,12 +12,15 @@ from outils import (
     charger_planning,
     construire_plannings_periode,
     charger_commandes,
+    charger_couts_produits,
     montant_perte_estime,
     montant_cout_garantie,
     formater_montant,
     formater_nombre_espace,
     commandes_par_email,
     premiere_commande_apres,
+    tickets_par_email,
+    dernier_ticket_avant,
     charger_nps,
     calculer_nps,
     charger_suivi_suggestions,
@@ -79,12 +82,6 @@ DEFINITION_EN_CRENEAU = (
 ROLE_RESPONSABLE_EQUIPE = "Responsable d'équipe"
 
 
-def formater_plage(date_debut, date_fin):
-    if date_debut == date_fin:
-        return date_debut.strftime("%d/%m/%Y")
-    return date_debut.strftime("%d/%m/%Y") + " → " + date_fin.strftime("%d/%m/%Y")
-
-
 NOMS_MOIS = [
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
@@ -93,6 +90,33 @@ NOMS_MOIS = [
 
 def formater_mois_annee(annee, mois):
     return NOMS_MOIS[mois - 1] + " " + str(annee)
+
+
+NOMS_MOIS_ABREGES = [
+    "janv.", "févr.", "mars", "avr.", "mai", "juin",
+    "juil.", "août", "sept.", "oct.", "nov.", "déc.",
+]
+
+
+# Format compact pour le bandeau d'en-tête global (ex. "7-13 sept. 2026" ou, à cheval sur deux
+# mois, "28 sept.-4 oct. 2026").
+def formater_plage_courte(date_debut, date_fin):
+    mois_debut = NOMS_MOIS_ABREGES[date_debut.month - 1]
+    mois_fin = NOMS_MOIS_ABREGES[date_fin.month - 1]
+
+    if date_debut.year != date_fin.year:
+        return (
+            str(date_debut.day) + " " + mois_debut + " " + str(date_debut.year) + " - "
+            + str(date_fin.day) + " " + mois_fin + " " + str(date_fin.year)
+        )
+    if date_debut.month != date_fin.month:
+        return (
+            str(date_debut.day) + " " + mois_debut + "-" + str(date_fin.day) + " " + mois_fin
+            + " " + str(date_fin.year)
+        )
+    if date_debut.day == date_fin.day:
+        return str(date_debut.day) + " " + mois_debut + " " + str(date_debut.year)
+    return str(date_debut.day) + "-" + str(date_fin.day) + " " + mois_debut + " " + str(date_debut.year)
 
 
 def construire_texte_evenements(exports_disponibles, date_debut, date_fin):
@@ -567,6 +591,13 @@ def construire_cellule_heatmap_bande(demandes_total):
     )
 
 
+SEUIL_PART_TELEPHONE_SIGNAL = 30
+
+
+# Le canal n'est montré ici que pour le téléphone, et seulement s'il pèse vraiment sur le
+# créneau : c'est le seul canal impliquant une attente synchrone, donc le seul où "quel canal
+# domine" change concrètement la lecture opérationnelle d'un hotspot (cf. heatmap, où le canal
+# n'est volontairement jamais montré cellule par cellule).
 def construire_carte_situation(entree, est_pic_semaine):
     titre = entree["jour"] + " · " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
 
@@ -584,13 +615,22 @@ def construire_carte_situation(entree, est_pic_semaine):
         ligne_detail = str(entree["demandes"]) + " demandes"
         verdict = "Aucun agent en poste"
 
+    ligne_canal = ""
+    if entree.get("canal_dominant") == "Téléphone" and entree.get("part_canal_dominant", 0) >= SEUIL_PART_TELEPHONE_SIGNAL:
+        ligne_canal = (
+            '<div style="font-size:11px; color:' + COULEUR_ACCENT_HORS_COUVERTURE + '; margin-top:2px;">'
+            "Dont " + str(round(entree["part_canal_dominant"])) + " % téléphone — implique une attente "
+            "synchrone.</div>"
+        )
+
     return (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
         "border-left:6px solid " + COULEUR_ACCENT_CRITIQUE + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
         '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + titre + "</div>"
         '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + texte_agents + "</div>"
         '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_detail + "</div>"
-        '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:4px;">'
+        + ligne_canal
+        + '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:4px;">'
         + verdict + "</div>"
         "</div>"
     )
@@ -750,15 +790,32 @@ def construire_agents_grille(tickets, planning_dernier):
     return agents_grille
 
 
+def obtenir_canal_dominant(compteur_canal, total_demandes):
+    if total_demandes == 0 or len(compteur_canal) == 0:
+        return None, 0
+
+    canal_max = None
+    compte_max = 0
+    for canal, compte in compteur_canal.items():
+        if compte > compte_max:
+            compte_max = compte
+            canal_max = canal
+
+    return canal_max, compte_max / total_demandes * 100
+
+
 # Une entrée par (jour, heure) 7h-21h, dans l'ordre heure par heure puis jour par jour — cet
 # ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
 # "auto-flow: row", qui suit l'ordre du DOM).
 def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaires_standard):
     demandes_par_jour_heure = {}
+    canaux_par_jour_heure = {}
     for nom_jour, numero_jour in JOURS_ORDRE:
         demandes_par_jour_heure[numero_jour] = {}
+        canaux_par_jour_heure[numero_jour] = {}
         for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
             demandes_par_jour_heure[numero_jour][heure] = 0
+            canaux_par_jour_heure[numero_jour][heure] = {}
 
     for ticket in tickets:
         moment = ticket["created_at"]
@@ -766,6 +823,13 @@ def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaire
         heure_ticket = moment.hour
         if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
             demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
+
+            compteur_canal = canaux_par_jour_heure[jour_ticket][heure_ticket]
+            canal = ticket["via_channel"]
+            if canal in compteur_canal:
+                compteur_canal[canal] = compteur_canal[canal] + 1
+            else:
+                compteur_canal[canal] = 1
 
     grille = []
     for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
@@ -781,6 +845,9 @@ def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaire
                 ratio = None
 
             niveau = niveau_charge_creneau(statut, nb_agents, ratio)
+            canal_dominant, part_canal_dominant = obtenir_canal_dominant(
+                canaux_par_jour_heure[numero_jour][heure], demandes
+            )
 
             grille.append({
                 "jour": nom_jour,
@@ -789,6 +856,8 @@ def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaire
                 "agents": presents,
                 "demandes": demandes,
                 "ratio": ratio,
+                "canal_dominant": canal_dominant,
+                "part_canal_dominant": part_canal_dominant,
                 "niveau": niveau,
             })
     return grille
@@ -1065,8 +1134,45 @@ def construire_conclusion_onglet(
     return observations[:3]
 
 
+# ------------------------------------------------------------------
+# Architecture rôles (conceptuelle) — pas de système de permissions réel dans cette démo (pas de
+# login), mais l'app ne doit pas supposer que tout utilisateur futur verra tout. Cette structure
+# documente, pour chaque onglet, le rôle minimum censé y avoir accès, et marque les données jugées
+# sensibles (coûts unitaires) — prête à être branchée sur une vraie gestion d'accès plus tard, sans
+# rien construire ici qui ressemblerait à une fausse authentification.
+# ------------------------------------------------------------------
+
+ROLE_AGENT = "Agent"
+ROLE_TEAM_LEAD = "Team Lead / Customer Care Manager"
+ROLE_HEAD_CX = "Head of CX / Direction"
+ROLE_ADMIN = "Admin"
+
+ROLES_ONGLET = {
+    "Contexte": [ROLE_AGENT, ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Vue d'ensemble": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Tendances": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Agents": [ROLE_AGENT, ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Alertes & suggestions": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Couverture & réactivité": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Produit": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Livraison": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Avant-vente & conversion": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Impact & confiance": [ROLE_HEAD_CX, ROLE_ADMIN],
+}
+
+# Un agrégat (total, moyenne, répartition par composant/type) reste visible à un rôle qui n'a pas
+# accès au détail unitaire — c'est déjà le cas dans l'UI actuelle : les coûts de revient unitaires
+# du futur fichier product_costs_fictif.xlsx ne sont jamais affichés en tableau brut, seulement
+# utilisés pour calculer des totaux/répartitions. Cette liste documente l'intention explicitement.
+DONNEES_SENSIBLES = {
+    "cout_revient_produit": [ROLE_HEAD_CX, ROLE_ADMIN],
+    "cout_logistique_remplacement": [ROLE_HEAD_CX, ROLE_ADMIN],
+}
+
+
 DOSSIER_EXPORTS = os.path.join(DOSSIER_PROJET, "exports_hebdomadaires")
 FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopify_fictif.xlsx")
+FICHIER_COUTS_PRODUITS = os.path.join(DOSSIER_PROJET, "data_shopify", "product_costs_fictif.xlsx")
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
 FICHIER_SUIVI_SUGGESTIONS = os.path.join(DOSSIER_PROJET, "data_suivi", "suivi_suggestions.xlsx")
 DOSSIER_MACROS = os.path.join(DOSSIER_PROJET, "knowledge_base", "macros")
@@ -1082,6 +1188,191 @@ SEUIL_HAUSSE_SUJET_CRITIQUE = 10
 SEUIL_REPLIES_FAQ = 3
 SEUIL_CSAT_VERBATIM = 2
 SEUIL_VERBATIMS_GROUPE = 10
+
+OBJECTIF_MACRO_PCT = 70
+SEUIL_DELTA_CSAT_NOTABLE = 0.2
+SEUIL_DELTA_FRT_NOTABLE_MIN = 15
+SEUIL_DELTA_MACRO_NOTABLE_PT = 5
+
+
+# Une ligne par sujet, avec évolution/niveau si une période de comparaison est active — logique
+# inchangée, seulement extraite pour être calculée une fois (réutilisée par les insights
+# prioritaires ET par les expanders détaillés de "Vue d'ensemble", au lieu d'être recalculée à
+# chaque ouverture d'expander).
+def construire_lignes_sujets(tickets_cat_s2, tickets_cat_s1, comparaison_disponible):
+    sujets_cat_s2 = grouper_par(tickets_cat_s2, "subject_cluster")
+    sujets_cat_s1 = grouper_par(tickets_cat_s1, "subject_cluster")
+
+    if comparaison_disponible:
+        sujets_a_afficher = cles_combinees(sujets_cat_s2, sujets_cat_s1)
+    else:
+        sujets_a_afficher = list(sujets_cat_s2.keys())
+
+    lignes_sujets = []
+    for sujet in sujets_a_afficher:
+        tickets_sujet_s2 = sujets_cat_s2.get(sujet, [])
+        volume_s2 = len(tickets_sujet_s2)
+        ligne_sujet = {"Sujet": sujet, "Tickets": volume_s2}
+
+        if comparaison_disponible:
+            volume_s1 = len(sujets_cat_s1.get(sujet, []))
+            delta = volume_s2 - volume_s1
+
+            if delta >= 0:
+                delta_texte = "+" + str(delta)
+            else:
+                delta_texte = str(delta)
+
+            ligne_sujet["Évolution"] = delta_texte
+
+            if volume_s2 == 0:
+                ligne_sujet["Niveau"] = "DISPARU"
+            elif volume_s1 == 0:
+                ligne_sujet["Niveau"] = "NOUVEAU"
+            else:
+                ligne_sujet["Niveau"] = niveau_hausse_sujet(delta, SEUIL_HAUSSE_SUJET_SURVEILLER, SEUIL_HAUSSE_SUJET_CRITIQUE)
+
+        lignes_sujets.append(ligne_sujet)
+
+    return sorted(lignes_sujets, key=obtenir_tickets, reverse=True)
+
+
+# Le seuil de hausse/baisse (niveau_hausse_sujet) travaille déjà sur un delta ABSOLU, pas un % —
+# une variation de 1 vers 2 tickets (100 %) ne franchit jamais ce seuil. Pas besoin d'un garde-fou
+# de volume supplémentaire ici : le seuil absolu joue déjà ce rôle.
+def obtenir_sujets_notables(lignes_sujets):
+    notables = []
+    for ligne in lignes_sujets:
+        niveau = ligne.get("Niveau", "")
+        if niveau == "CRITIQUE" or niveau == "A SURVEILLER":
+            notables.append(ligne)
+        elif niveau == "NOUVEAU" and ligne["Tickets"] >= SEUIL_MINIMUM_SUJET:
+            notables.append(ligne)
+    return notables
+
+
+def obtenir_score_insight(insight):
+    return insight["score"]
+
+
+# 3 à 5 observations maximum, classées par magnitude — pas un insight généré artificiellement pour
+# chaque métrique. Sans comparaison, repli sur des signaux à seuil absolu (objectif macro, CSAT
+# bas, plus gros volume) plutôt que sur des évolutions qui n'existent pas sans période B.
+def construire_insights_vue_ensemble(
+    lignes_categories_apercu_triees, categories_s2, categories_s1, comparaison_disponible,
+    sujets_notables_par_categorie, csat_s2, csat_s1, frt_s2, frt_s1, macro_s2, macro_s1,
+):
+    candidats = []
+
+    if comparaison_disponible:
+        for ligne in lignes_categories_apercu_triees:
+            categorie = ligne["Catégorie"]
+            volume_actuel = ligne["Tickets"]
+            volume_precedent = len(categories_s1.get(categorie, []))
+            if volume_precedent == 0:
+                continue
+
+            delta_absolu = volume_actuel - volume_precedent
+            if abs(delta_absolu) < SEUIL_HAUSSE_SUJET_SURVEILLER:
+                continue
+
+            evolution = evolution_pourcentage(volume_precedent, volume_actuel)
+            if delta_absolu > 0:
+                texte = (
+                    categorie + " augmente de " + str(round(evolution)) + " % par rapport à la "
+                    "période précédente (" + str(volume_precedent) + " → " + str(volume_actuel) + " tickets)."
+                )
+            else:
+                texte = (
+                    categorie + " diminue de " + str(round(abs(evolution))) + " % par rapport à la "
+                    "période précédente (" + str(volume_precedent) + " → " + str(volume_actuel) + " tickets)."
+                )
+            candidats.append({"titre": "Volume — " + categorie, "texte": texte, "score": abs(delta_absolu)})
+
+        if csat_s2 is not None and csat_s1 is not None:
+            delta_csat = csat_s2 - csat_s1
+            if abs(delta_csat) >= SEUIL_DELTA_CSAT_NOTABLE:
+                if delta_csat < 0:
+                    texte = (
+                        "Le CSAT moyen baisse de " + str(round(abs(delta_csat), 2)) + " point(s) par "
+                        "rapport à la période précédente (" + formater_csat(csat_s1) + " → " + formater_csat(csat_s2) + ")."
+                    )
+                else:
+                    texte = (
+                        "Le CSAT moyen progresse de " + str(round(delta_csat, 2)) + " point(s) par "
+                        "rapport à la période précédente (" + formater_csat(csat_s1) + " → " + formater_csat(csat_s2) + ")."
+                    )
+                candidats.append({"titre": "CSAT global", "texte": texte, "score": abs(delta_csat) * 20})
+
+        if frt_s2 is not None and frt_s1 is not None:
+            delta_frt = frt_s2 - frt_s1
+            if abs(delta_frt) >= SEUIL_DELTA_FRT_NOTABLE_MIN:
+                if delta_frt > 0:
+                    texte = (
+                        "Le délai de 1re réponse augmente de " + str(round(delta_frt)) + " min par "
+                        "rapport à la période précédente (" + formater_duree(frt_s1) + " → " + formater_duree(frt_s2) + ")."
+                    )
+                else:
+                    texte = (
+                        "Le délai de 1re réponse s'améliore de " + str(round(abs(delta_frt))) + " min "
+                        "par rapport à la période précédente (" + formater_duree(frt_s1) + " → " + formater_duree(frt_s2) + ")."
+                    )
+                candidats.append({"titre": "Délai de 1re réponse", "texte": texte, "score": abs(delta_frt)})
+
+        if macro_s2 is not None and macro_s1 is not None:
+            delta_macro = macro_s2 - macro_s1
+            if abs(delta_macro) >= SEUIL_DELTA_MACRO_NOTABLE_PT:
+                if delta_macro < 0:
+                    texte = "L'utilisation des macros recule de " + str(round(abs(delta_macro), 1)) + " pt par rapport à la période précédente."
+                else:
+                    texte = "L'utilisation des macros progresse de " + str(round(delta_macro, 1)) + " pt par rapport à la période précédente."
+                candidats.append({"titre": "Utilisation macro", "texte": texte, "score": abs(delta_macro) * 4})
+    else:
+        if macro_s2 is not None and macro_s2 < OBJECTIF_MACRO_PCT:
+            candidats.append({
+                "titre": "Utilisation macro",
+                "texte": (
+                    "L'utilisation des macros est à " + formater_pourcentage(macro_s2) + ", sous "
+                    "l'objectif de " + str(OBJECTIF_MACRO_PCT) + " %."
+                ),
+                "score": OBJECTIF_MACRO_PCT - macro_s2,
+            })
+        if csat_s2 is not None and csat_s2 < SEUIL_CSAT_INSATISFAISANT:
+            candidats.append({
+                "titre": "CSAT global",
+                "texte": "Le CSAT moyen est à " + formater_csat(csat_s2) + " sur 5 sur la période.",
+                "score": (SEUIL_CSAT_INSATISFAISANT - csat_s2) * 20,
+            })
+        if len(lignes_categories_apercu_triees) > 0:
+            plus_gros = lignes_categories_apercu_triees[0]
+            candidats.append({
+                "titre": "Volume — " + plus_gros["Catégorie"],
+                "texte": (
+                    plus_gros["Catégorie"] + " concentre le plus gros volume de la période ("
+                    + str(plus_gros["Tickets"]) + " tickets)."
+                ),
+                "score": 1,
+            })
+
+    # sujets_notables_par_categorie n'est jamais peuplé sans comparaison active (obtenir_sujets_notables
+    # ne garde que des lignes avec "Niveau" défini, lui-même seulement présent quand comparaison_disponible),
+    # et "Évolution" est alors toujours renseigné (y compris pour un sujet NOUVEAU, delta = volume - 0) —
+    # pas de cas où delta_texte serait vide ici.
+    for categorie, sujets_categorie in sujets_notables_par_categorie.items():
+        for sujet_ligne in sujets_categorie:
+            delta_texte = sujet_ligne["Évolution"]
+            niveau_sujet = sujet_ligne["Niveau"]
+            score_sujet = abs(int(delta_texte))
+            texte = (
+                "« " + sujet_ligne["Sujet"] + " » (" + categorie + ") évolue de " + delta_texte
+                + " tickets — " + libelle_niveau(niveau_sujet).lower() + "."
+            )
+
+            candidats.append({"titre": "Sujet — " + sujet_ligne["Sujet"], "texte": texte, "score": score_sujet})
+
+    candidats_tries = sorted(candidats, key=obtenir_score_insight, reverse=True)
+    return candidats_tries[:5]
+
 
 st.set_page_config(page_title="Dashboard Customer Care : Emyria", layout="wide")
 
@@ -1116,7 +1407,7 @@ def reinitialiser_periode():
             del st.session_state[cle]
 
 
-st.sidebar.header("Période à afficher")
+st.sidebar.header("Période d'analyse")
 date_dernier_export = exports_disponibles[-1][0]
 st.sidebar.caption("Dernières données disponibles : " + date_dernier_export.strftime("%d/%m/%Y"))
 st.sidebar.caption(
@@ -1132,7 +1423,7 @@ semaine_a = st.sidebar.selectbox(
     format_func=formater_semaine_menu, key="semaine_a",
 )
 
-etendre_a = st.sidebar.checkbox("Étendre sur plusieurs semaines", value=False, key="etendre_a")
+etendre_a = st.sidebar.checkbox("Étendre la période", value=False, key="etendre_a")
 
 if etendre_a:
     fin_a = st.sidebar.selectbox(
@@ -1150,7 +1441,6 @@ else:
     date_a_fin = semaine_a + datetime.timedelta(days=6)
 
 fichiers_actuels = fichiers_dans_plage(exports_disponibles, date_a_debut, date_a_fin)
-periode_texte = formater_plage(date_a_debut, date_a_fin)
 
 comparer = st.sidebar.checkbox("Comparer à une autre période", value=False, key="comparer")
 
@@ -1166,7 +1456,7 @@ if comparer:
         format_func=formater_semaine_menu, key="semaine_b",
     )
 
-    etendre_b = st.sidebar.checkbox("Étendre sur plusieurs semaines (B)", value=False, key="etendre_b")
+    etendre_b = st.sidebar.checkbox("Étendre la période (B)", value=False, key="etendre_b")
 
     if etendre_b:
         fin_b = st.sidebar.selectbox(
@@ -1209,7 +1499,15 @@ if comparaison_disponible:
     agents_s2_liste = list(grouper_par(tickets_s2, "assignee").keys())
     changements_planning = detecter_changements_planning(agents_s1_liste, agents_s2_liste, planning_s1_dernier, planning_s2_dernier)
 
-st.caption(periode_texte)
+texte_bandeau_periode = formater_plage_courte(date_a_debut, date_a_fin)
+if comparaison_disponible:
+    texte_bandeau_periode = texte_bandeau_periode + " vs " + formater_plage_courte(date_b_debut, date_b_fin)
+
+st.markdown(
+    '<div style="font-size:15px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + '; margin:-6px 0 12px;">'
+    + texte_bandeau_periode + "</div>",
+    unsafe_allow_html=True,
+)
 if comparer and not comparaison_disponible:
     st.caption("Aucun export disponible sur la période B choisie — pas de comparaison possible.")
 
@@ -1219,6 +1517,7 @@ categories_s2 = grouper_par_categorie(tickets_s2)
 # Chargés une seule fois ici (au lieu de dans un onglet) car utilisés à la fois par
 # "Avant-vente & conversion" et "Impact & confiance" — éviter de recharger deux fois.
 commandes = charger_commandes(FICHIER_SHOPIFY)
+couts_produits = charger_couts_produits(FICHIER_COUTS_PRODUITS)
 
 fichiers_tous_business = []
 for date_export_hist, chemin_hist in exports_disponibles:
@@ -1279,7 +1578,7 @@ with onglet_contexte:
     colonne_ctx_a, colonne_ctx_b = st.columns(2)
 
     with colonne_ctx_a:
-        st.subheader("L'entreprise (fictive)")
+        st.markdown(titre_section_principale("L'entreprise (fictive)"), unsafe_allow_html=True)
         st.markdown(
             "- **Produit** : diffuseur d'ambiance connecté, avec 6 programmes de parfum — "
             "Sérénité, Éveil, Cocon, Clarté, Évasion, Douceur\n"
@@ -1299,29 +1598,39 @@ with onglet_contexte:
         )
 
     with colonne_ctx_b:
-        st.subheader("Ce que fait cet outil")
+        st.markdown(titre_section_principale("Ce que permet ce tableau de bord"), unsafe_allow_html=True)
         st.markdown(
-            "- Suivi de la performance support à la semaine, au mois, au trimestre ou à l'année\n"
-            "- Alertes automatiques : SLA, satisfaction, couverture par créneau horaire\n"
-            "- Suggestions de macros/FAQ à créer, basées sur les irritants récurrents\n"
-            "- Volet business : conversion avant-vente, coûts SAV, confiance client (NPS), "
+            "- Repérer ce qui mérite l'attention du manager sur la période choisie (barre latérale), "
+            "pas seulement consulter des chiffres\n"
+            "- Suivre alertes, réactivité et couverture au quotidien\n"
+            "- Piloter le volet business : conversion avant-vente, coûts SAV, confiance client (NPS), "
             "opportunités produit hors catalogue"
         )
 
-        st.subheader("Comment lire les onglets")
+        st.markdown(titre_section_principale("Comment lire les onglets"), unsafe_allow_html=True)
         st.markdown(
             "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
             "pas un ordre arbitraire :\n"
-            "- **Vue d'ensemble → Alertes** : pilotage hebdomadaire de l'équipe (catégories incluses)\n"
+            "- **Vue d'ensemble → Alertes** : pilotage courant de l'équipe (catégories incluses)\n"
             "- **Couverture & réactivité** : disponibilité de l'équipe, SLA, tensions de couverture\n"
             "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
             "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
             "- **Avant-vente & conversion** : conversion réelle après contact avant-vente\n"
             "- **Impact & confiance** : coûts SAV, confiance client (NPS)\n\n"
-            "CSAT noté sur une échelle de 0 à 5."
+            "CSAT noté sur une échelle de 0 à 5. La période analysée (et la comparaison, si activée) "
+            "est affichée en haut de chaque page, réglée une seule fois dans la barre latérale."
         )
 
     st.divider()
+    st.markdown(titre_section_principale("Sources de données"), unsafe_allow_html=True)
+    st.markdown(
+        "- **Tickets support** — export hebdomadaire représentatif (canal, catégorie, agent, "
+        "délais, CSAT)\n"
+        "- **Planning des agents** — horaires, rôles, présence par créneau\n"
+        "- **Commandes** — fichier Shopify (produit, montant, pays, date)\n"
+        "- **Réponses NPS** — score de recommandation par client, indépendant de la période affichée\n"
+        "- **Suivi des suggestions** — macros/FAQ créées et leur effet mesuré"
+    )
     st.caption(
         "Toutes les données (tickets, commandes, avis NPS) sont générées aléatoirement pour cette "
         "démonstration — les chiffres n'ont aucune valeur réelle."
@@ -1329,9 +1638,10 @@ with onglet_contexte:
 
     with st.expander("Limites connues de cette démo"):
         st.markdown(
-            "- **Pertes financières** : estimées via une fraction du prix de vente selon le type de "
-            "résolution (remboursement intégral, remplacement/geste commercial à coût partiel) — une "
-            "approximation illustrative, pas un chiffre comptable réel.\n"
+            "- **Coût des incidents clients** : remboursement et remplacement/garantie utilisent un vrai "
+            "coût de revient produit (product_costs_fictif.xlsx) ; seul le geste commercial reste une "
+            "fraction estimée du prix de vente, faute d'un montant réellement accordé enregistré par "
+            "ticket — voir l'onglet Impact & confiance pour le détail par ligne.\n"
             "- **Exports disponibles** : semaines représentatives espacées dans l'année (pas un "
             "historique hebdomadaire continu) — voir l'onglet Tendances pour le détail des écarts.\n"
             "- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le "
@@ -1353,15 +1663,17 @@ with onglet_vue:
     frt_s2 = moyenne(tickets_s2, "first_reply_time_min")
     macro_s2 = taux_rempli(tickets_s2, "macro_applied")
 
+    # Calculés inconditionnellement (moyenne/taux_rempli renvoient None sur une liste vide) —
+    # réutilisés à la fois par les cartes KPI ci-dessous et par les insights prioritaires plus bas.
+    nombre_s1 = len(tickets_s1)
+    csat_s1 = moyenne(tickets_s1, "csat")
+    frt_s1 = moyenne(tickets_s1, "first_reply_time_min")
+    macro_s1 = taux_rempli(tickets_s1, "macro_applied")
+
     with st.container(border=True):
         colonne1, colonne2, colonne3, colonne4 = st.columns(4)
 
         if comparaison_disponible:
-            nombre_s1 = len(tickets_s1)
-            csat_s1 = moyenne(tickets_s1, "csat")
-            frt_s1 = moyenne(tickets_s1, "first_reply_time_min")
-            macro_s1 = taux_rempli(tickets_s1, "macro_applied")
-
             colonne1.markdown(
                 construire_carte_kpi(
                     "Tickets reçus", formater_nombre_espace(nombre_s2),
@@ -1418,9 +1730,10 @@ with onglet_vue:
     evenements_html = "Événement(s) de la période :<br>" + evenements_texte.replace("  \n", "<br>")
     st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
-    st.markdown(titre_section_principale("Répartition par famille"), unsafe_allow_html=True)
-    if comparaison_disponible:
-        st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
+    # ------------------------------------------------------------------
+    # Sujets par catégorie — calculés une seule fois ici (réutilisés par les insights
+    # prioritaires ci-dessous ET par les expanders détaillés plus bas, pas recalculés deux fois).
+    # ------------------------------------------------------------------
 
     if comparaison_disponible:
         categories_a_afficher = cles_combinees(categories_s2, categories_s1)
@@ -1433,6 +1746,43 @@ with onglet_vue:
         lignes_categories_apercu.append({"Catégorie": categorie, "Tickets": len(tickets_cat)})
 
     lignes_categories_apercu_triees = sorted(lignes_categories_apercu, key=obtenir_tickets, reverse=True)
+
+    sujets_par_categorie = {}
+    sujets_notables_par_categorie = {}
+    for ligne in lignes_categories_apercu_triees:
+        categorie = ligne["Catégorie"]
+        tickets_cat_s2 = categories_s2.get(categorie, [])
+        tickets_cat_s1 = categories_s1.get(categorie, [])
+        lignes_sujets_cat = construire_lignes_sujets(tickets_cat_s2, tickets_cat_s1, comparaison_disponible)
+        sujets_par_categorie[categorie] = lignes_sujets_cat
+        sujets_notables_par_categorie[categorie] = obtenir_sujets_notables(lignes_sujets_cat)
+
+    # ------------------------------------------------------------------
+    # Insights prioritaires — 3 à 5 observations maximum, pas un dump de tous les chiffres.
+    # ------------------------------------------------------------------
+
+    insights_vue_ensemble = construire_insights_vue_ensemble(
+        lignes_categories_apercu_triees, categories_s2, categories_s1, comparaison_disponible,
+        sujets_notables_par_categorie, csat_s2, csat_s1, frt_s2, frt_s1, macro_s2, macro_s1,
+    )
+
+    st.markdown(titre_section_principale("Ce qui mérite votre attention"), unsafe_allow_html=True)
+    if len(insights_vue_ensemble) > 0:
+        for insight in insights_vue_ensemble:
+            st.markdown(
+                '<div style="margin-bottom:10px;"><span style="font-size:11px; font-weight:700; '
+                'text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_PRIMAIRE + ';">'
+                + insight["titre"] + '</span><br><span style="font-size:14px; color:' + COULEUR_TEXTE_VALEUR + ';">'
+                + insight["texte"] + "</span></div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.caption("Aucune variation significative sur cette période — situation stable.")
+
+    st.divider()
+    st.markdown(titre_section_principale("Répartition par famille"), unsafe_allow_html=True)
+    if comparaison_disponible:
+        st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
 
     if comparaison_disponible:
         ordre_categories = []
@@ -1504,104 +1854,77 @@ with onglet_vue:
         with st.container(border=True):
             st.bar_chart(tableau_graphique_categories, color=COULEUR_PRIMAIRE)
 
+    st.caption(
+        "Sujets qui évoluent significativement (À surveiller/Critique) mise en avant ; le détail "
+        "complet de chaque catégorie reste accessible."
+    )
     for ligne in lignes_categories_apercu_triees:
         categorie = ligne["Catégorie"]
-        tickets_cat_s2 = categories_s2.get(categorie, [])
-        tickets_cat_s1 = categories_s1.get(categorie, [])
+        lignes_sujets_cat_triees = sujets_par_categorie[categorie]
+        sujets_notables = sujets_notables_par_categorie[categorie]
 
         with st.expander(categorie + " — " + str(ligne["Tickets"]) + " tickets"):
-            sujets_cat_s2 = grouper_par(tickets_cat_s2, "subject_cluster")
-            sujets_cat_s1 = grouper_par(tickets_cat_s1, "subject_cluster")
+            if len(sujets_notables) > 0:
+                afficher_tableau_colore(sujets_notables)
+            elif comparaison_disponible:
+                st.caption("Aucun sujet en évolution notable dans cette catégorie.")
 
-            if comparaison_disponible:
-                sujets_a_afficher = cles_combinees(sujets_cat_s2, sujets_cat_s1)
-            else:
-                sujets_a_afficher = list(sujets_cat_s2.keys())
-
-            lignes_sujets_cat = []
-            for sujet in sujets_a_afficher:
-                tickets_sujet_s2 = sujets_cat_s2.get(sujet, [])
-                volume_s2 = len(tickets_sujet_s2)
-
-                ligne_sujet = {"Sujet": sujet, "Tickets": volume_s2}
-
-                if comparaison_disponible:
-                    volume_s1 = len(sujets_cat_s1.get(sujet, []))
-                    delta = volume_s2 - volume_s1
-
-                    if delta >= 0:
-                        delta_texte = "+" + str(delta)
-                    else:
-                        delta_texte = str(delta)
-
-                    ligne_sujet["Évolution"] = delta_texte
-
-                    if volume_s2 == 0:
-                        ligne_sujet["Niveau"] = "DISPARU"
-                    elif volume_s1 == 0:
-                        ligne_sujet["Niveau"] = "NOUVEAU"
-                    else:
-                        ligne_sujet["Niveau"] = niveau_hausse_sujet(delta, SEUIL_HAUSSE_SUJET_SURVEILLER, SEUIL_HAUSSE_SUJET_CRITIQUE)
-
-                lignes_sujets_cat.append(ligne_sujet)
-
-            lignes_sujets_cat_triees = sorted(lignes_sujets_cat, key=obtenir_tickets, reverse=True)
-            afficher_tableau_colore(lignes_sujets_cat_triees)
+            with st.expander("Voir tous les sujets de " + categorie):
+                afficher_tableau_colore(lignes_sujets_cat_triees)
 
     st.divider()
-    st.markdown(titre_section_principale("Performance par catégorie"), unsafe_allow_html=True)
-    st.caption(DEFINITION_EN_CRENEAU)
-    st.caption(
-        "* 1re réponse en créneau : sous 1h30 (OK), 1h30-2h (à surveiller), au-delà de 2h "
-        "(critique) — le bloc se colore selon ce seuil. Utilisation macro : objectif minimum "
-        "70 % des demandes traitées via macro, au moins une fois dans la conversation."
-    )
+    with st.expander("Performance par catégorie (détail)"):
+        st.caption(DEFINITION_EN_CRENEAU)
+        st.caption(
+            "* 1re réponse en créneau : sous 1h (OK), 1h-2h (à surveiller), au-delà de 2h "
+            "(critique) — le bloc se colore selon ce seuil. Utilisation macro : objectif minimum "
+            "70 % des demandes traitées via macro, au moins une fois dans la conversation."
+        )
 
-    lignes_categories = []
-    niveaux_reponse_categories = []
-    niveaux_macro_categories = []
-
-    if comparaison_disponible:
-        categories_a_afficher_perf = cles_combinees(categories_s2, categories_s1)
-    else:
-        categories_a_afficher_perf = list(categories_s2.keys())
-
-    for categorie in categories_a_afficher_perf:
-        tickets_cat_s2 = categories_s2.get(categorie, [])
-        tickets_cat_s1 = categories_s1.get(categorie, [])
-
-        csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
-        macro_cat_s2 = taux_rempli(tickets_cat_s2, "macro_applied")
-
-        if len(tickets_cat_s2) > 0:
-            en_creneau_cat = separer_creneau(tickets_cat_s2, planning_s2)[0]
-            frt_en_creneau_cat = moyenne(en_creneau_cat, "first_reply_time_min")
-        else:
-            frt_en_creneau_cat = None
-
-        ligne = {"Catégorie": categorie}
+        lignes_categories = []
+        niveaux_reponse_categories = []
+        niveaux_macro_categories = []
 
         if comparaison_disponible:
-            ligne["Volume période précédente"] = len(tickets_cat_s1)
+            categories_a_afficher_perf = cles_combinees(categories_s2, categories_s1)
+        else:
+            categories_a_afficher_perf = list(categories_s2.keys())
 
-        ligne["Volume période actuelle"] = len(tickets_cat_s2)
-        ligne["CSAT"] = "N/A"
-        ligne["1re réponse (en créneau)"] = "N/A"
-        ligne["Utilisation macro (%)"] = formater_pourcentage(macro_cat_s2)
+        for categorie in categories_a_afficher_perf:
+            tickets_cat_s2 = categories_s2.get(categorie, [])
+            tickets_cat_s1 = categories_s1.get(categorie, [])
 
-        if csat_cat_s2 is not None:
-            ligne["CSAT"] = formater_csat(csat_cat_s2)
+            csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
+            macro_cat_s2 = taux_rempli(tickets_cat_s2, "macro_applied")
 
-        niveau_reponse_categorie = ""
-        if frt_en_creneau_cat is not None:
-            ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_cat)
-            niveau_reponse_categorie = niveau_reponse_ouvree(frt_en_creneau_cat)
+            if len(tickets_cat_s2) > 0:
+                en_creneau_cat = separer_creneau(tickets_cat_s2, planning_s2)[0]
+                frt_en_creneau_cat = moyenne(en_creneau_cat, "first_reply_time_min")
+            else:
+                frt_en_creneau_cat = None
 
-        lignes_categories.append(ligne)
-        niveaux_reponse_categories.append(niveau_reponse_categorie)
-        niveaux_macro_categories.append(niveau_macro(macro_cat_s2))
+            ligne = {"Catégorie": categorie}
 
-    with st.container(border=True):
+            if comparaison_disponible:
+                ligne["Volume période précédente"] = len(tickets_cat_s1)
+
+            ligne["Volume période actuelle"] = len(tickets_cat_s2)
+            ligne["CSAT"] = "N/A"
+            ligne["1re réponse (en créneau)"] = "N/A"
+            ligne["Utilisation macro (%)"] = formater_pourcentage(macro_cat_s2)
+
+            if csat_cat_s2 is not None:
+                ligne["CSAT"] = formater_csat(csat_cat_s2)
+
+            niveau_reponse_categorie = ""
+            if frt_en_creneau_cat is not None:
+                ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_cat)
+                niveau_reponse_categorie = niveau_reponse_ouvree(frt_en_creneau_cat)
+
+            lignes_categories.append(ligne)
+            niveaux_reponse_categories.append(niveau_reponse_categorie)
+            niveaux_macro_categories.append(niveau_macro(macro_cat_s2))
+
         afficher_tableau_colore(
             lignes_categories,
             colonnes_couleur_bloc={
@@ -1609,6 +1932,76 @@ with onglet_vue:
                 "Utilisation macro (%)": niveaux_macro_categories,
             },
         )
+
+
+SEUIL_TENDANCE_STABLE_PCT = 15
+
+
+def obtenir_valeurs_colonne(lignes_tendance, cle):
+    valeurs = []
+    for ligne in lignes_tendance:
+        valeur = ligne[cle]
+        if valeur is not None:
+            valeurs.append(valeur)
+    return valeurs
+
+
+# Classification simple à partir d'une moyenne glissante (tous les points sauf les deux
+# derniers) : le dernier point ET l'avant-dernier au-dessus de cette moyenne = tendance
+# structurelle ; seul le dernier point élevé, l'avant-dernier proche de la moyenne = pic ponctuel ;
+# le dernier point revient proche de la moyenne après un avant-dernier élevé = retour à la normale.
+# Pas assez de points pour distinguer un aléa d'une vraie tendance -> le dire plutôt qu'inventer.
+def classifier_tendance(valeurs):
+    if len(valeurs) < 3:
+        return "historique insuffisant"
+
+    dernier = valeurs[-1]
+    avant_dernier = valeurs[-2]
+    # valeurs[:-2] a toujours au moins 1 élément ici (garanti par le "len(valeurs) < 3" ci-dessus).
+    historique = valeurs[:-2]
+
+    moyenne_historique = sum(historique) / len(historique)
+    if moyenne_historique == 0:
+        return "historique insuffisant"
+
+    ecart_dernier_pct = (dernier - moyenne_historique) / moyenne_historique * 100
+    ecart_avant_dernier_pct = (avant_dernier - moyenne_historique) / moyenne_historique * 100
+
+    dernier_stable = abs(ecart_dernier_pct) < SEUIL_TENDANCE_STABLE_PCT
+    avant_dernier_stable = abs(ecart_avant_dernier_pct) < SEUIL_TENDANCE_STABLE_PCT
+    dernier_eleve = ecart_dernier_pct >= SEUIL_TENDANCE_STABLE_PCT
+    avant_dernier_eleve = ecart_avant_dernier_pct >= SEUIL_TENDANCE_STABLE_PCT
+    dernier_bas = ecart_dernier_pct <= -SEUIL_TENDANCE_STABLE_PCT
+    avant_dernier_bas = ecart_avant_dernier_pct <= -SEUIL_TENDANCE_STABLE_PCT
+
+    # Le retour à la normale doit être vérifié avant tout, sinon un dernier point simplement
+    # stable masque le fait que l'avant-dernier était, lui, nettement écarté de la moyenne.
+    if dernier_stable:
+        if avant_dernier_stable:
+            return "stabilité"
+        return "retour à la normale"
+
+    if dernier_eleve and avant_dernier_eleve:
+        return "hausse structurelle"
+    if dernier_bas and avant_dernier_bas:
+        return "baisse structurelle"
+    return "pic ponctuel"
+
+
+def construire_ligne_classification_tendances(lignes_tendance):
+    metriques = [
+        ("Volume", "Tickets"),
+        ("CSAT", "CSAT"),
+        ("1re réponse", "1re réponse (min)"),
+        ("Utilisation macro", "Utilisation macro (%)"),
+    ]
+
+    morceaux = []
+    for label, cle in metriques:
+        valeurs = obtenir_valeurs_colonne(lignes_tendance, cle)
+        morceaux.append(label + " : " + classifier_tendance(valeurs))
+
+    return " · ".join(morceaux)
 
 
 # ------------------------------------------------------------------
@@ -1654,6 +2047,12 @@ with onglet_tendances:
 
     tableau_tendance = pd.DataFrame(lignes_tendance)
 
+    st.markdown(
+        '<div style="font-size:13px; font-weight:600; color:' + COULEUR_TEXTE_VALEUR + '; margin-bottom:14px;">'
+        + construire_ligne_classification_tendances(lignes_tendance) + "</div>",
+        unsafe_allow_html=True,
+    )
+
     st.markdown(titre_section_principale("Volume de tickets"), unsafe_allow_html=True)
     graphique_volume = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
@@ -1663,7 +2062,7 @@ with onglet_tendances:
     with st.container(border=True):
         st.altair_chart(graphique_volume, width="stretch")
 
-    st.subheader("CSAT moyen")
+    st.markdown(titre_section_principale("CSAT moyen"), unsafe_allow_html=True)
     graphique_csat = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_SECONDAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
@@ -1672,7 +2071,7 @@ with onglet_tendances:
     with st.container(border=True):
         st.altair_chart(graphique_csat, width="stretch")
 
-    st.subheader("Temps de 1re réponse moyen")
+    st.markdown(titre_section_principale("Temps de 1re réponse moyen"), unsafe_allow_html=True)
     graphique_frt = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_ACCENT_FONCE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("1re réponse (min):Q", title="Minutes"),
@@ -1681,7 +2080,7 @@ with onglet_tendances:
     with st.container(border=True):
         st.altair_chart(graphique_frt, width="stretch")
 
-    st.subheader("Utilisation macro")
+    st.markdown(titre_section_principale("Utilisation macro"), unsafe_allow_html=True)
     graphique_macro = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
         x=alt.X("Date:T", title=None),
         y=alt.Y("Utilisation macro (%):Q", scale=alt.Scale(domain=[0, 100])),
@@ -1689,6 +2088,63 @@ with onglet_tendances:
     ).properties(height=260).configure_view(strokeWidth=0)
     with st.container(border=True):
         st.altair_chart(graphique_macro, width="stretch")
+
+
+# Le quadrant volume/CSAT reste un signal relatif à comprendre, jamais un jugement — les 4
+# libellés décrivent symétriquement les deux axes (volume, CSAT) plutôt que de qualifier l'agent
+# ("va vite"/"soigné"), et l'écart réel (pas juste au-dessus/en-dessous) est toujours affiché.
+def construire_profil_agent(volume, volume_moyen_equipe, csat_agent, csat_moyen_equipe):
+    if volume_moyen_equipe > 0:
+        ecart_volume_pct = (volume - volume_moyen_equipe) / volume_moyen_equipe * 100
+    else:
+        ecart_volume_pct = 0
+
+    volume_haut = volume > volume_moyen_equipe
+
+    if csat_agent is not None and csat_moyen_equipe is not None:
+        ecart_csat = csat_agent - csat_moyen_equipe
+        csat_haut = csat_agent > csat_moyen_equipe
+    else:
+        ecart_csat = None
+        csat_haut = False
+
+    if ecart_volume_pct >= 0:
+        texte_volume = "volume +" + str(round(ecart_volume_pct)) + " % vs équipe"
+    else:
+        texte_volume = "volume " + str(round(ecart_volume_pct)) + " % vs équipe"
+
+    if ecart_csat is not None:
+        if ecart_csat >= 0:
+            texte_csat = "CSAT +" + str(round(ecart_csat, 2)) + " vs équipe"
+        else:
+            texte_csat = "CSAT " + str(round(ecart_csat, 2)) + " vs équipe"
+    else:
+        texte_csat = "CSAT N/A"
+
+    if volume_haut and csat_haut:
+        libelle = "Volume et CSAT au-dessus de la moyenne"
+    elif volume_haut and not csat_haut:
+        libelle = "Volume élevé, CSAT sous la moyenne"
+    elif not volume_haut and csat_haut:
+        libelle = "CSAT élevé, volume sous la moyenne"
+    else:
+        libelle = "Volume et CSAT sous la moyenne — à investiguer"
+
+    return libelle + " (" + texte_volume + ", " + texte_csat + ")"
+
+
+def obtenir_categorie_dominante(tickets_agent):
+    categories_agent = grouper_par_categorie(tickets_agent)
+    if len(categories_agent) == 0:
+        return "N/A"
+
+    plus_grosse_categorie = None
+    plus_gros_volume = -1
+    for categorie, tickets_cat in categories_agent.items():
+        if len(tickets_cat) > plus_gros_volume:
+            plus_gros_volume = len(tickets_cat)
+            plus_grosse_categorie = categorie
+    return plus_grosse_categorie
 
 
 # ------------------------------------------------------------------
@@ -1742,26 +2198,13 @@ with onglet_agents:
         if role_agent == ROLE_RESPONSABLE_EQUIPE:
             profil = "Management (volume non comparable aux conseillers)"
         else:
-            volume_haut = volume > volume_moyen_equipe
-
-            if csat_agent is not None and csat_moyen_equipe is not None:
-                csat_haut = csat_agent > csat_moyen_equipe
-            else:
-                csat_haut = False
-
-            if volume_haut and csat_haut:
-                profil = "Référence"
-            elif volume_haut and not csat_haut:
-                profil = "Va vite, satisfaction en retrait"
-            elif not volume_haut and csat_haut:
-                profil = "Soigné, volume en retrait"
-            else:
-                profil = "À accompagner en priorité"
+            profil = construire_profil_agent(volume, volume_moyen_equipe, csat_agent, csat_moyen_equipe)
 
         ligne = {
             "Agent": agent,
             "Rôle": role_agent,
             "Tickets": volume,
+            "Catégorie dominante": obtenir_categorie_dominante(tickets_agent),
             "CSAT": formater_csat(csat_agent),
             "1re réponse (en créneau)": "N/A",
             "Résolution moyenne": "N/A",
@@ -1809,7 +2252,7 @@ with onglet_agents:
             },
         )
 
-    st.subheader("Détail par agent")
+    st.markdown(titre_section_principale("Détail par agent"), unsafe_allow_html=True)
     st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
 
     for agent, tickets_agent in par_agent.items():
@@ -1889,63 +2332,145 @@ with onglet_agents:
             st.dataframe(lignes_sujets_agent_triees, hide_index=True, width="stretch")
 
 
+SEUIL_TOP_ALERTES = 6
+
+
+def construire_carte_alerte(alerte):
+    return (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        "border-left:6px solid " + COULEUR_ACCENT_CRITIQUE + '; border-radius:10px; padding:14px 16px; margin-bottom:10px;">'
+        '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + alerte["quoi"] + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:5px;"><b>Pourquoi</b> : '
+        + alerte["pourquoi"] + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;"><b>Cause probable</b> : '
+        + alerte["cause"] + "</div>"
+        '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:5px;">'
+        "<b>Action</b> : " + alerte["action"] + "</div>"
+        "</div>"
+    )
+
+
+# Catégorie où CSAT ET délai se dégradent ensemble — le score pondère par le volume concerné
+# (une dégradation sur 5 tickets ne mérite pas la même place qu'une dégradation sur 80).
+def construire_candidats_categorie(categories_s2, categories_s1):
+    candidats = []
+    for categorie, tickets_cat_s2 in categories_s2.items():
+        tickets_cat_s1 = categories_s1.get(categorie, [])
+        if len(tickets_cat_s1) == 0:
+            continue
+
+        csat_cat_s1 = moyenne(tickets_cat_s1, "csat")
+        csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
+        frt_cat_s1 = moyenne(tickets_cat_s1, "first_reply_time_min")
+        frt_cat_s2 = moyenne(tickets_cat_s2, "first_reply_time_min")
+
+        if csat_cat_s1 is None or csat_cat_s2 is None or frt_cat_s1 is None or frt_cat_s2 is None:
+            continue
+
+        delta_csat = csat_cat_s2 - csat_cat_s1
+        delta_frt = frt_cat_s2 - frt_cat_s1
+        if delta_csat >= 0 or delta_frt <= 0:
+            continue
+
+        volume = len(tickets_cat_s2)
+        candidats.append({
+            "quoi": (
+                categorie + " — CSAT " + formater_csat(csat_cat_s1) + " → " + formater_csat(csat_cat_s2)
+                + ", 1re réponse " + formater_duree(frt_cat_s1) + " → " + formater_duree(frt_cat_s2)
+            ),
+            "pourquoi": (
+                "CSAT et délai de 1re réponse se dégradent ensemble sur " + str(volume) + " tickets — "
+                "signal plus fiable qu'une seule métrique isolée."
+            ),
+            "cause": "à confirmer avec les événements de la période (onglet Vue d'ensemble).",
+            "action": "Ouvrir Vue d'ensemble pour isoler quels sujets de " + categorie + " tirent la dégradation.",
+            "score": volume * (abs(delta_csat) + delta_frt / 60),
+        })
+    return candidats
+
+
+def construire_candidats_macro(suggestions_creation, suggestions_amelioration):
+    candidats = []
+    for ligne in suggestions_creation:
+        candidats.append({
+            "quoi": (
+                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, CSAT " + ligne["CSAT"]
+                + ", quasi aucune macro utilisée"
+            ),
+            "pourquoi": (
+                "Volume suffisant et satisfaction insuffisante, sans réponse-type en place — le traitement "
+                "repose sur chaque agent individuellement."
+            ),
+            "cause": "Aucune macro n'existe encore pour ce sujet.",
+            "action": "Créer une macro pour « " + ligne["Sujet"] + " ».",
+            "score": ligne["Tickets"] * 3,
+        })
+    for ligne in suggestions_amelioration:
+        candidats.append({
+            "quoi": (
+                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, CSAT " + ligne["CSAT"]
+                + ", macro déjà bien utilisée"
+            ),
+            "pourquoi": (
+                "La macro est utilisée mais la satisfaction reste insuffisante — le contenu ou le process, "
+                "pas l'adoption, semble en cause."
+            ),
+            "cause": "à investiguer : contenu de la macro ou nature du problème sous-jacent.",
+            "action": "Relire la macro de « " + ligne["Sujet"] + " » et vérifier si le problème dépasse ce "
+            "qu'une réponse-type peut résoudre.",
+            "score": ligne["Tickets"] * 3.5,
+        })
+    return candidats
+
+
+def construire_candidats_faq(suggestions_faq):
+    candidats = []
+    for ligne in suggestions_faq:
+        candidats.append({
+            "quoi": (
+                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, " + ligne["Échanges moyens"]
+                + " échanges en moyenne"
+            ),
+            "pourquoi": (
+                "La résolution demande plusieurs allers-retours — signe qu'une information manque au client "
+                "dès le premier contact."
+            ),
+            "cause": "Pas de FAQ/page d'aide dédiée à ce sujet actuellement.",
+            "action": "Créer une FAQ pour « " + ligne["Sujet"] + " ».",
+            "score": ligne["Tickets"] * float(ligne["Échanges moyens"]),
+        })
+    return candidats
+
+
+def construire_candidats_verbatims(sujets_verbatims_tries):
+    candidats = []
+    for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
+        candidats.append({
+            "quoi": (
+                "« " + sujet + " » — " + str(len(tickets_sujet_verbatims)) + " commentaires clients à CSAT très bas"
+            ),
+            "pourquoi": "Volume de retours négatifs assez important pour être un irritant récurrent, pas un client isolé.",
+            "cause": "voir le détail qualitatif des commentaires plus bas.",
+            "action": "Lire les verbatims de « " + sujet + " » pour qualifier l'irritant exact.",
+            "score": len(tickets_sujet_verbatims) * 2,
+        })
+    return candidats
+
+
 # ------------------------------------------------------------------
 # Onglet 4 : Alertes & suggestions
 # ------------------------------------------------------------------
 
 with onglet_alertes:
-    st.markdown(titre_section_principale("Alertes"), unsafe_allow_html=True)
+    # ------------------------------------------------------------------
+    # Données — chaque générateur reste inchangé (mêmes seuils, mêmes calculs), simplement
+    # regroupé ici avant tout affichage pour pouvoir prioriser sur l'ensemble des candidats
+    # avant de décider ce qui mérite la place principale de la page.
+    # ------------------------------------------------------------------
 
-    if not comparaison_disponible:
-        st.caption("Active « Comparer à une autre période » dans la barre latérale pour faire apparaître les alertes.")
-    else:
-        st.caption(
-            "Une catégorie est signalée quand le CSAT baisse ET le temps de 1re réponse augmente en "
-            "même temps par rapport à la période précédente — une seule des deux qui bouge n'est pas un "
-            "signal fiable (le volume peut expliquer une hausse de temps de réponse sans dégrader la "
-            "satisfaction). À lire à côté des événements des deux périodes (onglet Vue d'ensemble)."
-        )
-
-        alertes = []
-        for categorie, tickets_cat_s2 in categories_s2.items():
-            tickets_cat_s1 = categories_s1.get(categorie, [])
-            if len(tickets_cat_s1) == 0:
-                continue
-
-            csat_s1 = moyenne(tickets_cat_s1, "csat")
-            csat_s2 = moyenne(tickets_cat_s2, "csat")
-            frt_s1 = moyenne(tickets_cat_s1, "first_reply_time_min")
-            frt_s2 = moyenne(tickets_cat_s2, "first_reply_time_min")
-
-            if csat_s1 is None or csat_s2 is None or frt_s1 is None or frt_s2 is None:
-                continue
-
-            delta_csat = csat_s2 - csat_s1
-            delta_frt = frt_s2 - frt_s1
-
-            if delta_csat < 0 and delta_frt > 0:
-                alertes.append({
-                    "Catégorie": categorie,
-                    "CSAT": formater_csat(csat_s1) + " → " + formater_csat(csat_s2),
-                    "Évolution CSAT": str(round(delta_csat, 2)),
-                    "1re réponse": formater_duree(frt_s1) + " → " + formater_duree(frt_s2),
-                    "Évolution 1re réponse": "+" + str(round(delta_frt)) + " min",
-                })
-
-        if len(alertes) == 0:
-            st.write("Aucune catégorie ne dégrade simultanément CSAT et temps de réponse sur cette période.")
-        else:
-            with st.container(border=True):
-                st.dataframe(alertes, hide_index=True, width="stretch")
-
-    st.divider()
-    st.caption("Détail complet par catégorie (CSAT, temps de réponse, macro) → onglet Vue d'ensemble.")
-
-    st.markdown(titre_section_principale("Temps de résolution par catégorie"), unsafe_allow_html=True)
-    st.caption(
-        "Trié par temps de résolution moyen, du plus long au plus court — la vraie question n'est pas "
-        "\"quel ticket a traîné\" mais \"quelle catégorie prend le plus de temps à l'équipe\"."
-    )
+    candidats_categorie = []
+    if comparaison_disponible:
+        candidats_categorie = construire_candidats_categorie(categories_s2, categories_s1)
 
     categories_resolution = {}
     for ticket in tickets_s2:
@@ -1991,42 +2516,27 @@ with onglet_alertes:
     for ligne in lignes_resolution_categorie_triees:
         del ligne["resolution_tri"]
 
-    with st.container(border=True):
-        st.dataframe(lignes_resolution_categorie_triees, hide_index=True, width="stretch")
+    def obtenir_resolution(ticket):
+        return ticket["full_resolution_time_hours"]
 
-    with st.expander("Détail : les 10 tickets les plus longs"):
-        def obtenir_resolution(ticket):
-            return ticket["full_resolution_time_hours"]
+    tickets_avec_resolution = []
+    for ticket in tickets_s2:
+        if ticket["full_resolution_time_hours"] is not None:
+            tickets_avec_resolution.append(ticket)
 
-        tickets_avec_resolution = []
-        for ticket in tickets_s2:
-            if ticket["full_resolution_time_hours"] is not None:
-                tickets_avec_resolution.append(ticket)
+    tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
 
-        tickets_tries_par_resolution = sorted(tickets_avec_resolution, key=obtenir_resolution, reverse=True)
-
-        lignes_longs = []
-        for ticket in tickets_tries_par_resolution[:10]:
-            lignes_longs.append(
-                {
-                    "Ticket": ticket["ticket_id"],
-                    "Agent": ticket["assignee"],
-                    "Catégorie": categoriser(ticket),
-                    "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
-                    "Résolu par": ticket["resolution_type"],
-                }
-            )
-
-        st.dataframe(lignes_longs, hide_index=True, width="stretch")
-
-    st.subheader("Suggestions - macro à créer")
-    st.caption(
-        "Sujet avec au moins "
-        + str(SEUIL_MINIMUM_SUJET)
-        + " tickets, CSAT < "
-        + str(SEUIL_CSAT_INSATISFAISANT)
-        + ", quasi aucune macro utilisée"
-    )
+    lignes_longs = []
+    for ticket in tickets_tries_par_resolution[:10]:
+        lignes_longs.append(
+            {
+                "Ticket": ticket["ticket_id"],
+                "Agent": ticket["assignee"],
+                "Catégorie": categoriser(ticket),
+                "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
+                "Résolu par": ticket["resolution_type"],
+            }
+        )
 
     sujets_s2 = grouper_par(tickets_s2, "subject_cluster")
 
@@ -2065,32 +2575,6 @@ with onglet_alertes:
         else:
             suggestions_partielle.append(ligne)
 
-    with st.container(border=True):
-        afficher_tableau_colore(suggestions_creation)
-
-    st.subheader("Suggestions - macro à renforcer (adoption partielle)")
-    st.caption(
-        "Utilisation macro entre " + str(SEUIL_MACRO_BASSE) + " % et " + str(SEUIL_MACRO_HAUTE) + " % "
-        "et CSAT insatisfaisant — la macro existe mais n'est pas assez systématiquement utilisée : "
-        "rappel à l'équipe, ou macro pas assez visible/facile à trouver."
-    )
-
-    with st.container(border=True):
-        afficher_tableau_colore(suggestions_partielle)
-
-    st.subheader("Suggestions - macro / process à améliorer")
-    st.caption("Macro déjà bien utilisée mais CSAT insatisfaisant quand même")
-
-    with st.container(border=True):
-        afficher_tableau_colore(suggestions_amelioration)
-
-    st.subheader("Suggestions - FAQ à créer")
-    st.caption(
-        "Sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets et " + str(SEUIL_REPLIES_FAQ)
-        + " échanges en moyenne ou plus — la résolution demande plusieurs allers-retours, signe qu'une "
-        + "FAQ ou une page d'aide raccourcirait le traitement la prochaine fois"
-    )
-
     suggestions_faq = []
     for sujet, tickets_sujet in sujets_s2.items():
         volume = len(tickets_sujet)
@@ -2111,19 +2595,6 @@ with onglet_alertes:
             "Échanges moyens": str(round(replies_moyen, 1)),
         })
 
-    with st.container(border=True):
-        afficher_tableau_colore(suggestions_faq)
-
-    st.subheader("Verbatims clients (CSAT bas)")
-    st.caption(
-        "Lecture qualitative des tickets mal notés (CSAT ≤ " + str(SEUIL_CSAT_VERBATIM) + ") — pour "
-        "repérer des irritants \"process\" que les champs structurés ne capturent pas. Un sujet n'est "
-        "affiché qu'à partir de " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires : en dessous, "
-        "ce n'est pas un irritant récurrent à traiter, juste un client isolé — tout le monde ne peut pas "
-        "être satisfait, et ce n'est pas suivable ticket par ticket. Les 3 commentaires les plus récents "
-        "sont affichés par sujet."
-    )
-
     tickets_verbatims = []
     for ticket in tickets_s2:
         csat_ticket = ticket["csat"]
@@ -2138,66 +2609,14 @@ with onglet_alertes:
         if len(tickets_sujet_verbatims) >= SEUIL_VERBATIMS_GROUPE:
             sujets_verbatims_significatifs.append((sujet, tickets_sujet_verbatims))
 
-    if len(sujets_verbatims_significatifs) == 0:
-        st.write(
-            "Aucun sujet avec au moins " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires sur "
-            "cette période."
-        )
-    else:
-        def obtenir_compte_verbatims(item):
-            sujet, tickets_sujet = item
-            return len(tickets_sujet)
+    def obtenir_compte_verbatims(item):
+        sujet, tickets_sujet = item
+        return len(tickets_sujet)
 
-        sujets_verbatims_tries = sorted(sujets_verbatims_significatifs, key=obtenir_compte_verbatims, reverse=True)
+    sujets_verbatims_tries = sorted(sujets_verbatims_significatifs, key=obtenir_compte_verbatims, reverse=True)
 
-        def obtenir_date_ticket(ticket):
-            return ticket["created_at"]
-
-        for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
-            tickets_recents = sorted(tickets_sujet_verbatims, key=obtenir_date_ticket, reverse=True)[:3]
-
-            titre_expander = sujet + " (" + str(len(tickets_sujet_verbatims)) + " commentaire(s))"
-            with st.expander(titre_expander):
-                lignes_verbatims_sujet = []
-                for ticket in tickets_recents:
-                    lignes_verbatims_sujet.append({
-                        "CSAT": ticket["csat"],
-                        "Commentaire": ticket["csat_comment"],
-                    })
-                st.dataframe(lignes_verbatims_sujet, hide_index=True, width="stretch")
-
-    with st.expander("Mots fréquents (sujets à faible CSAT)"):
-        st.caption(
-            "Comptage simple des mots qui reviennent le plus dans les premiers messages des sujets déjà "
-            "signalés ci-dessus — pour repérer un vocabulaire commun sans relire chaque ticket un par un."
-        )
-
-        if len(suggestions_creation) == 0:
-            st.write("Aucun sujet signalé à faible CSAT sur cette période.")
-        else:
-            for ligne_suggestion in suggestions_creation:
-                sujet_signale = ligne_suggestion["Sujet"]
-                tickets_sujet_signale = sujets_s2.get(sujet_signale, [])
-                mots_top = mots_frequents(tickets_sujet_signale, "first_message", 5)
-
-                if len(mots_top) == 0:
-                    continue
-
-                texte_mots = ""
-                for i in range(len(mots_top)):
-                    mot, compte = mots_top[i]
-                    if i > 0:
-                        texte_mots = texte_mots + ", "
-                    texte_mots = texte_mots + mot + " (" + str(compte) + ")"
-
-                st.write("**" + sujet_signale + "** : " + texte_mots)
-
-    st.subheader("Suivi des suggestions")
-    st.caption(
-        "Sujets marqués « Fait » dans le fichier de suivi (data_suivi/suivi_suggestions.xlsx) — "
-        "impact mesuré en comparant le CSAT et l'utilisation macro avant/après la date d'action, "
-        "sur tout l'historique disponible (pas seulement la période affichée)."
-    )
+    def obtenir_date_ticket(ticket):
+        return ticket["created_at"]
 
     sujets_traites = []
     for sujet, entree in suivi_suggestions.items():
@@ -2228,9 +2647,6 @@ with onglet_alertes:
                 "Notes": notes,
             })
 
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_suivi)
-
     lignes_macros_associees = []
     for sujet, entree in sujets_traites:
         code_macro = extraire_code_macro(entree["notes"])
@@ -2249,9 +2665,149 @@ with onglet_alertes:
                 "FAQ associée": faq_associee,
             })
 
-    if len(lignes_macros_associees) > 0:
-        st.caption("Macros/FAQ créées pour ces sujets — texte complet dans le CRM, pas dupliqué ici.")
-        st.dataframe(lignes_macros_associees, hide_index=True, width="stretch")
+    # ------------------------------------------------------------------
+    # Alertes prioritaires — jusqu'à SEUIL_TOP_ALERTES, classées par sévérité × impact,
+    # à partir de tous les générateurs ci-dessus. Le reste (toujours calculé, jamais perdu)
+    # est accessible dans "Voir plus" plus bas, pas supprimé.
+    # ------------------------------------------------------------------
+
+    candidats_alertes = (
+        candidats_categorie
+        + construire_candidats_macro(suggestions_creation, suggestions_amelioration)
+        + construire_candidats_faq(suggestions_faq)
+        + construire_candidats_verbatims(sujets_verbatims_tries)
+    )
+    candidats_alertes_tries = sorted(candidats_alertes, key=obtenir_score_insight, reverse=True)
+    alertes_prioritaires = candidats_alertes_tries[:SEUIL_TOP_ALERTES]
+
+    st.markdown(titre_section_principale("Alertes prioritaires"), unsafe_allow_html=True)
+    st.caption(
+        "Classées par sévérité et volume concerné, tous générateurs confondus (dégradation catégorie, "
+        "macro/FAQ manquante, verbatims négatifs). Pas de liste exhaustive — le reste est dans "
+        "\"Voir plus\" plus bas."
+    )
+    if len(alertes_prioritaires) > 0:
+        for alerte in alertes_prioritaires:
+            st.markdown(construire_carte_alerte(alerte), unsafe_allow_html=True)
+    else:
+        st.caption("Aucune alerte prioritaire sur cette période.")
+
+    if len(candidats_alertes_tries) > SEUIL_TOP_ALERTES:
+        st.caption(
+            str(len(candidats_alertes_tries) - SEUIL_TOP_ALERTES) + " alerte(s) supplémentaire(s) de "
+            "moindre priorité — voir \"Voir plus\" plus bas."
+        )
+
+    st.divider()
+    st.markdown(titre_section_principale("Temps de résolution par catégorie"), unsafe_allow_html=True)
+    st.caption(
+        "Trié par temps de résolution moyen, du plus long au plus court — la vraie question n'est pas "
+        "\"quel ticket a traîné\" mais \"quelle catégorie prend le plus de temps à l'équipe\"."
+    )
+    with st.container(border=True):
+        st.dataframe(lignes_resolution_categorie_triees, hide_index=True, width="stretch")
+
+    with st.expander("Voir plus d'alertes et de détails"):
+        st.caption(
+            "Détail complet de chaque générateur d'alerte, y compris ce qui n'a pas été jugé prioritaire "
+            "ci-dessus — rien n'est supprimé, seulement démoté."
+        )
+
+        st.markdown("**Les 10 tickets les plus longs**")
+        st.dataframe(lignes_longs, hide_index=True, width="stretch")
+
+        st.markdown("**Dégradation par catégorie**")
+        if not comparaison_disponible:
+            st.caption("Active « Comparer à une autre période » dans la barre latérale pour voir ce signal.")
+        elif len(candidats_categorie) == 0:
+            st.caption("Aucune catégorie ne dégrade simultanément CSAT et temps de réponse sur cette période.")
+        else:
+            candidats_categorie_tries = sorted(candidats_categorie, key=obtenir_score_insight, reverse=True)
+            for candidat in candidats_categorie_tries:
+                st.write("- " + candidat["quoi"])
+
+        st.markdown("**Suggestions - macro à créer**")
+        st.caption(
+            "Sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets, CSAT < "
+            + str(SEUIL_CSAT_INSATISFAISANT) + ", quasi aucune macro utilisée"
+        )
+        afficher_tableau_colore(suggestions_creation)
+
+        st.markdown("**Suggestions - macro à renforcer (adoption partielle)**")
+        st.caption(
+            "Utilisation macro entre " + str(SEUIL_MACRO_BASSE) + " % et " + str(SEUIL_MACRO_HAUTE) + " % "
+            "et CSAT insatisfaisant — la macro existe mais n'est pas assez systématiquement utilisée."
+        )
+        afficher_tableau_colore(suggestions_partielle)
+
+        st.markdown("**Suggestions - macro / process à améliorer**")
+        st.caption("Macro déjà bien utilisée mais CSAT insatisfaisant quand même.")
+        afficher_tableau_colore(suggestions_amelioration)
+
+        st.markdown("**Suggestions - FAQ à créer**")
+        st.caption(
+            "Sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets et " + str(SEUIL_REPLIES_FAQ)
+            + " échanges en moyenne ou plus."
+        )
+        afficher_tableau_colore(suggestions_faq)
+
+        st.markdown("**Verbatims clients (CSAT bas)**")
+        st.caption(
+            "CSAT ≤ " + str(SEUIL_CSAT_VERBATIM) + ", un sujet n'est affiché qu'à partir de "
+            + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires. Les 3 commentaires les plus "
+            "récents sont affichés par sujet."
+        )
+        if len(sujets_verbatims_tries) == 0:
+            st.write(
+                "Aucun sujet avec au moins " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires sur "
+                "cette période."
+            )
+        else:
+            for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
+                tickets_recents = sorted(tickets_sujet_verbatims, key=obtenir_date_ticket, reverse=True)[:3]
+
+                titre_expander = sujet + " (" + str(len(tickets_sujet_verbatims)) + " commentaire(s))"
+                with st.expander(titre_expander):
+                    lignes_verbatims_sujet = []
+                    for ticket in tickets_recents:
+                        lignes_verbatims_sujet.append({
+                            "CSAT": ticket["csat"],
+                            "Commentaire": ticket["csat_comment"],
+                        })
+                    st.dataframe(lignes_verbatims_sujet, hide_index=True, width="stretch")
+
+        st.markdown("**Mots fréquents (sujets à faible CSAT)**")
+        if len(suggestions_creation) == 0:
+            st.write("Aucun sujet signalé à faible CSAT sur cette période.")
+        else:
+            for ligne_suggestion in suggestions_creation:
+                sujet_signale = ligne_suggestion["Sujet"]
+                tickets_sujet_signale = sujets_s2.get(sujet_signale, [])
+                mots_top = mots_frequents(tickets_sujet_signale, "first_message", 5)
+
+                if len(mots_top) == 0:
+                    continue
+
+                texte_mots = ""
+                for i in range(len(mots_top)):
+                    mot, compte = mots_top[i]
+                    if i > 0:
+                        texte_mots = texte_mots + ", "
+                    texte_mots = texte_mots + mot + " (" + str(compte) + ")"
+
+                st.write("**" + sujet_signale + "** : " + texte_mots)
+
+        st.markdown("**Suivi des suggestions**")
+        st.caption(
+            "Sujets marqués « Fait » dans le fichier de suivi — impact mesuré avant/après la date "
+            "d'action, sur tout l'historique disponible (pas seulement la période affichée)."
+        )
+        afficher_tableau_colore(lignes_suivi)
+
+        if len(lignes_macros_associees) > 0:
+            st.markdown("**Macros/FAQ associées**")
+            st.caption("Texte complet dans le CRM, pas dupliqué ici.")
+            st.dataframe(lignes_macros_associees, hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -2804,6 +3360,66 @@ with onglet_creneaux:
             )
 
 
+SEUIL_PART_COMPOSANT_DOMINANT = 35
+
+
+def construire_insight_composant(lignes_composant_triees):
+    if len(lignes_composant_triees) == 0:
+        return None
+
+    total = 0
+    for ligne in lignes_composant_triees:
+        total = total + ligne["Tickets"]
+    if total == 0:
+        return None
+
+    plus_gros = lignes_composant_triees[0]
+    part = plus_gros["Tickets"] / total * 100
+    if part >= SEUIL_PART_COMPOSANT_DOMINANT:
+        return (
+            plus_gros["Composant"] + " concentre " + str(round(part)) + " % des tickets SAV produit "
+            "de la période — la piste la plus probable pour un défaut structurel."
+        )
+    return None
+
+
+def construire_insight_resolution(lignes_resolution_triees, total_sav):
+    if len(lignes_resolution_triees) == 0 or total_sav == 0:
+        return None
+
+    plus_frequente = lignes_resolution_triees[0]
+    part = plus_frequente["Tickets"] / total_sav * 100
+    type_resolution = plus_frequente["Type de résolution"]
+
+    if type_resolution == "Conseil à distance" and part >= 40:
+        return (
+            "« Conseil à distance » domine (" + str(round(part)) + " %) — plutôt un souci de "
+            "compréhension d'usage qu'un vrai défaut matériel."
+        )
+    if "Remplacement" in str(type_resolution) and part >= 30:
+        return (
+            "« " + type_resolution + " » domine (" + str(round(part)) + " %) — signal de défaut "
+            "matériel réel à corriger."
+        )
+    return None
+
+
+def construire_insight_garantie(lignes_garantie, total_sav):
+    if total_sav == 0:
+        return None
+
+    hors_garantie = 0
+    for ligne in lignes_garantie:
+        if ligne["Statut garantie"] != "Sous garantie":
+            hors_garantie = hors_garantie + ligne["Tickets"]
+
+    part = hors_garantie / total_sav * 100
+    return (
+        str(round(part)) + " % des SAV produit sont hors garantie — coût à la charge du client, sauf "
+        "geste commercial (voir Impact & confiance)."
+    )
+
+
 # ------------------------------------------------------------------
 # Onglet 6 : Produit
 # ------------------------------------------------------------------
@@ -2884,7 +3500,11 @@ with onglet_produit:
     with st.container(border=True):
         afficher_tableau_colore(lignes_composant_triees)
 
-    st.subheader("Par produit")
+    insight_composant = construire_insight_composant(lignes_composant_triees)
+    if insight_composant is not None:
+        st.caption(insight_composant)
+
+    st.markdown(titre_section_principale("Par produit"), unsafe_allow_html=True)
     st.caption("Diffuseur (appareil) et Recharge sont distingués même pour un même parfum — un souci sur le matériel n'a pas la même gravité qu'un souci sur un consommable.")
 
     par_produit_s2 = {}
@@ -2949,8 +3569,7 @@ with onglet_produit:
     with st.container(border=True):
         afficher_tableau_colore(lignes_produit_triees)
 
-    st.subheader("Type de résolution des SAV produit")
-    st.caption("Beaucoup de \"conseil à distance\" = souci de compréhension d'usage plutôt qu'un vrai défaut. Beaucoup de remplacement = vrai défaut à corriger.")
+    st.markdown(titre_section_principale("Type de résolution des SAV produit"), unsafe_allow_html=True)
 
     par_resolution = grouper_par(tickets_sav_produit_s2, "resolution_type")
     lignes_resolution = []
@@ -2961,7 +3580,11 @@ with onglet_produit:
     with st.container(border=True):
         st.dataframe(lignes_resolution_triees, hide_index=True, width="stretch")
 
-    st.subheader("Nature du problème")
+    insight_resolution = construire_insight_resolution(lignes_resolution_triees, len(tickets_sav_produit_s2))
+    if insight_resolution is not None:
+        st.caption(insight_resolution)
+
+    st.markdown(titre_section_principale("Nature du problème"), unsafe_allow_html=True)
     st.caption("component dit où le défaut se situe, issue_type dit ce qui est réellement cassé — les deux ensemble orientent vers le vrai correctif.")
 
     par_issue = grouper_par(tickets_sav_produit_s2, "issue_type")
@@ -2991,15 +3614,27 @@ with onglet_produit:
     for cle, nombre in par_composant_issue.items():
         lignes_composant_issue.append({"Composant": cle[0], "Nature du problème": cle[1], "Tickets": nombre})
 
-    with st.expander("Détail croisé composant × nature du problème"):
-        lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
+    lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
+
+    lignes_composant_issue_significatives = []
+    for ligne in lignes_composant_issue_triees:
+        if ligne["Tickets"] >= SEUIL_MINIMUM_SUJET:
+            lignes_composant_issue_significatives.append(ligne)
+
+    st.markdown(titre_section_principale("Combinaisons composant × problème à investiguer"), unsafe_allow_html=True)
+    st.caption(
+        "Seules les combinaisons avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets sont montrées "
+        "ici — le croisement complet reste disponible ci-dessous."
+    )
+    if len(lignes_composant_issue_significatives) > 0:
+        st.dataframe(lignes_composant_issue_significatives, hide_index=True, width="stretch")
+    else:
+        st.caption("Aucune combinaison composant × problème assez récurrente sur cette période.")
+
+    with st.expander("Voir le croisement complet composant × nature du problème"):
         st.dataframe(lignes_composant_issue_triees, hide_index=True, width="stretch")
 
-    st.subheader("Garantie")
-    st.caption(
-        "Part des tickets SAV produit sous garantie vs hors garantie — un hors-garantie coûte plus "
-        "cher à l'entreprise (voir l'onglet Impact & confiance pour le chiffrage)."
-    )
+    st.markdown(titre_section_principale("Garantie"), unsafe_allow_html=True)
 
     par_garantie = grouper_par(tickets_sav_produit_s2, "warranty_status")
     lignes_garantie = []
@@ -3008,6 +3643,10 @@ with onglet_produit:
 
     with st.container(border=True):
         st.dataframe(lignes_garantie, hide_index=True, width="stretch")
+
+    insight_garantie = construire_insight_garantie(lignes_garantie, len(tickets_sav_produit_s2))
+    if insight_garantie is not None:
+        st.caption(insight_garantie)
 
     with st.expander("Délai entre achat et signalement SAV"):
         st.caption("Un défaut précoce (moins de 30 jours après achat) évoque plutôt un défaut de fabrication ; un défaut tardif évoque plutôt de l'usure normale.")
@@ -3029,34 +3668,42 @@ with onglet_produit:
 
         st.dataframe(lignes_anciennete, hide_index=True, width="stretch")
 
-    st.subheader("Clients avec SAV récurrents")
+    st.markdown(titre_section_principale("Clients avec SAV récurrents"), unsafe_allow_html=True)
 
     tickets_recurrents = []
     for ticket in tickets_sav_produit_s2:
         if ticket["prior_sav_count"] is not None and ticket["prior_sav_count"] >= 1:
             tickets_recurrents.append(ticket)
 
-    st.write(
-        str(len(tickets_recurrents)) + " tickets sur " + str(len(tickets_sav_produit_s2))
-        + " concernent un client ayant déjà eu au moins un SAV avant celui-ci — signal de défaut structurel plutôt qu'un cas isolé."
-    )
-
-    if len(tickets_recurrents) > 0:
-        st.write("Produit et composant les plus concernés par la récurrence :")
+    if len(tickets_recurrents) == 0:
+        st.caption("Aucun SAV récurrent sur cette période.")
+    else:
+        part_recurrents = len(tickets_recurrents) / len(tickets_sav_produit_s2) * 100
 
         par_produit_recurrent = grouper_par(tickets_recurrents, "product_name")
-        lignes_produit_recurrent = []
+        lignes_produit_recurrent_triees = []
         for produit, tickets_produit_r in par_produit_recurrent.items():
-            lignes_produit_recurrent.append({"Produit": produit, "SAV récurrents": len(tickets_produit_r)})
-        lignes_produit_recurrent_triees = sorted(lignes_produit_recurrent, key=obtenir_sav_recurrents, reverse=True)
+            lignes_produit_recurrent_triees.append({"Produit": produit, "SAV récurrents": len(tickets_produit_r)})
+        lignes_produit_recurrent_triees = sorted(lignes_produit_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
 
         par_composant_recurrent = grouper_par(tickets_recurrents, "component")
-        lignes_composant_recurrent = []
+        lignes_composant_recurrent_triees = []
         for composant, tickets_composant_r in par_composant_recurrent.items():
-            lignes_composant_recurrent.append({"Composant": composant, "SAV récurrents": len(tickets_composant_r)})
-        lignes_composant_recurrent_triees = sorted(lignes_composant_recurrent, key=obtenir_sav_recurrents, reverse=True)
+            lignes_composant_recurrent_triees.append({"Composant": composant, "SAV récurrents": len(tickets_composant_r)})
+        lignes_composant_recurrent_triees = sorted(lignes_composant_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
 
-        with st.container(border=True):
+        produit_principal = lignes_produit_recurrent_triees[0]
+        composant_principal = lignes_composant_recurrent_triees[0]
+
+        st.write(
+            str(len(tickets_recurrents)) + " tickets (" + str(round(part_recurrents)) + " % du SAV produit) "
+            "concernent un client ayant déjà eu au moins un SAV avant celui-ci — signal de défaut structurel "
+            "plutôt qu'un cas isolé. Concentré sur **" + produit_principal["Produit"] + "** ("
+            + str(produit_principal["SAV récurrents"]) + " cas) et le composant **"
+            + composant_principal["Composant"] + "** (" + str(composant_principal["SAV récurrents"]) + " cas)."
+        )
+
+        with st.expander("Détail par produit et composant"):
             colonne_rec_a, colonne_rec_b = st.columns(2)
             with colonne_rec_a:
                 st.dataframe(lignes_produit_recurrent_triees, hide_index=True, width="stretch")
@@ -3064,18 +3711,20 @@ with onglet_produit:
                 st.dataframe(lignes_composant_recurrent_triees, hide_index=True, width="stretch")
 
     st.divider()
-    st.subheader("Opportunités produit — demandes hors catalogue")
-    st.caption(
-        "Top 10 des demandes récurrentes pour quelque chose qu'on ne vend pas (accessoire, "
-        "personnalisation...), détectées via tout sujet marqué « (hors catalogue) » — à remonter à "
-        "l'équipe produit."
-    )
+    st.markdown(titre_section_principale("Opportunités produit — demandes hors catalogue"), unsafe_allow_html=True)
 
-    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, 1)
+    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, SEUIL_MINIMUM_SUJET)
 
     if len(opportunites) == 0:
-        st.write("Aucune demande hors catalogue sur cette période.")
+        st.caption(
+            "Aucune demande hors catalogue récurrente (au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets) "
+            "sur cette période."
+        )
     else:
+        st.caption(
+            "Demandes récurrentes pour quelque chose qu'on ne vend pas (accessoire, personnalisation...), "
+            "au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets — à remonter à l'équipe produit."
+        )
         lignes_opportunites = []
         for sujet, tickets_sujet in opportunites:
             csat_opportunite = moyenne(tickets_sujet, "csat")
@@ -3087,6 +3736,53 @@ with onglet_produit:
         lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)[:10]
         with st.container(border=True):
             afficher_tableau_colore(lignes_opportunites_triees)
+
+
+SEUIL_PART_SUJET_LIVRAISON_SIGNAL = 15
+SEUIL_ECART_CSAT_LIVRAISON = 0.3
+SEUIL_ECART_RESOLUTION_LIVRAISON_H = 4
+
+
+# Un sujet ne mérite d'être mis en avant que s'il pèse assez dans le volume Livraison ET s'écarte
+# vraiment de la moyenne de la catégorie (CSAT ou résolution) — pas juste parce qu'il existe.
+def construire_signal_sujet_livraison(sujet, volume_s2, pct_sujet_livraison, csat_sujet, resolution_sujet, csat_moyen, resolution_moyenne):
+    if pct_sujet_livraison < SEUIL_PART_SUJET_LIVRAISON_SIGNAL:
+        return None
+
+    ecart_csat = None
+    if csat_sujet is not None and csat_moyen is not None:
+        ecart_csat = csat_moyen - csat_sujet
+
+    ecart_resolution = None
+    if resolution_sujet is not None and resolution_moyenne is not None:
+        ecart_resolution = resolution_sujet - resolution_moyenne
+
+    csat_signal = ecart_csat is not None and ecart_csat >= SEUIL_ECART_CSAT_LIVRAISON
+    resolution_signal = ecart_resolution is not None and ecart_resolution >= SEUIL_ECART_RESOLUTION_LIVRAISON_H
+    if not csat_signal and not resolution_signal:
+        return None
+
+    morceaux = []
+    if csat_signal:
+        morceaux.append("CSAT " + formater_csat(csat_sujet) + " (moyenne Livraison " + formater_csat(csat_moyen) + ")")
+    if resolution_signal:
+        morceaux.append(
+            "résolution " + formater_duree(resolution_sujet * 60) + " (moyenne Livraison "
+            + formater_duree(resolution_moyenne * 60) + ")"
+        )
+
+    return {
+        "sujet": sujet,
+        "volume": volume_s2,
+        "texte": (
+            "« " + sujet + " » représente " + str(round(pct_sujet_livraison)) + " % du volume Livraison, "
+            + " et ".join(morceaux) + " — nettement en retrait du reste de la catégorie."
+        ),
+    }
+
+
+def obtenir_volume_signal(candidat):
+    return candidat["volume"]
 
 
 # ------------------------------------------------------------------
@@ -3128,7 +3824,7 @@ with onglet_livraison:
                 unsafe_allow_html=True,
             )
 
-    st.subheader("Sujets livraison")
+    st.markdown(titre_section_principale("Sujets livraison"), unsafe_allow_html=True)
 
     sujets_livraison_s2 = grouper_par(tickets_livraison_s2, "subject_cluster")
     sujets_livraison_s1 = grouper_par(tickets_livraison_s1, "subject_cluster")
@@ -3139,12 +3835,16 @@ with onglet_livraison:
         sujets_livraison_a_afficher = list(sujets_livraison_s2.keys())
 
     lignes_livraison = []
+    signaux_sujets_livraison = []
     for sujet in sujets_livraison_a_afficher:
         tickets_sujet_s2 = sujets_livraison_s2.get(sujet, [])
         volume_s2 = len(tickets_sujet_s2)
         csat_sujet = moyenne(tickets_sujet_s2, "csat")
         resolution_sujet = moyenne(tickets_sujet_s2, "full_resolution_time_hours")
         pct_sujet_global = volume_s2 / len(tickets_s2) * 100
+        pct_sujet_livraison = 0
+        if volume_livraison_s2 > 0:
+            pct_sujet_livraison = volume_s2 / volume_livraison_s2 * 100
 
         ligne = {
             "Sujet": sujet,
@@ -3170,15 +3870,27 @@ with onglet_livraison:
 
         lignes_livraison.append(ligne)
 
+        signal = construire_signal_sujet_livraison(
+            sujet, volume_s2, pct_sujet_livraison, csat_sujet, resolution_sujet,
+            csat_livraison_s2, resolution_livraison_s2,
+        )
+        if signal is not None:
+            signaux_sujets_livraison.append(signal)
+
+    signaux_sujets_livraison_tries = sorted(signaux_sujets_livraison, key=obtenir_volume_signal, reverse=True)
+    for signal in signaux_sujets_livraison_tries[:2]:
+        st.caption(signal["texte"])
+
     lignes_livraison_triees = sorted(lignes_livraison, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
+    with st.expander("Détail par sujet", expanded=(len(signaux_sujets_livraison_tries) == 0)):
         afficher_tableau_colore(lignes_livraison_triees)
 
-    st.subheader("Par pays")
+    st.markdown(titre_section_principale("Par pays"), unsafe_allow_html=True)
     st.caption("Le transporteur est unique sur toute la zone de livraison — un écart marqué sur un pays isole un problème logistique local plutôt qu'un souci transporteur global.")
 
     par_pays_livraison = grouper_par(tickets_livraison_s2, "country")
     lignes_pays_livraison = []
+    anomalies_pays = []
     for pays, tickets_pays in par_pays_livraison.items():
         csat_pays = moyenne(tickets_pays, "csat")
         resolution_pays = moyenne(tickets_pays, "full_resolution_time_hours")
@@ -3196,9 +3908,63 @@ with onglet_livraison:
 
         lignes_pays_livraison.append(ligne)
 
+        if len(tickets_pays) >= SEUIL_MINIMUM_SUJET:
+            ecart_csat_pays = None
+            if csat_pays is not None and csat_livraison_s2 is not None:
+                ecart_csat_pays = csat_livraison_s2 - csat_pays
+            if ecart_csat_pays is not None and ecart_csat_pays >= SEUIL_ECART_CSAT_LIVRAISON:
+                anomalies_pays.append(
+                    pays + " : CSAT " + formater_csat(csat_pays) + " (moyenne Livraison "
+                    + formater_csat(csat_livraison_s2) + ")"
+                )
+
+    if len(anomalies_pays) > 0:
+        st.caption("Anomalie locale détectée : " + " · ".join(anomalies_pays))
+    else:
+        st.caption("Aucun pays ne s'écarte significativement de la moyenne Livraison sur cette période.")
+
     lignes_pays_livraison_triees = sorted(lignes_pays_livraison, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
+    with st.expander("Détail par pays", expanded=(len(anomalies_pays) > 0)):
         afficher_tableau_colore(lignes_pays_livraison_triees)
+
+
+SEUIL_ECART_CONVERSION_PCT = 15
+
+
+# Écart d'un agent par rapport à la moyenne DE SON PAYS (pas un classement inter-agents) — un
+# signal à comprendre (répartition des dossiers, typologie, formation), jamais un jugement de
+# performance commerciale. Nécessite au moins 2 agents sur le pays pour qu'une moyenne ait un sens.
+def construire_insight_agent_pays(lignes_agent_pays_triees):
+    sommes_pays = {}
+    comptes_pays = {}
+    for ligne in lignes_agent_pays_triees:
+        pays = ligne["pays"]
+        sommes_pays[pays] = sommes_pays.get(pays, 0) + ligne["taux"]
+        comptes_pays[pays] = comptes_pays.get(pays, 0) + 1
+
+    moyennes_pays = {}
+    for pays, somme in sommes_pays.items():
+        moyennes_pays[pays] = somme / comptes_pays[pays]
+
+    plus_gros_ecart_ligne = None
+    plus_gros_ecart_valeur = 0
+    for ligne in lignes_agent_pays_triees:
+        if comptes_pays[ligne["pays"]] < 2:
+            continue
+        ecart = ligne["taux"] - moyennes_pays[ligne["pays"]]
+        if abs(ecart) > abs(plus_gros_ecart_valeur):
+            plus_gros_ecart_valeur = ecart
+            plus_gros_ecart_ligne = ligne
+
+    if plus_gros_ecart_ligne is None or abs(plus_gros_ecart_valeur) < SEUIL_ECART_CONVERSION_PCT:
+        return None
+
+    return (
+        plus_gros_ecart_ligne["agent"] + " sur " + plus_gros_ecart_ligne["pays"] + " : taux de conversion "
+        + str(round(plus_gros_ecart_ligne["taux"])) + " %, contre " + str(round(moyennes_pays[plus_gros_ecart_ligne["pays"]]))
+        + " % en moyenne pour ce pays — écart à comprendre (répartition des dossiers, typologie de "
+        "demandes, ou besoin de formation), pas un jugement de performance."
+    )
 
 
 # ------------------------------------------------------------------
@@ -3253,9 +4019,9 @@ with onglet_conversion:
     st.divider()
     st.markdown(titre_section_principale("Conversion par agent et par pays"), unsafe_allow_html=True)
     st.caption(
-        "Pour repérer si un agent convertit mieux (ou moins bien) certains pays que d'autres — un signal "
-        "utile pour la répartition des dossiers, pas un chiffre de performance commerciale. Limité aux "
-        "combinaisons agent/pays avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets avant-vente."
+        "Pas un classement commercial : sert à repérer des écarts utiles pour la répartition des "
+        "dossiers, la compréhension d'un marché ou un besoin de formation. Limité aux combinaisons "
+        "agent/pays avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets avant-vente."
     )
 
     par_agent_pays = {}
@@ -3294,9 +4060,13 @@ with onglet_conversion:
         })
 
     def obtenir_tri_agent_pays(ligne):
-        return (ligne["agent"], -ligne["taux"])
+        return ligne["tickets"]
 
-    lignes_agent_pays_triees = sorted(lignes_agent_pays, key=obtenir_tri_agent_pays)
+    lignes_agent_pays_triees = sorted(lignes_agent_pays, key=obtenir_tri_agent_pays, reverse=True)
+
+    insight_agent_pays = construire_insight_agent_pays(lignes_agent_pays_triees)
+    if insight_agent_pays is not None:
+        st.caption(insight_agent_pays)
 
     lignes_agent_pays_affichage = []
     for ligne in lignes_agent_pays_triees:
@@ -3322,17 +4092,62 @@ with onglet_conversion:
         st.dataframe(lignes_agent_pays_affichage, hide_index=True, width="stretch")
 
 
+FENETRE_NPS_EXPERIENCE_JOURS = 60
+SEUIL_RESOLUTION_RAPIDE_H = 24
+SEUIL_MIN_REPONSES_NPS = 15
+
+
+# Un ticket récurrent (le client a déjà eu au moins un SAV avant) pointe vers un défaut
+# structurel qu'un correctif produit peut prévenir — "potentiellement évitable". Un incident
+# isolé (accident de transport, mauvaise manipulation ponctuelle...) reste un "coût subi" : rien
+# n'indique qu'une action corrective l'aurait empêché. Simplification assumée, pas une vérité
+# absolue — documentée comme telle dans l'UI.
+def est_cout_potentiellement_evitable(ticket):
+    return ticket.get("prior_sav_count") is not None and ticket["prior_sav_count"] >= 1
+
+
+# Rapproche une réponse NPS du dernier contact support plausible (fenêtre glissante avant la
+# réponse) pour catégoriser par type d'expérience — approche associative, pas causale (aucun ID
+# ticket n'est stocké dans les réponses NPS elles-mêmes, donc aucun lien démontré).
+def obtenir_type_experience(reponse, index_tickets_email):
+    ticket = dernier_ticket_avant(reponse, index_tickets_email, FENETRE_NPS_EXPERIENCE_JOURS)
+    if ticket is None:
+        return "Aucun contact"
+
+    categorie = categoriser(ticket)
+    if categorie == CATEGORIE_SAV_PRODUIT:
+        if ticket["prior_sav_count"] is not None and ticket["prior_sav_count"] >= 1:
+            return "SAV récurrent"
+        return "SAV"
+    if categorie == "Livraison":
+        return "Problème livraison"
+
+    resolution = ticket["resolution_type"]
+    if resolution is not None and "Remplacement" in resolution:
+        return "Remplacement"
+
+    resolution_heures = ticket["full_resolution_time_hours"]
+    if resolution_heures is not None:
+        if resolution_heures < SEUIL_RESOLUTION_RAPIDE_H:
+            return "Résolution rapide"
+        return "Résolution longue"
+
+    return "Autre contact"
+
+
 # ------------------------------------------------------------------
 # Onglet 9 : Impact & confiance
 # ------------------------------------------------------------------
 
 with onglet_impact:
-    st.markdown(titre_section_principale("Pertes financières directes"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Coût direct estimé des incidents clients"), unsafe_allow_html=True)
     st.caption(
-        "Basé sur le type de résolution du ticket, montant estimé par une fraction réaliste du prix de "
-        "la commande d'origine (fichier Shopify fictif) — remboursement intégral, remplacement ou geste "
-        "commercial à coût partiel. Chaque commande n'est comptée qu'une seule fois même si plusieurs "
-        "tickets s'y rattachent."
+        "Remboursement = montant réellement remboursé. Remplacement et garantie = coût de revient "
+        "produit + logistique associée (product_costs_fictif.xlsx), pas le prix de vente payé par le "
+        "client. Geste commercial reste une fraction estimée du prix de vente : aucun montant "
+        "réellement accordé n'est enregistré par ticket — seule ligne encore une estimation, "
+        "marquée comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois même si "
+        "plusieurs tickets s'y rattachent."
     )
 
     groupes_perte = {}
@@ -3347,7 +4162,11 @@ with onglet_impact:
 
     lignes_perte = []
     montant_total_pertes = 0
+    montant_subi = 0
+    montant_evitable = 0
+    montants_par_composant = {}
     commandes_deja_comptees = set()
+
     for type_perte, tickets_perte in groupes_perte.items():
         pct_perte = len(tickets_perte) / len(tickets_s2) * 100
 
@@ -3356,21 +4175,37 @@ with onglet_impact:
             order_id = ticket["order_id"]
             if order_id in commandes_deja_comptees:
                 continue
-            montant = montant_perte_estime(ticket, commandes, type_perte)
-            if montant is not None:
-                montants.append(montant)
-                commandes_deja_comptees.add(order_id)
+            montant = montant_perte_estime(ticket, commandes, type_perte, couts_produits)
+            if montant is None:
+                continue
+
+            montants.append(montant)
+            commandes_deja_comptees.add(order_id)
+
+            if est_cout_potentiellement_evitable(ticket):
+                montant_evitable = montant_evitable + montant
+            else:
+                montant_subi = montant_subi + montant
+
+            composant_ticket = ticket.get("component")
+            if composant_ticket is not None:
+                montants_par_composant[composant_ticket] = montants_par_composant.get(composant_ticket, 0) + montant
+
+        methode = "Coût de revient réel"
+        if type_perte == "Geste commercial":
+            methode = "Estimé (fraction du prix de vente)"
 
         ligne = {
             "Type de perte": type_perte,
             "Tickets": len(tickets_perte),
             "% du volume global": formater_pourcentage(pct_perte),
-            "Montant estimé": "N/A",
+            "Montant": "N/A",
+            "Méthode": methode,
         }
 
         if len(montants) > 0:
             somme = sum(montants)
-            ligne["Montant estimé"] = formater_montant(somme)
+            ligne["Montant"] = formater_montant(somme)
             montant_total_pertes = montant_total_pertes + somme
 
         lignes_perte.append(ligne)
@@ -3380,14 +4215,39 @@ with onglet_impact:
         st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
 
     if montant_total_pertes > 0:
-        st.markdown(
+        colonne_cout_a, colonne_cout_b = st.columns(2)
+        colonne_cout_a.markdown(
             construire_carte_kpi(
-                "Total pertes financières directes estimées", formater_montant(montant_total_pertes)
+                "Coût direct estimé des incidents clients", formater_montant(montant_total_pertes)
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_cout_b.markdown(
+            construire_carte_kpi(
+                "Dont potentiellement évitable", formater_montant(montant_evitable),
+                sous_texte=formater_pourcentage(montant_evitable / montant_total_pertes * 100) + " du coût — SAV récurrents",
             ),
             unsafe_allow_html=True,
         )
 
-    st.subheader("SAV sous garantie (coût absorbé par l'entreprise)")
+        if len(montants_par_composant) > 0:
+            composant_principal = None
+            montant_principal = 0
+            for composant, montant in montants_par_composant.items():
+                if montant > montant_principal:
+                    montant_principal = montant
+                    composant_principal = composant
+
+            st.caption(
+                "Principale cause du coût : " + composant_principal + " (" + formater_montant(montant_principal)
+                + ", " + formater_pourcentage(montant_principal / montant_total_pertes * 100) + " du coût total)."
+            )
+
+    st.markdown(titre_section_principale("SAV sous garantie"), unsafe_allow_html=True)
+    st.caption(
+        "Impact économique du SAV pris en charge par l'entreprise — le détail produit/composant est "
+        "dans l'onglet Produit, pas répété ici."
+    )
 
     tickets_sav_produit_business = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
     tickets_garantie = []
@@ -3395,15 +4255,8 @@ with onglet_impact:
         if ticket["warranty_status"] == "Sous garantie":
             tickets_garantie.append(ticket)
 
-    if len(tickets_sav_produit_business) > 0:
-        pct_garantie = len(tickets_garantie) / len(tickets_sav_produit_business) * 100
-
-        st.write(
-            str(len(tickets_garantie)) + " tickets sur " + str(len(tickets_sav_produit_business))
-            + " tickets de SAV produit (soit " + formater_pourcentage(pct_garantie) + ") concernent un "
-            + "appareil encore sous garantie — le coût de remplacement/réparation est à la charge de "
-            + "l'entreprise, pas du client."
-        )
+    if len(tickets_sav_produit_business) > 0 and len(tickets_garantie) > 0:
+        pct_garantie_volume_sav = len(tickets_garantie) / len(tickets_sav_produit_business) * 100
 
         montants_garantie = []
         commandes_garantie_deja_comptees = set()
@@ -3411,20 +4264,54 @@ with onglet_impact:
             order_id = ticket["order_id"]
             if order_id in commandes_garantie_deja_comptees:
                 continue
-            montant = montant_cout_garantie(ticket, commandes)
+            montant = montant_cout_garantie(ticket, commandes, couts_produits)
             if montant is not None:
                 montants_garantie.append(montant)
                 commandes_garantie_deja_comptees.add(order_id)
 
         if len(montants_garantie) > 0:
-            st.markdown(
+            montant_garantie_total = sum(montants_garantie)
+
+            colonne_gar_a, colonne_gar_b = st.columns(2)
+            colonne_gar_a.markdown(
                 construire_carte_kpi(
-                    "Coût de remplacement estimé (produits sous garantie)",
-                    formater_montant(sum(montants_garantie)),
+                    "Coût garantie estimé", formater_montant(montant_garantie_total),
+                    sous_texte=str(len(tickets_garantie)) + " tickets sous garantie",
                 ),
                 unsafe_allow_html=True,
             )
-            st.caption("Estimé à partir d'une fraction du prix de vente (coût matière/logistique), pas le prix payé par le client.")
+            colonne_gar_b.markdown(
+                construire_carte_kpi("Part du SAV produit concernée", formater_pourcentage(pct_garantie_volume_sav)),
+                unsafe_allow_html=True,
+            )
+
+            # Comparaison en coût MOYEN par ticket, jamais en part d'un total combiné : une garantie
+            # peut concerner un ticket déjà compté dans "Coût direct" (ex. Remplacement produit) —
+            # additionner les deux totaux compterait ce ticket deux fois. Le coût moyen par ticket,
+            # lui, reste valide même si les deux ensembles se recoupent partiellement.
+            cout_moyen_garantie = None
+            if len(tickets_garantie) > 0:
+                cout_moyen_garantie = montant_garantie_total / len(tickets_garantie)
+
+            cout_moyen_global = None
+            if len(commandes_deja_comptees) > 0:
+                cout_moyen_global = montant_total_pertes / len(commandes_deja_comptees)
+
+            if cout_moyen_garantie is not None and cout_moyen_global is not None and cout_moyen_global > 0:
+                ecart_cout_moyen_pct = (cout_moyen_garantie - cout_moyen_global) / cout_moyen_global * 100
+                if ecart_cout_moyen_pct >= 50:
+                    st.caption(
+                        "Coût moyen par ticket sous garantie : " + formater_montant(cout_moyen_garantie)
+                        + ", contre " + formater_montant(cout_moyen_global) + " en moyenne sur l'ensemble des "
+                        "incidents chiffrés — un ticket garantie coûte structurellement plus cher (remplacement "
+                        "complet à la charge de l'entreprise, pas de part payée par le client)."
+                    )
+
+            st.caption(
+                "« Coût direct » et « Coût garantie » sont calculés indépendamment et peuvent se recouper "
+                "partiellement (un remplacement sous garantie compte dans les deux) — ne pas additionner "
+                "ces deux montants."
+            )
 
     st.divider()
     st.markdown(titre_section_principale("Confiance mesurée (NPS)"), unsafe_allow_html=True)
@@ -3449,27 +4336,81 @@ with onglet_impact:
     with st.container(border=True):
         colonne_nps_a, colonne_nps_b, colonne_nps_c = st.columns(3)
         if nps_global is not None:
-            colonne_nps_a.markdown(construire_carte_kpi("NPS global", round(nps_global, 1)), unsafe_allow_html=True)
+            colonne_nps_a.markdown(
+                construire_carte_kpi(
+                    "NPS global", round(nps_global, 1), sous_texte=str(len(reponses_nps)) + " répondants"
+                ),
+                unsafe_allow_html=True,
+            )
         if nps_contactes is not None:
             colonne_nps_b.markdown(
-                construire_carte_kpi("NPS - a contacté le support", round(nps_contactes, 1)),
+                construire_carte_kpi(
+                    "NPS - a contacté le support", round(nps_contactes, 1),
+                    sous_texte=str(len(reponses_contactees)) + " répondants",
+                ),
                 unsafe_allow_html=True,
             )
         if nps_non_contactes is not None:
             colonne_nps_c.markdown(
-                construire_carte_kpi("NPS - jamais contacté (référence)", round(nps_non_contactes, 1)),
+                construire_carte_kpi(
+                    "NPS - jamais contacté (référence)", round(nps_non_contactes, 1),
+                    sous_texte=str(len(reponses_non_contactees)) + " répondants",
+                ),
                 unsafe_allow_html=True,
             )
 
     if nps_contactes is not None and nps_non_contactes is not None:
         ecart_nps = round(nps_contactes - nps_non_contactes, 1)
+        if ecart_nps >= 0:
+            texte_ecart = "supérieur de " + str(abs(ecart_nps))
+        else:
+            texte_ecart = "inférieur de " + str(abs(ecart_nps))
         st.write(
-            "Écart : les clients ayant contacté le support ont un NPS de " + str(ecart_nps)
-            + " points par rapport à ceux qui n'ont jamais contacté — la mesure concrète de la "
-            + "perte (ou du gain) de confiance liée à l'expérience de contact."
+            "Les clients ayant contacté le support présentent un niveau de recommandation " + texte_ecart
+            + " points par rapport à ceux n'ayant jamais contacté le support. Cet écart reflète "
+            "l'expérience globale de ces clients et ne peut pas être attribué au support seul."
         )
 
-    st.write("Évolution du NPS dans le temps :")
+    st.markdown("**Confiance par type d'expérience**")
+    st.caption(
+        "Rapproche chaque réponse du dernier ticket du même client dans les "
+        + str(FENETRE_NPS_EXPERIENCE_JOURS) + " jours précédents — une association, pas un lien "
+        "démontré (aucun ticket n'est référencé dans les réponses NPS elles-mêmes). Affiché "
+        "seulement pour les groupes d'au moins " + str(SEUIL_MIN_REPONSES_NPS) + " répondants."
+    )
+
+    index_tickets_email = tickets_par_email(tickets_historique_business)
+    reponses_par_experience = {}
+    for reponse in reponses_nps:
+        type_experience = obtenir_type_experience(reponse, index_tickets_email)
+        if type_experience in reponses_par_experience:
+            reponses_par_experience[type_experience].append(reponse)
+        else:
+            reponses_par_experience[type_experience] = [reponse]
+
+    def obtenir_repondants(ligne):
+        return ligne["Répondants"]
+
+    lignes_experience = []
+    for type_experience, reponses_experience in reponses_par_experience.items():
+        if len(reponses_experience) < SEUIL_MIN_REPONSES_NPS:
+            continue
+        nps_experience = calculer_nps(reponses_experience)
+        if nps_experience is None:
+            continue
+        lignes_experience.append({
+            "Type d'expérience": type_experience,
+            "NPS": round(nps_experience, 1),
+            "Répondants": len(reponses_experience),
+        })
+
+    if len(lignes_experience) == 0:
+        st.caption("Échantillon insuffisant par type d'expérience pour une comparaison robuste actuellement.")
+    else:
+        lignes_experience_triees = sorted(lignes_experience, key=obtenir_repondants, reverse=True)
+        st.dataframe(lignes_experience_triees, hide_index=True, width="stretch")
+
+    st.markdown("**Évolution du NPS dans le temps**")
 
     nps_par_mois = {}
     for reponse in reponses_nps:
@@ -3480,11 +4421,15 @@ with onglet_impact:
             nps_par_mois[cle_mois] = [reponse]
 
     lignes_nps_mois = []
+    mois_echantillon_faible = []
     for cle_mois in sorted(nps_par_mois.keys()):
         nps_mois = calculer_nps(nps_par_mois[cle_mois])
         if nps_mois is None:
             continue
-        lignes_nps_mois.append({"Mois": cle_mois, "NPS": nps_mois, "Réponses": len(nps_par_mois[cle_mois])})
+        nb_reponses_mois = len(nps_par_mois[cle_mois])
+        lignes_nps_mois.append({"Mois": cle_mois, "NPS": nps_mois, "Réponses": nb_reponses_mois})
+        if nb_reponses_mois < SEUIL_MIN_REPONSES_NPS:
+            mois_echantillon_faible.append(cle_mois)
 
     tableau_nps_mois = pd.DataFrame(lignes_nps_mois)
     graphique_nps = alt.Chart(tableau_nps_mois).mark_line(point=True, color=COULEUR_SECONDAIRE).encode(
@@ -3494,3 +4439,9 @@ with onglet_impact:
     ).properties(height=260).configure_view(strokeWidth=0)
     with st.container(border=True):
         st.altair_chart(graphique_nps, width="stretch")
+
+    if len(mois_echantillon_faible) > 0:
+        st.caption(
+            "Échantillon faible (< " + str(SEUIL_MIN_REPONSES_NPS) + " répondants) sur : "
+            + ", ".join(mois_echantillon_faible) + " — à lire avec prudence."
+        )

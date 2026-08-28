@@ -66,6 +66,25 @@ def charger_commandes(chemin):
     return commandes
 
 
+def charger_couts_produits(chemin):
+    classeur = openpyxl.load_workbook(chemin, data_only=True)
+    feuille = classeur["COSTS"]
+
+    entetes = []
+    for cellule in feuille[1]:
+        entetes.append(cellule.value)
+
+    couts = {}
+    for ligne in feuille.iter_rows(min_row=2, values_only=True):
+        cout = {}
+        for i in range(len(entetes)):
+            cout[entetes[i]] = ligne[i]
+        cle = (cout["product_category"], cout["product_name"])
+        couts[cle] = cout
+
+    return couts
+
+
 def montant_ticket(ticket, commandes):
     order_id = ticket["order_id"]
     if order_id is None or order_id not in commandes:
@@ -73,35 +92,64 @@ def montant_ticket(ticket, commandes):
     return commandes[order_id]["montant_total"]
 
 
-# Le montant total de la commande n'est pas le coût réel pour l'entreprise :
-# un remboursement rend le prix payé, mais un remplacement ou un geste commercial
-# ne coûtent qu'une fraction du prix de vente (coût matière/logistique, pas le
-# panier complet). Ces fractions évitent de gonfler artificiellement les pertes.
-FRACTION_REMBOURSEMENT = 1.0
-FRACTION_REMPLACEMENT = 0.35
+def obtenir_commande(ticket, commandes):
+    order_id = ticket["order_id"]
+    if order_id is None or order_id not in commandes:
+        return None
+    return commandes[order_id]
+
+
+# Le montant payé par le client (remboursement intégral) est un coût réel, pas une estimation.
+# Un geste commercial cash n'a pas de montant réellement accordé dans les données disponibles
+# (aucun champ ticket ne le capture) — reste une fraction estimée du prix de vente, marquée
+# comme telle dans l'UI plutôt que mélangée silencieusement aux coûts réels ci-dessous.
 FRACTION_GESTE_COMMERCIAL = 0.15
 
-FRACTIONS_PERTE = {
-    "Remboursement": FRACTION_REMBOURSEMENT,
-    "Remplacement produit": FRACTION_REMPLACEMENT,
-    "Remplacement accessoire": FRACTION_REMPLACEMENT,
-    "Geste commercial": FRACTION_GESTE_COMMERCIAL,
-}
 
-
-def montant_perte_estime(ticket, commandes, type_perte):
-    montant_commande = montant_ticket(ticket, commandes)
-    if montant_commande is None:
+# Coût réel d'un remplacement : coût de revient du produit (au même ratio que le catalogue de
+# coûts, appliqué au montant réellement payé pour rester cohérent avec d'éventuelles variantes de
+# prix) + coût logistique d'expédition du remplacement + coût de retour si le client renvoie
+# l'article défectueux (pas pertinent pour un petit accessoire).
+def montant_cout_remplacement(ticket, commandes, couts_produits, avec_retour):
+    commande = obtenir_commande(ticket, commandes)
+    if commande is None:
         return None
-    fraction = FRACTIONS_PERTE.get(type_perte, 1.0)
-    return montant_commande * fraction
 
-
-def montant_cout_garantie(ticket, commandes):
-    montant_commande = montant_ticket(ticket, commandes)
-    if montant_commande is None:
+    cle_produit = (commande["product_category"], commande["product_name"])
+    if cle_produit not in couts_produits:
         return None
-    return montant_commande * FRACTION_REMPLACEMENT
+
+    cout_produit = couts_produits[cle_produit]
+    prix_reference = cout_produit["prix_vente_ttc"]
+    if prix_reference is None or prix_reference == 0:
+        return None
+
+    ratio_cout = cout_produit["cout_revient_produit"] / prix_reference
+    montant_reel = commande["montant_total"]
+
+    cout = montant_reel * ratio_cout + cout_produit["cout_logistique_remplacement"]
+    if avec_retour:
+        cout = cout + cout_produit["cout_retour"]
+    return cout
+
+
+def montant_perte_estime(ticket, commandes, type_perte, couts_produits):
+    if type_perte == "Remboursement":
+        return montant_ticket(ticket, commandes)
+    if type_perte == "Remplacement produit":
+        return montant_cout_remplacement(ticket, commandes, couts_produits, True)
+    if type_perte == "Remplacement accessoire":
+        return montant_cout_remplacement(ticket, commandes, couts_produits, False)
+    if type_perte == "Geste commercial":
+        montant_commande = montant_ticket(ticket, commandes)
+        if montant_commande is None:
+            return None
+        return montant_commande * FRACTION_GESTE_COMMERCIAL
+    return montant_ticket(ticket, commandes)
+
+
+def montant_cout_garantie(ticket, commandes, couts_produits):
+    return montant_cout_remplacement(ticket, commandes, couts_produits, True)
 
 
 def formater_nombre_espace(nombre_entier):
@@ -155,6 +203,43 @@ def premiere_commande_apres(ticket, index_par_email, fenetre_jours):
         return commande["order_date"]
 
     candidates_triees = sorted(candidates, key=obtenir_date)
+    return candidates_triees[0]
+
+
+def tickets_par_email(tickets):
+    par_email = {}
+    for ticket in tickets:
+        email = ticket["requester_email"]
+        if email in par_email:
+            par_email[email].append(ticket)
+        else:
+            par_email[email] = [ticket]
+    return par_email
+
+
+# Miroir de premiere_commande_apres, mais en sens inverse : le dernier ticket du même client
+# avant une réponse NPS, dans une fenêtre glissante — sert à rapprocher un score de satisfaction
+# d'une expérience de contact plausible, sans prétendre à un lien démontré (aucun ID ticket n'est
+# stocké dans les réponses NPS elles-mêmes).
+def dernier_ticket_avant(reponse, index_tickets_email, fenetre_jours):
+    email = reponse["email_client"]
+    tickets_client = index_tickets_email.get(email, [])
+
+    date_limite = reponse["date_reponse"]
+    date_debut_fenetre = date_limite - datetime.timedelta(days=fenetre_jours)
+
+    candidates = []
+    for ticket in tickets_client:
+        if date_debut_fenetre <= ticket["created_at"] <= date_limite:
+            candidates.append(ticket)
+
+    if len(candidates) == 0:
+        return None
+
+    def obtenir_date_ticket(ticket):
+        return ticket["created_at"]
+
+    candidates_triees = sorted(candidates, key=obtenir_date_ticket, reverse=True)
     return candidates_triees[0]
 
 
