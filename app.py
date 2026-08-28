@@ -461,6 +461,7 @@ SEUIL_HAUSSE_SUJET_SURVEILLER = 5
 SEUIL_HAUSSE_SUJET_CRITIQUE = 10
 SEUIL_REPLIES_FAQ = 3
 SEUIL_CSAT_VERBATIM = 2
+SEUIL_VERBATIMS_GROUPE = 10
 
 st.set_page_config(page_title="Dashboard Customer Care : Emyria", layout="wide")
 
@@ -1495,8 +1496,11 @@ with onglet_alertes:
     st.subheader("Verbatims clients (CSAT bas)")
     st.caption(
         "Lecture qualitative des tickets mal notés (CSAT ≤ " + str(SEUIL_CSAT_VERBATIM) + ") — pour "
-        "repérer des irritants \"process\" que les champs structurés ne capturent pas. Groupés par "
-        "sujet, les 3 commentaires les plus récents par sujet."
+        "repérer des irritants \"process\" que les champs structurés ne capturent pas. Un sujet n'est "
+        "affiché qu'à partir de " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires : en dessous, "
+        "ce n'est pas un irritant récurrent à traiter, juste un client isolé — tout le monde ne peut pas "
+        "être satisfait, et ce n'est pas suivable ticket par ticket. Les 3 commentaires les plus récents "
+        "sont affichés par sujet."
     )
 
     tickets_verbatims = []
@@ -1506,16 +1510,24 @@ with onglet_alertes:
         if csat_ticket is not None and csat_ticket <= SEUIL_CSAT_VERBATIM and commentaire:
             tickets_verbatims.append(ticket)
 
-    if len(tickets_verbatims) == 0:
-        st.write("Aucun commentaire sur les tickets mal notés de cette période.")
-    else:
-        sujets_verbatims = grouper_par(tickets_verbatims, "subject_cluster")
+    sujets_verbatims = grouper_par(tickets_verbatims, "subject_cluster")
 
+    sujets_verbatims_significatifs = []
+    for sujet, tickets_sujet_verbatims in sujets_verbatims.items():
+        if len(tickets_sujet_verbatims) >= SEUIL_VERBATIMS_GROUPE:
+            sujets_verbatims_significatifs.append((sujet, tickets_sujet_verbatims))
+
+    if len(sujets_verbatims_significatifs) == 0:
+        st.write(
+            "Aucun sujet avec au moins " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires sur "
+            "cette période."
+        )
+    else:
         def obtenir_compte_verbatims(item):
             sujet, tickets_sujet = item
             return len(tickets_sujet)
 
-        sujets_verbatims_tries = sorted(sujets_verbatims.items(), key=obtenir_compte_verbatims, reverse=True)
+        sujets_verbatims_tries = sorted(sujets_verbatims_significatifs, key=obtenir_compte_verbatims, reverse=True)
 
         def obtenir_date_ticket(ticket):
             return ticket["created_at"]
