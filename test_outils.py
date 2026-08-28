@@ -12,6 +12,7 @@ from outils import (
     montant_perte_estime,
     niveau_charge_creneau,
     niveau_macro,
+    niveau_reponse_ouvree,
     taux_rempli,
 )
 
@@ -197,6 +198,26 @@ class TestNiveauChargeCreneau(unittest.TestCase):
 
     def test_deux_agents_charge_confortable_est_confortable(self):
         self.assertEqual(niveau_charge_creneau("Couverture requise", 2, 12), "CONFORTABLE")
+
+
+class TestNiveauReponseOuvree(unittest.TestCase):
+    def test_dans_le_sla_jusqu_a_60_minutes(self):
+        self.assertEqual(niveau_reponse_ouvree(60), "OK")
+
+    def test_leger_depassement_juste_au_dessus_du_sla(self):
+        self.assertEqual(niveau_reponse_ouvree(61), "A SURVEILLER")
+
+    def test_leger_depassement_jusqu_a_119_minutes(self):
+        self.assertEqual(niveau_reponse_ouvree(119), "A SURVEILLER")
+
+    def test_retard_important_a_120_minutes(self):
+        self.assertEqual(niveau_reponse_ouvree(120), "CRITIQUE")
+
+    def test_retard_important_jusqu_a_480_minutes(self):
+        self.assertEqual(niveau_reponse_ouvree(480), "CRITIQUE")
+
+    def test_debordement_au_dela_de_480_minutes(self):
+        self.assertEqual(niveau_reponse_ouvree(481), "DEBORDEMENT")
 
 
 if __name__ == "__main__":

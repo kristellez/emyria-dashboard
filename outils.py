@@ -655,7 +655,7 @@ def taux_sla(tickets, plannings_periode):
 def niveau_reponse_ouvree(minutes):
     if minutes > SEUIL_DEBORDEMENT_MIN:
         return "DEBORDEMENT"
-    elif minutes < 90:
+    elif minutes <= SEUIL_SLA_EN_CRENEAU_MIN:
         return "OK"
     elif minutes < 120:
         return "A SURVEILLER"
