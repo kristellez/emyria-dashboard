@@ -1102,14 +1102,14 @@ with onglet_agents:
     else:
         csat_moyen_equipe = None
 
-    lignes_agents = []
+    lignes_agents_avec_niveaux = []
 
     for agent, tickets_agent in par_agent.items():
         volume = len(tickets_agent)
         csat_agent = moyenne(tickets_agent, "csat")
         macro_agent = taux_rempli(tickets_agent, "macro_applied")
 
-        en_creneau_agent, pause_agent, hors_agent = separer_creneau(tickets_agent, planning_s2)
+        en_creneau_agent = separer_creneau(tickets_agent, planning_s2)[0]
         frt_en_creneau_agent = moyenne(en_creneau_agent, "first_reply_time_min")
 
         resolution_agent = moyenne(tickets_agent, "full_resolution_time_hours")
@@ -1142,11 +1142,9 @@ with onglet_agents:
             "Tickets": volume,
             "CSAT": formater_csat(csat_agent),
             "1re réponse (en créneau)": "N/A",
-            "Niveau réponse": "",
             "Résolution moyenne": "N/A",
             "Réouvertures moyennes": "N/A",
             "Utilisation macro (%)": formater_pourcentage(macro_agent),
-            "Niveau utilisation macro": niveau_macro(macro_agent),
             "Profil": profil,
         }
 
@@ -1156,15 +1154,38 @@ with onglet_agents:
         if reopens_agent is not None:
             ligne["Réouvertures moyennes"] = str(round(reopens_agent, 2))
 
+        niveau_reponse_agent = ""
         if frt_en_creneau_agent is not None:
             ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_agent)
-            ligne["Niveau réponse"] = niveau_reponse_ouvree(frt_en_creneau_agent)
+            niveau_reponse_agent = niveau_reponse_ouvree(frt_en_creneau_agent)
 
-        lignes_agents.append(ligne)
+        lignes_agents_avec_niveaux.append((ligne, niveau_reponse_agent, niveau_macro(macro_agent)))
 
-    lignes_agents_triees = sorted(lignes_agents, key=obtenir_tickets, reverse=True)
+    def obtenir_tickets_agent_avec_niveaux(item):
+        ligne_agent, niveau_reponse_item, niveau_macro_item = item
+        return ligne_agent["Tickets"]
+
+    lignes_agents_avec_niveaux_triees = sorted(
+        lignes_agents_avec_niveaux, key=obtenir_tickets_agent_avec_niveaux, reverse=True
+    )
+
+    lignes_agents_triees = []
+    niveaux_reponse_agents = []
+    niveaux_macro_agents = []
+    for ligne_agent, niveau_reponse_item, niveau_macro_item in lignes_agents_avec_niveaux_triees:
+        lignes_agents_triees.append(ligne_agent)
+        niveaux_reponse_agents.append(niveau_reponse_item)
+        niveaux_macro_agents.append(niveau_macro_item)
+
     with st.container(border=True):
-        afficher_tableau_colore(lignes_agents_triees, colonne_figee="Agent")
+        afficher_tableau_colore(
+            lignes_agents_triees,
+            colonne_figee="Agent",
+            colonnes_couleur_bloc={
+                "1re réponse (en créneau)": niveaux_reponse_agents,
+                "Utilisation macro (%)": niveaux_macro_agents,
+            },
+        )
 
     st.subheader("Détail par agent")
     st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
