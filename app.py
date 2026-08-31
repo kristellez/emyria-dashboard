@@ -18,14 +18,9 @@ from outils import (
     formater_montant,
     formater_nombre_espace,
     commandes_par_email,
-    premiere_commande_apres,
     tickets_par_email,
-    dernier_ticket_avant,
     charger_nps,
-    calculer_nps,
     charger_suivi_suggestions,
-    impact_avant_apres,
-    mots_frequents,
     extraire_code_macro,
     charger_texte_macro,
     extraire_nom_fichier_faq,
@@ -49,9 +44,7 @@ from outils import (
     CATEGORIE_SAV_PRODUIT,
     couleur_texte_csat,
     niveau_macro,
-    niveau_charge_creneau,
     niveau_reponse_ouvree,
-    niveau_hausse_sujet,
     couleur_niveau,
     libelle_niveau,
     evenements_periode,
@@ -62,6 +55,102 @@ from outils import (
     type_hors_creneau_detaille,
     taux_sla,
     type_perte_financiere,
+    moteur_produit_voie_a,
+    moteur_produit_voie_b,
+    charger_evenements_calendrier,
+    construire_profil_observation,
+    construire_lecture_tendances,
+    MODE_OBSERVATION_UNIQUE,
+    contexte_periode,
+    moteur_livraison_voie_a,
+    construire_lecture_activite_livraison,
+    controler_qualite_donnees_livraison,
+    texte_piste_transporteur_livraison,
+    distribution_issues_livraison,
+    TEXTE_COUT_INDISPONIBLE_LIVRAISON,
+    construire_lecture_livraison,
+    construire_dossiers_associes_livraison,
+    construire_croisement_motif_issue_livraison,
+    FENETRE_CONVERSION_JOURS,
+    resoudre_achats_observes_avant_vente,
+    analyser_parcours_rdv,
+    moteur_avant_vente_motifs,
+    construire_lecture_activite_avant_vente,
+    controler_qualite_donnees_avant_vente,
+    distribution_canal_avant_vente,
+    construire_lecture_avant_vente,
+    construire_contacts_associes_avant_vente,
+    construire_achats_associes_avant_vente,
+    construire_table_sujets_avant_vente,
+    construire_table_pays_avant_vente,
+    SEUIL_CSAT_INSATISFAISANT,
+    FENETRE_NPS_EXPERIENCE_JOURS,
+    SEUIL_PRUDENCE_ECHANTILLON_NPS,
+    TEXTE_PRUDENCE_BIAIS_SELECTION,
+    formater_nps_entier,
+    calculer_composition_nps,
+    evaluer_prudence_echantillon_nps,
+    texte_prudence_echantillon_nps,
+    ETAT_PRUDENCE_VOLUME_FAIBLE,
+    construire_historique_nps_par_mois,
+    construire_profil_care_mensuel,
+    evaluer_alignement_care_nps,
+    texte_alignement_care_nps,
+    segmenter_nps_par_contact_care,
+    analyser_nps_par_type_experience,
+    identifier_observation_nps_periode,
+    texte_sensibilite_echantillon_nps,
+    TEXTE_SENSIBILITE_PETIT_ECHANTILLON_NPS,
+    TEXTE_CAVEAT_RECOUVREMENT_COUT,
+    construire_lecture_impact_confiance,
+    rang_relatif,
+    extraire_candidats_categoriels_vue_ensemble,
+    construire_signaux_attention_vue_ensemble,
+    construire_signal_positif_vue_ensemble,
+    construire_points_anticipation_vue_ensemble,
+    construire_navigation_vue_ensemble,
+    categorie_dominante_mix_tendances,
+    construire_texte_periode_reference_tendances,
+    charge_relative_agent,
+    construire_historique_agent,
+    construire_lecture_equipe_agents,
+    construire_roster_agents,
+    heures_planifiees_agent,
+    mix_pct_agent,
+    STATUT_AGENT_ABSENT,
+    STATUT_AGENT_RENFORT_NON_PLANIFIE,
+    evaluer_diagnostics_structures_transversal_vue_ensemble,
+    CATEGORIE_LIVRAISON_VUE_ENSEMBLE,
+    CATEGORIE_AVANT_VENTE_VUE_ENSEMBLE,
+    SEUIL_MAX_SIGNAUX_ATTENTION_VUE_ENSEMBLE,
+    FENETRE_ANTICIPATION_VUE_ENSEMBLE_JOURS,
+    SEUIL_REPLIES_FAQ_ACTIONS,
+    SEUIL_CSAT_VERBATIM_ACTIONS,
+    SEUIL_VERBATIMS_GROUPE_ACTIONS,
+    TEXTE_PRUDENCE_AVANT_APRES_ACTIONS,
+    identifier_pistes_standardisation,
+    identifier_pistes_self_service,
+    identifier_retours_clients_a_explorer,
+    construire_actions_menees_actions,
+    construire_agents_grille_couverture,
+    construire_grille_pression_couverture,
+    construire_reference_historique_couverture,
+    enrichir_grille_pression_tension_couverture,
+    construire_lecture_couverture,
+    NIVEAU_PRESSION_HABITUELLE,
+    NIVEAU_PRESSION_MARQUEE,
+    NIVEAU_PRESSION_FORTE,
+    NIVEAU_PRESSION_NON_QUALIFIABLE,
+    NIVEAU_PRESSION_FAIBLE_VOLUME,
+    NIVEAU_ACTIVITE_HORS_CAPACITE_FAIBLE,
+    NIVEAU_ACTIVITE_HORS_CAPACITE_MATERIELLE,
+    titre_signal_produit,
+    titre_signal_produit_parties,
+    construire_lecture_produit,
+    construire_dossiers_associes_produit,
+    construire_texte_resolution_produit,
+    construire_texte_sav_recurrents_produit,
+    TEXTE_PRUDENCE_CAUSALE_PRODUIT,
 )
 
 
@@ -78,9 +167,6 @@ DEFINITION_EN_CRENEAU = (
     "Ça isole la vraie performance de l'équipe, sans le délai dû aux horaires hors couverture "
     "(voir l'onglet Couverture & réactivité pour le détail du planning et du hors créneau)."
 )
-
-ROLE_RESPONSABLE_EQUIPE = "Responsable d'équipe"
-
 
 NOMS_MOIS = [
     "janvier", "février", "mars", "avril", "mai", "juin",
@@ -319,61 +405,92 @@ HEURE_DEBUT_HOTSPOTS = 7
 HEURE_FIN_HOTSPOTS = 21
 
 
-def statut_creneau_standard(horaires_standard, jour, heure):
-    plages = horaires_standard.get(jour, [])
-
-    for debut, fin in plages:
-        if debut <= heure < fin:
-            return "Couverture requise"
-
-    if len(plages) > 0:
-        premiere_debut = plages[0][0]
-        derniere_fin = plages[-1][1]
-        if premiere_debut <= heure < derniere_fin:
-            return "Pause déjeuner"
-
-    return "Hors standard"
+# agents_en_poste, construire_activite_par_jour_heure, activite_observee et
+# renfort_non_planifie vivent désormais dans outils.py (logique métier testable,
+# indépendante de la couche d'affichage) — voir l'import en tête de fichier.
+# statut_creneau_standard, construire_agents_grille, construire_grille_creneaux (Étape 5E.1 :
+# devenue construire_grille_pression_couverture, corrigée pour le multi-semaines) vivent
+# désormais dans outils.py également, section "Composition Couverture -- pression / tension".
 
 
-def agents_en_poste(planning, agents_grille, jour, heure):
-    presents = []
-    for agent in agents_grille:
-        # Volontairement pas horaires_agent() ici : sa bascule vers l'horaire DEFAUT pour un
-        # agent absent du planning gonflerait artificiellement les effectifs des semaines dont
-        # le PLANNING est incomplet (ex : premiers exports, sans ligne par agent) — un agent
-        # sans ligne cette semaine-là doit compter pour 0 heure, pas suivre le créneau standard.
-        if agent not in planning:
-            continue
+# ------------------------------------------------------------------
+# Design tokens (Étape 6C) -- source unique de la palette, de l'espacement et des rayons. La
+# couleur représente un RÔLE (identité / surface / texte / attention / watch / positif / critique),
+# jamais une source analytique ni un onglet : aucun token n'est ajouté "pour Produit" ou "pour
+# Livraison" spécifiquement (Étape 6B, section 6-7). Toute nouvelle couleur doit venir de cette
+# section -- pas de nouveau hex ajouté directement dans un onglet.
+# ------------------------------------------------------------------
 
-        plages = planning[agent].get(jour, [])
-        for debut, fin in plages:
-            if debut <= heure < fin:
-                presents.append(agent)
-                break
-    return presents
+# --- Identité ---
+COULEUR_PRIMAIRE = "#CC5500"        # Accent -- marque, période courante/A, liseré priorité
+COULEUR_SECONDAIRE = "#96234A"      # 2e série de graphique UNIQUEMENT -- jamais une référence
+                                     # temporelle B (Étape 6B, section 24 ; verrouillé section 15).
+COULEUR_ACCENT_FONCE = "#8B4513"    # 3e série de graphique
 
+# --- Surfaces ---
+COULEUR_FOND_CARTE = "#FAFAF9"          # Surface 1
+COULEUR_BORDURE_CARTE = "#E8E3DD"       # Border
+COULEUR_FOND_BANDEAU = "#FBF3EC"        # Surface 2
+COULEUR_BORDURE_BANDEAU = "#EAD9C4"
 
-COULEUR_PRIMAIRE = "#CC5500"
-COULEUR_SECONDAIRE = "#96234A"
-COULEUR_ACCENT_FONCE = "#8B4513"
+# --- Texte -- Text secondary et Text muted assombris (Étape 6C, section 3). Contraste mesuré par
+# la formule de luminance relative WCAG (fond blanc/surface 1, texte 11-13px) :
+#   Text secondary sur Surface 1 : #8A7F73 -> ~3,75:1 (sous le seuil AA texte normal 4,5:1)
+#                                   #7A6F62 -> ~4,69:1 (conforme AA)
+#   Text muted sur blanc         : #B7AFA3 -> ~2,17:1 (très insuffisant)
+#                                   #857D70 -> ~4,07:1 (nettement amélioré, reste sous 4,5:1)
+# Text muted reste volontairement réservé à un texte strictement secondaire/décoratif (jamais la
+# seule porteuse d'une information nécessaire) -- si un jour elle porte une info fonctionnelle non
+# dupliquée ailleurs, la remonter en Text secondary plutôt que de la laisser telle quelle.
+COULEUR_TEXTE_VALEUR = "#2B2620"    # Text primary
+COULEUR_TEXTE_LABEL = "#7A6F62"     # Text secondary (assombri depuis #8A7F73)
+COULEUR_TEXTE_MUTED = "#857D70"     # Text muted (assombri depuis #B7AFA3)
 
-# Système de cartes/bandeaux (distinct du code couleur vert/jaune/rouge/bleu/gris des
-# tableaux, qui garde son propre rôle de signal de statut — voir couleur_niveau()).
-COULEUR_FOND_CARTE = "#FAFAF9"
-COULEUR_BORDURE_CARTE = "#E8E3DD"
-COULEUR_TEXTE_LABEL = "#8A7F73"
-COULEUR_TEXTE_VALEUR = "#2B2620"
+# --- Rôles fonctionnels (couleur = rôle, jamais un jugement de performance -- Étape 6B, section 7)
+COULEUR_ATTENTION = "#D9822E"       # Priorité à investiguer -- jamais rouge par défaut
+COULEUR_WATCH = "#E0A72E"           # À surveiller / prudence -- ambre unique, réutilisé partout
+COULEUR_POSITIVE = "#3FA76B"        # Tenue / absorption -- jamais "bon agent"
+COULEUR_CRITIQUE = "#D1483B"        # Réservé aux cas réellement critiques (débordement, dossier
+                                     # individuel sensible) -- jamais une priorité ordinaire
+
 COULEUR_HAUSSE_FOND = "#DCF3E4"
 COULEUR_HAUSSE_TEXTE = "#1E7A42"
 COULEUR_BAISSE_FOND = "#FBDFDC"
 COULEUR_BAISSE_TEXTE = "#B23A2E"
 COULEUR_NEUTRE_FOND = "#EFECE8"
 COULEUR_NEUTRE_TEXTE = "#6A6258"
-COULEUR_FOND_BANDEAU = "#FBF3EC"
-COULEUR_BORDURE_BANDEAU = "#EAD9C4"
 
-# Variantes plus saturées de couleur_niveau() (outils.py), pensées pour un liseré de carte
-# plutôt qu'un fond de cellule de tableau — même langage de statut, contexte différent.
+# --- Espacement (Étape 6C, section 7) ---
+ESPACE_XS = "4px"
+ESPACE_S = "8px"
+ESPACE_M = "16px"
+ESPACE_L = "24px"
+ESPACE_XL = "40px"
+
+# --- Rayon (Étape 6C, section 8) ---
+RADIUS_CARTE = "10px"
+RADIUS_COMPACT = "8px"
+
+# --- Catégories métier -- mapping fixe, jamais recyclé (Étape 6C, section 16). Utilisé partout où
+# une composition par catégorie est affichée (Vue d'ensemble, Tendances) -- jamais laissé au hasard
+# de la palette par défaut d'Altair (bug identifié en 6B, section 25).
+# Étape 6J, section 33 : nommée (au lieu d'un hex local dans PLAGE_COULEURS_CATEGORIES) pour rester
+# cohérente avec les 5 autres entrées du tableau, toutes déjà des tokens nommés.
+COULEUR_CATEGORIE_SAV_USAGE = "#B7935F"
+
+DOMAINE_CATEGORIES = [
+    "Livraison", CATEGORIE_SAV_PRODUIT, "Avant-vente / conseil",
+    "Après-vente commande/admin", "SAV usage (besoin d'aide)", "Autre",
+]
+PLAGE_COULEURS_CATEGORIES = [
+    COULEUR_PRIMAIRE, COULEUR_SECONDAIRE, COULEUR_POSITIVE,
+    COULEUR_ACCENT_FONCE, COULEUR_CATEGORIE_SAV_USAGE, COULEUR_TEXTE_LABEL,
+]
+
+# --- Couverture (accents de carte + heatmap) -- non modifiés ce tour, Étape 6G leur est dédiée
+# (Étape 6C, section 34). Variantes plus saturées de couleur_niveau() (outils.py), pensées pour un
+# liseré de carte plutôt qu'un fond de cellule de tableau — même langage de statut, contexte
+# différent.
 COULEUR_ACCENT_OK = "#3FA76B"
 COULEUR_ACCENT_SURVEILLER = "#E0A72E"
 # Distinct du rouge (tension pendant l'ouverture) : la question "hors couverture" est d'une
@@ -382,12 +499,17 @@ COULEUR_ACCENT_HORS_COUVERTURE = "#D9822E"
 COULEUR_ACCENT_CRITIQUE = "#D1483B"
 COULEUR_ACCENT_DEBORDEMENT = "#A6291E"
 
-# Fonds de cellule pour la heatmap de couverture (onglet Couverture & réactivité) — même
-# langage de couleur que les accents ci-dessus, en teinte pâle pour un fond de cellule
-# plutôt qu'un liseré.
-COULEUR_HEATMAP_CONFORTABLE = "#D9EDDD"
-COULEUR_HEATMAP_SURVEILLER = "#F7E2B8"
-COULEUR_HEATMAP_HOTSPOT = "#F3D2CB"
+# Fonds de cellule pour la heatmap de couverture (onglet Couverture & réactivité). Étape 6G,
+# section 11 : re-palette -- l'ancienne échelle vert/jaune/rose lisait comme un score de qualité
+# (vert = bon, rose = mauvais), alors que la pression n'est PAS un jugement de performance (une
+# forte pression bien absorbée reste neutre). Nouvelle échelle chromatique autour de la marque,
+# monotone du neutre vers l'orange marqué -- jamais de vert (retirerait toute lecture "bonne
+# note"), jamais de rouge (réservé à COULEUR_ACCENT_CRITIQUE, un vrai jugement, ailleurs dans
+# l'app). COULEUR_HEATMAP_HORS_COUVERTURE (gris neutre, créneaux fermés) reste inchangée : ce
+# n'est pas une valeur de pression, seulement "fermé par conception".
+COULEUR_HEATMAP_CONFORTABLE = "#F5EFE6"
+COULEUR_HEATMAP_SURVEILLER = "#EACB9C"
+COULEUR_HEATMAP_HOTSPOT = "#CC8347"
 COULEUR_HEATMAP_HORS_COUVERTURE = "#F4F2EE"
 
 
@@ -432,9 +554,10 @@ def construire_carte_kpi(label, valeur, delta=None, delta_couleur="normal", sous
     html = (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
         + bordure_gauche
-        + 'border-radius:10px; padding:16px 18px 14px; margin-bottom:8px; min-height:104px;">'
+        + "border-radius:" + RADIUS_CARTE + "; padding:" + ESPACE_M + " 18px 14px; margin-bottom:" + ESPACE_S + "; "
+        'min-height:104px;">'
         '<div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_TEXTE_LABEL + "; "
-        'font-weight:600; margin-bottom:6px;">' + label + "</div>"
+        'font-weight:600; line-height:1.3; margin-bottom:6px;">' + label + "</div>"
         '<div style="font-size:28px; font-weight:600; color:' + COULEUR_TEXTE_VALEUR + '; line-height:1.2;">'
         + str(valeur) + "</div>"
     )
@@ -449,7 +572,8 @@ def construire_carte_kpi(label, valeur, delta=None, delta_couleur="normal", sous
 
     if sous_texte is not None:
         html = html + (
-            '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:6px;">' + sous_texte + "</div>"
+            '<div style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + '; line-height:1.4; margin-top:6px;">'
+            + sous_texte + "</div>"
         )
 
     html = html + "</div>"
@@ -459,7 +583,10 @@ def construire_carte_kpi(label, valeur, delta=None, delta_couleur="normal", sous
 def construire_bandeau_info(texte_html):
     return (
         '<div style="background-color:' + COULEUR_FOND_BANDEAU + "; border:1px solid " + COULEUR_BORDURE_BANDEAU + "; "
-        'border-radius:8px; padding:14px 16px; color:' + COULEUR_TEXTE_VALEUR + '; font-size:14px; line-height:1.5;">'
+        "border-radius:" + RADIUS_COMPACT + "; padding:14px " + ESPACE_M + "; color:" + COULEUR_TEXTE_VALEUR + '; '
+        # max-width : contenu éditorial (texte de lecture), jamais appliqué à un tableau/heatmap/
+        # graphique -- ceux-ci gardent la pleine largeur du layout "wide" (Étape 6C, section 6).
+        'font-size:14px; line-height:1.5; max-width:1400px;">'
         + texte_html + "</div>"
     )
 
@@ -471,16 +598,113 @@ def construire_bandeau_info(texte_html):
 def titre_section_principale(texte):
     return (
         '<div style="border-left:4px solid ' + COULEUR_PRIMAIRE + "; padding-left:14px; margin:10px 0 6px;\">"
-        '<span style="font-size:23px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + texte + "</span>"
+        '<span style="font-size:21px; font-weight:700; line-height:1.2; color:' + COULEUR_TEXTE_VALEUR + ';">'
+        + texte + "</span>"
         "</div>"
     )
 
 
-COULEUR_FOND_HEATMAP_PAR_NIVEAU = {
-    "CONFORTABLE": COULEUR_HEATMAP_CONFORTABLE,
-    "A_SURVEILLER": COULEUR_HEATMAP_SURVEILLER,
-    "HOTSPOT": COULEUR_HEATMAP_HOTSPOT,
-    "HORS_COUVERTURE": COULEUR_HEATMAP_HORS_COUVERTURE,
+ROLES_STATUT_CARTE_SIGNAL = {
+    "attention": COULEUR_ATTENTION,
+    "watch": COULEUR_WATCH,
+    "positive": COULEUR_POSITIVE,
+    "critique": COULEUR_CRITIQUE,
+}
+
+
+# Fondation Étape 6C (section 20), câblée et validée en Étape 6D sur Vue d'ensemble (signaux
+# "Ce qui mérite votre attention" et, en variante allégée sans titre, "Ce qui tient") : socle
+# commun pour les 3-4 traitements visuels distincts jusque-là dispersés (Produit/Livraison/
+# Avant-vente ont chacun leur propre mise en page de carte -- migration de leur contenu réel
+# repoussée à 6E/6F, hors périmètre 6D). statut doit être une clé de ROLES_STATUT_CARTE_SIGNAL, ou
+# None pour un signal neutre (bordure standard, pas d'accent de couleur). titre=None omet
+# entièrement la ligne d'en-tête (et le badge) -- variante allégée pour un signal secondaire qui
+# n'a pas de titre propre dans les données (Étape 6D, section 11 : partage radius/border/typo/
+# espacements avec la carte "attention", mais une hiérarchie visuelle plus légère).
+def construire_carte_signal(titre, statut, corps_html, badge=None):
+    if statut is None:
+        bordure_gauche = "border-left:1px solid " + COULEUR_BORDURE_CARTE + ";"
+    else:
+        bordure_gauche = "border-left:6px solid " + ROLES_STATUT_CARTE_SIGNAL[statut] + ";"
+
+    html = (
+        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
+        + bordure_gauche
+        + "border-radius:" + RADIUS_CARTE + "; padding:" + ESPACE_M + "; margin-bottom:" + ESPACE_S + ';">'
+    )
+
+    if titre is not None:
+        html = html + (
+            '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:' + ESPACE_S + ';">'
+            '<span style="font-size:15px; font-weight:700; line-height:1.3; color:' + COULEUR_TEXTE_VALEUR + ';">'
+            + titre + "</span>"
+        )
+
+        if badge is not None:
+            html = html + (
+                '<span style="font-size:12px; font-weight:600; color:' + COULEUR_TEXTE_MUTED + ';">' + badge + "</span>"
+            )
+
+        html = html + "</div>"
+
+    if titre is not None:
+        marge_haut_corps = ESPACE_XS
+    else:
+        marge_haut_corps = "0px"
+
+    html = html + (
+        '<div style="font-size:14px; line-height:1.5; color:' + COULEUR_TEXTE_VALEUR + "; margin-top:" + marge_haut_corps + ';">'
+        + corps_html + "</div>"
+        "</div>"
+    )
+    return html
+
+
+# Fondation Étape 6C (section 9, posée mais non appliquée), câblée pour la première fois en
+# Étape 6E sur les graphiques Tendances/Agents : apparence commune (fond transparent, gridlines
+# discrètes, police et couleurs alignées sur les tokens texte) plutôt qu'un thème Altair par
+# défaut différent d'un graphique à l'autre. Ne change ni le type de graphique, ni les données,
+# ni l'échelle -- appelé sur un chart déjà encodé (après .encode()/.properties()), remplace le
+# .configure_view(strokeWidth=0) répété partout par un unique point de configuration partagé.
+def configurer_apparence_graphique(graphique):
+    return (
+        graphique
+        .properties(background="transparent")
+        .configure_view(strokeWidth=0)
+        .configure_axis(
+            gridColor=COULEUR_BORDURE_CARTE, gridOpacity=0.6,
+            domainColor=COULEUR_BORDURE_CARTE, tickColor=COULEUR_BORDURE_CARTE,
+            labelColor=COULEUR_TEXTE_LABEL, titleColor=COULEUR_TEXTE_LABEL,
+            labelFont="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+            titleFont="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+            labelFontSize=11, titleFontSize=12,
+        )
+        .configure_legend(
+            labelColor=COULEUR_TEXTE_LABEL,
+            labelFont="Inter, -apple-system, BlinkMacSystemFont, sans-serif", labelFontSize=11,
+        )
+    )
+
+
+# Étape 5E.1 : la couleur de cellule encode désormais une PRESSION DE CHARGE relative à
+# l'historique disponible, jamais une qualité de service jugée dans l'absolu -- voir
+# construire_cellule_pression_couverture plus bas. "Parmi les plus fortes observées" reste un
+# ton chaud (jamais le rouge "critique" réservé ailleurs à un vrai jugement de performance) --
+# valeur mise à jour en Étape 6G (section 11) avec le reste de l'échelle, voir COULEUR_HEATMAP_*.
+COULEUR_HEATMAP_PRESSION_FORTE = "#DFA463"
+
+# Étape 6G, section 34 : dette identifiée en 6A -- ces clés recopiaient les libellés de niveau en
+# dur au lieu de référencer les constantes moteur (outils.py). Corrigé ici (comparaison sur les
+# constantes partagées, jamais leur chaîne recopiée) ; aucune valeur de couleur ni logique changée.
+COULEUR_FOND_HEATMAP_PRESSION = {
+    NIVEAU_PRESSION_HABITUELLE: COULEUR_HEATMAP_CONFORTABLE,
+    NIVEAU_PRESSION_MARQUEE: COULEUR_HEATMAP_SURVEILLER,
+    NIVEAU_PRESSION_FORTE: COULEUR_HEATMAP_PRESSION_FORTE,
+    NIVEAU_PRESSION_FAIBLE_VOLUME: COULEUR_HEATMAP_HORS_COUVERTURE,
+    NIVEAU_PRESSION_NON_QUALIFIABLE: COULEUR_HEATMAP_HORS_COUVERTURE,
+    NIVEAU_ACTIVITE_HORS_CAPACITE_FAIBLE: COULEUR_HEATMAP_HORS_COUVERTURE,
+    NIVEAU_ACTIVITE_HORS_CAPACITE_MATERIELLE: COULEUR_HEATMAP_HOTSPOT,
+    None: COULEUR_HEATMAP_HORS_COUVERTURE,
 }
 
 
@@ -494,21 +718,31 @@ def construire_texte_agents_cellule(agents):
     return " · ".join(agents[:3]) + " +" + str(len(agents) - 3)
 
 
-def construire_cellule_heatmap(entree):
-    couleur_fond = COULEUR_FOND_HEATMAP_PAR_NIVEAU[entree["niveau"]]
-
+# Remplace construire_cellule_heatmap (Étape 5E.1) : le contenu et la couleur reflètent la
+# PRESSION relative, jamais une conclusion de tension (celle-ci vit dans le bloc "Créneaux à
+# examiner", pas dans la heatmap elle-même). Un badge "⚠ Tension" discret signale les cellules
+# où pression ET réactivité locale convergent, sans changer la couleur de fond (qui reste celle
+# de la pression seule).
+def construire_cellule_pression_couverture(entree):
     titre_tooltip = ""
     if len(entree["agents"]) > 0:
         titre_tooltip = ", ".join(entree["agents"])
 
-    if entree["niveau"] == "HORS_COUVERTURE":
+    if entree["statut"] != "Couverture requise":
         # Fermé par conception (horaire standard, pause, week-end) : le volume peut
-        # attendre la réouverture, pas de couleur de tension ni de mention d'effectif.
+        # attendre la réouverture, pas de couleur de pression ni de mention d'effectif.
         if entree["demandes"] > 0:
             contenu = '<div class="hm-muted">' + str(entree["demandes"]) + " demandes</div>"
         else:
             contenu = '<div class="hm-muted">—</div>'
-    elif entree["nb_agents"] > 0:
+        return (
+            '<div class="hm-cell" style="background-color:' + COULEUR_HEATMAP_HORS_COUVERTURE + ';" '
+            'title="' + titre_tooltip + '">' + contenu + "</div>"
+        )
+
+    couleur_fond = COULEUR_FOND_HEATMAP_PRESSION.get(entree["niveau_pression"], COULEUR_HEATMAP_HORS_COUVERTURE)
+
+    if entree["capacite_cumulee"] > 0:
         texte_agents = construire_texte_agents_cellule(entree["agents"])
         if entree["nb_agents"] == 1:
             texte_effectif = "1 agent"
@@ -520,9 +754,20 @@ def construire_cellule_heatmap(entree):
             '<div class="hm-line-demandes">' + texte_effectif + " · " + str(entree["demandes"]) + " demandes</div>"
             '<div class="hm-line-ratio">' + str(round(entree["ratio"], 1)) + " / agent</div>"
         )
+        if entree["est_tension"]:
+            contenu = contenu + '<div class="hm-line-tension">⚠ Tension</div>'
+    elif len(entree["renfort_non_planifie"]) > 0:
+        # Personne planifié, mais une activité réelle a été observée sur ce créneau précis —
+        # distinct d'une vraie absence de couverture : ne pas mélanger à la pression (capacité
+        # cumulée reste 0), seulement l'afficher.
+        texte_renfort = construire_texte_agents_cellule(entree["renfort_non_planifie"])
+        contenu = (
+            '<div class="hm-line-agents">Aucun agent planifié — renfort non planifié : ' + texte_renfort + "</div>"
+            '<div class="hm-line-demandes">' + str(entree["demandes"]) + " demandes</div>"
+        )
     else:
-        # Créneau censé être couvert mais personne en poste — anomalie réelle, pas une
-        # fermeture assumée : on la montre, pas de ratio calculable.
+        # Créneau censé être couvert mais personne en poste — jamais une "pression infinie" :
+        # aucun ratio, un simple constat factuel (Étape 5E.1, section 10).
         contenu = (
             '<div class="hm-line-agents">Aucun agent en poste</div>'
             '<div class="hm-line-demandes">' + str(entree["demandes"]) + " demandes</div>"
@@ -598,22 +843,47 @@ SEUIL_PART_TELEPHONE_SIGNAL = 30
 # créneau : c'est le seul canal impliquant une attente synchrone, donc le seul où "quel canal
 # domine" change concrètement la lecture opérationnelle d'un hotspot (cf. heatmap, où le canal
 # n'est volontairement jamais montré cellule par cellule).
-def construire_carte_situation(entree, est_pic_semaine):
+# Synthèse légère, séparée de la heatmap (qui reste lisible cellule par cellule) : agrège tous
+# les créneaux où une activité a été observée sans capacité prévue correspondante, quel que soit
+# le nombre d'agents déjà planifiés sur ces créneaux — la détection (renfort_non_planifie, dans
+# la grille) fonctionne partout, seul l'affichage choisit de rester synthétique.
+def construire_synthese_renfort(grille_creneaux):
+    par_agent = {}
+    for entree in grille_creneaux:
+        for agent in entree["renfort_non_planifie"]:
+            if agent not in par_agent:
+                par_agent[agent] = {"heures": 0, "demandes": 0}
+            par_agent[agent]["heures"] = par_agent[agent]["heures"] + 1
+            par_agent[agent]["demandes"] = par_agent[agent]["demandes"] + entree["demandes"]
+    return par_agent
+
+
+# Remplace construire_carte_situation (Étape 5E.1) : une "Tension à examiner" est toujours la
+# convergence pression + réactivité locale dégradée (jamais la pression seule) -- bordure ambre
+# (COULEUR_ACCENT_SURVEILLER), jamais le rouge critique. Catégorie/canal restent des éléments qui
+# EXPLIQUENT la tension, jamais des critères qui la déclenchent (sections 17-18).
+def construire_carte_tension_couverture(entree):
     titre = entree["jour"] + " · " + str(entree["heure"]) + "h-" + str(entree["heure"] + 1) + "h"
 
     texte_agents = construire_texte_agents_cellule(entree["agents"])
     if texte_agents == "":
         texte_agents = "Aucun agent en poste"
 
-    if entree["ratio"] is not None:
-        ligne_detail = str(entree["demandes"]) + " demandes · " + str(round(entree["ratio"], 1)) + " / agent"
-        if est_pic_semaine:
-            verdict = "Charge la plus élevée de la semaine"
-        else:
-            verdict = str(round(entree["ratio"], 1)) + " demandes / agent"
-    else:
-        ligne_detail = str(entree["demandes"]) + " demandes"
-        verdict = "Aucun agent en poste"
+    ligne_pression = (
+        str(entree["demandes"]) + " demandes · " + str(round(entree["ratio"], 1)) + " / agent — "
+        + entree["niveau_pression"]
+    )
+    ligne_frt = (
+        "1re réponse locale (médiane) : " + formater_duree(entree["frt_local_median"]) + " — "
+        + entree["niveau_frt_local"]
+    )
+
+    ligne_categorie = ""
+    if entree.get("categorie_dominante") is not None:
+        ligne_categorie = (
+            '<div style="font-size:11px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">'
+            "Dont " + str(round(entree["part_categorie_dominante"])) + " % " + entree["categorie_dominante"] + "</div>"
+        )
 
     ligne_canal = ""
     if entree.get("canal_dominant") == "Téléphone" and entree.get("part_canal_dominant", 0) >= SEUIL_PART_TELEPHONE_SIGNAL:
@@ -625,14 +895,14 @@ def construire_carte_situation(entree, est_pic_semaine):
 
     return (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
-        "border-left:6px solid " + COULEUR_ACCENT_CRITIQUE + '; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        "border-left:6px solid " + COULEUR_ACCENT_SURVEILLER + "; border-radius:" + RADIUS_CARTE
+        + "; padding:12px " + ESPACE_M + "; margin-bottom:" + ESPACE_S + ';">'
         '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + titre + "</div>"
         '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">' + texte_agents + "</div>"
-        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_detail + "</div>"
-        + ligne_canal
-        + '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:4px;">'
-        + verdict + "</div>"
-        "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_pression + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">' + ligne_frt + "</div>"
+        + ligne_categorie + ligne_canal
+        + "</div>"
     )
 
 
@@ -773,132 +1043,12 @@ def construire_carte_hors_couverture(volume_actuel, moyenne_baseline, nb_semaine
 
 
 SLA_OBJECTIF_PCT = 85
-SEUIL_PIC_EXCEPTIONNEL_PCT = 30
 
-
-# Agents à afficher dans la grille de couverture : priorité au planning réellement déclaré
-# (un agent programmé cette semaine mais qui n'a clôturé aucun ticket ne doit pas disparaître),
-# les assignees de tickets non présents dans le planning sont ajoutés en complément.
-def construire_agents_grille(tickets, planning_dernier):
-    agents_de_la_periode = grouper_par(tickets, "assignee")
-    agents_a_afficher = cles_combinees(planning_dernier, agents_de_la_periode)
-
-    agents_grille = []
-    for agent in agents_a_afficher:
-        if agent != NOM_AGENT_DEFAUT:
-            agents_grille.append(agent)
-    return agents_grille
-
-
-def obtenir_canal_dominant(compteur_canal, total_demandes):
-    if total_demandes == 0 or len(compteur_canal) == 0:
-        return None, 0
-
-    canal_max = None
-    compte_max = 0
-    for canal, compte in compteur_canal.items():
-        if compte > compte_max:
-            compte_max = compte
-            canal_max = canal
-
-    return canal_max, compte_max / total_demandes * 100
-
-
-# Une entrée par (jour, heure) 7h-21h, dans l'ordre heure par heure puis jour par jour — cet
-# ordre est celui dans lequel la heatmap HTML est ensuite émise (grille CSS en mode
-# "auto-flow: row", qui suit l'ordre du DOM).
-def construire_grille_creneaux(tickets, planning_dernier, agents_grille, horaires_standard):
-    demandes_par_jour_heure = {}
-    canaux_par_jour_heure = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        demandes_par_jour_heure[numero_jour] = {}
-        canaux_par_jour_heure[numero_jour] = {}
-        for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-            demandes_par_jour_heure[numero_jour][heure] = 0
-            canaux_par_jour_heure[numero_jour][heure] = {}
-
-    for ticket in tickets:
-        moment = ticket["created_at"]
-        jour_ticket = moment.weekday()
-        heure_ticket = moment.hour
-        if HEURE_DEBUT_HOTSPOTS <= heure_ticket < HEURE_FIN_HOTSPOTS:
-            demandes_par_jour_heure[jour_ticket][heure_ticket] = demandes_par_jour_heure[jour_ticket][heure_ticket] + 1
-
-            compteur_canal = canaux_par_jour_heure[jour_ticket][heure_ticket]
-            canal = ticket["via_channel"]
-            if canal in compteur_canal:
-                compteur_canal[canal] = compteur_canal[canal] + 1
-            else:
-                compteur_canal[canal] = 1
-
-    grille = []
-    for heure in range(HEURE_DEBUT_HOTSPOTS, HEURE_FIN_HOTSPOTS):
-        for nom_jour, numero_jour in JOURS_ORDRE:
-            presents = agents_en_poste(planning_dernier, agents_grille, numero_jour, heure)
-            nb_agents = len(presents)
-            demandes = demandes_par_jour_heure[numero_jour][heure]
-            statut = statut_creneau_standard(horaires_standard, numero_jour, heure)
-
-            if nb_agents > 0:
-                ratio = demandes / nb_agents
-            else:
-                ratio = None
-
-            niveau = niveau_charge_creneau(statut, nb_agents, ratio)
-            canal_dominant, part_canal_dominant = obtenir_canal_dominant(
-                canaux_par_jour_heure[numero_jour][heure], demandes
-            )
-
-            grille.append({
-                "jour": nom_jour,
-                "heure": heure,
-                "nb_agents": nb_agents,
-                "agents": presents,
-                "demandes": demandes,
-                "ratio": ratio,
-                "canal_dominant": canal_dominant,
-                "part_canal_dominant": part_canal_dominant,
-                "niveau": niveau,
-            })
-    return grille
-
-
-# Distingue un pic exceptionnel (une semaine précise très au-dessus du rythme habituel) du
-# rythme habituel lui-même (déjà agrégé sur toute la période sélectionnée) — seulement pertinent
-# quand plusieurs semaines sont sélectionnées. Recharge chaque fichier individuellement (même
-# schéma que calculer_baseline_hors_couverture) pour comparer semaine par semaine plutôt que sur
-# l'agrégat.
-def detecter_pic_exceptionnel(fichiers_actuels, agents_grille, ratio_habituel, jour_habituel, heure_habituel):
-    if len(fichiers_actuels) <= 1 or ratio_habituel is None or ratio_habituel <= 0:
-        return None
-
-    meilleur_ratio = -1
-    meilleur_jour = None
-    meilleur_heure = None
-
-    for chemin in fichiers_actuels:
-        tickets_fichier = charger_tickets(chemin)
-        planning_fichier = charger_planning(chemin)
-        horaires_standard_fichier = planning_fichier.get(NOM_AGENT_DEFAUT, {})
-        grille_fichier = construire_grille_creneaux(
-            tickets_fichier, planning_fichier, agents_grille, horaires_standard_fichier
-        )
-        for entree in grille_fichier:
-            if entree["ratio"] is not None and entree["ratio"] > meilleur_ratio:
-                meilleur_ratio = entree["ratio"]
-                meilleur_jour = entree["jour"]
-                meilleur_heure = entree["heure"]
-
-    if meilleur_jour is None:
-        return None
-
-    delta_pct = (meilleur_ratio - ratio_habituel) / ratio_habituel * 100
-    meme_creneau = meilleur_jour == jour_habituel and meilleur_heure == heure_habituel
-
-    if delta_pct >= SEUIL_PIC_EXCEPTIONNEL_PCT and not meme_creneau:
-        return {"jour": meilleur_jour, "heure": meilleur_heure, "ratio": meilleur_ratio}
-    return None
-
+# construire_agents_grille, construire_grille_creneaux (Étape 5E.1 : construire_grille_pression_
+# couverture, corrigée multi-semaines) vivent désormais dans outils.py. detecter_pic_exceptionnel
+# est retiré (Étape 5E.1) : il recalculait un second pic "exceptionnel" à partir du même ratio
+# brut que l'ancien hotspot -- la nouvelle taxonomie pression/tension (rang relatif à l'historique,
+# déjà par-créneau) couvre ce besoin sans un second mécanisme parallèle.
 
 RANG_NIVEAU_REPONSE = {"OK": 0, "A SURVEILLER": 1, "CRITIQUE": 2, "DEBORDEMENT": 3}
 
@@ -926,63 +1076,10 @@ def canal_le_plus_problematique(lignes_canal, niveaux_canal):
     return pire_canal
 
 
-def construire_barre_progression_sla(taux, objectif):
-    largeur = min(taux, 100)
-    if taux >= objectif:
-        couleur = COULEUR_ACCENT_OK
-    elif taux >= objectif - 10:
-        couleur = COULEUR_ACCENT_SURVEILLER
-    else:
-        couleur = COULEUR_ACCENT_CRITIQUE
-
-    return (
-        '<div style="position:relative; width:100%; height:8px; background-color:' + COULEUR_NEUTRE_FOND + '; '
-        'border-radius:4px; margin:10px 0 6px;">'
-        '<div style="position:absolute; left:0; top:0; height:100%; width:' + str(largeur) + '%; '
-        "background-color:" + couleur + '; border-radius:4px;"></div>'
-        '<div style="position:absolute; left:' + str(objectif) + '%; top:-3px; height:14px; width:2px; '
-        'background-color:' + COULEUR_TEXTE_VALEUR + ';" title="Objectif ' + str(objectif) + ' %"></div>'
-        "</div>"
-    )
-
-
-def construire_carte_sla(taux, objectif, delta=None):
-    ecart = round(taux - objectif, 1)
-    if ecart >= 0:
-        texte_ecart = "+" + str(ecart) + " pts au-dessus de l'objectif"
-        couleur_ecart = COULEUR_HAUSSE_TEXTE
-    else:
-        texte_ecart = str(ecart) + " pts sous l'objectif"
-        couleur_ecart = COULEUR_BAISSE_TEXTE
-
-    html = (
-        '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
-        'border-radius:10px; padding:20px 22px 16px;">'
-        '<div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_TEXTE_LABEL + "; "
-        'font-weight:600;">SLA respecté</div>'
-        '<div style="font-size:40px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + '; line-height:1.15; margin-top:2px;">'
-        + formater_pourcentage(taux) + "</div>"
-    )
-
-    html = html + construire_barre_progression_sla(taux, objectif)
-
-    html = html + (
-        '<div style="font-size:12px; color:' + couleur_ecart + '; font-weight:600;">' + texte_ecart + "</div>"
-        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;">Objectif : ' + str(objectif) + " %</div>"
-    )
-
-    if delta is not None:
-        texte_delta, fond_delta, couleur_delta = formater_delta_kpi(delta, "normal")
-        html = html + (
-            '<div style="display:inline-block; margin-top:8px; padding:2px 9px; border-radius:12px; '
-            "font-size:12px; font-weight:600; background-color:" + fond_delta + "; color:" + couleur_delta + ';">'
-            + texte_delta + " pts vs période précédente</div>"
-        )
-
-    html = html + "</div>"
-    return html
-
-
+# construire_carte_sla / construire_barre_progression_sla (grande carte SLA dédiée, avec barre de
+# progression) supprimées Étape 5E.1 : le SLA reste premier niveau (carte KPI compacte, section B)
+# mais ne justifie plus une section indépendante à côté du FRT -- les deux racontent la même
+# dimension de réactivité (audit 5E.1, section 16).
 def construire_barre_empilee_reponse(compte_niveaux, total):
     segments = [
         ("Dans le SLA", "OK", COULEUR_ACCENT_OK),
@@ -1092,46 +1189,9 @@ def construire_lignes_hors_couverture(tickets_hors_tout, planning_ref, volume_to
 
 # 3 observations maximum, chacune dérivée des chiffres déjà calculés plus haut dans l'onglet —
 # aucun nouveau calcul, uniquement de la synthèse textuelle (donnée -> signal -> insight).
-def construire_conclusion_onglet(
-    taux_sla_global, objectif, nb_tensions, pire_canal, part_hors_couverture, hors_couverture_significatif
-):
-    observations = []
-
-    if nb_tensions == 0:
-        observations.append((
-            "Ce qui va bien",
-            "La couverture actuelle absorbe correctement les volumes pendant les horaires ouverts.",
-        ))
-    elif taux_sla_global is not None and taux_sla_global >= objectif:
-        observations.append((
-            "Ce qui va bien",
-            "Le SLA dépasse l'objectif malgré les tensions ponctuelles identifiées sur la période.",
-        ))
-
-    if pire_canal is not None:
-        observations.append((
-            "À surveiller",
-            "Le délai du canal " + pire_canal["Canal"] + " reste le principal point de friction de la période.",
-        ))
-    elif nb_tensions > 0:
-        observations.append((
-            "À surveiller", str(nb_tensions) + " créneau(x) en tension identifié(s) cette période.",
-        ))
-
-    if hors_couverture_significatif:
-        observations.append((
-            "À comprendre",
-            formater_pourcentage(part_hors_couverture) + " des demandes arrivent hors couverture, avec un "
-            + "volume en hausse significative par rapport à l'historique récent.",
-        ))
-    else:
-        observations.append((
-            "À comprendre",
-            formater_pourcentage(part_hors_couverture) + " des demandes arrivent hors couverture, sans créer "
-            + "pour l'instant de tension significative à la réouverture.",
-        ))
-
-    return observations[:3]
+# construire_conclusion_onglet supprimée Étape 5E.1 : son rôle de synthèse est repris par
+# construire_lecture_couverture (outils.py), affichée en tête d'onglet (bloc A) plutôt qu'en pied
+# de page -- une seule synthèse data-driven, pas deux mécanismes parallèles.
 
 
 # ------------------------------------------------------------------
@@ -1152,7 +1212,7 @@ ROLES_ONGLET = {
     "Vue d'ensemble": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
     "Tendances": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
     "Agents": [ROLE_AGENT, ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
-    "Alertes & suggestions": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
+    "Actions & améliorations": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
     "Couverture & réactivité": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
     "Produit": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
     "Livraison": [ROLE_TEAM_LEAD, ROLE_HEAD_CX, ROLE_ADMIN],
@@ -1175,204 +1235,24 @@ FICHIER_SHOPIFY = os.path.join(DOSSIER_PROJET, "data_shopify", "commandes_shopif
 FICHIER_COUTS_PRODUITS = os.path.join(DOSSIER_PROJET, "data_shopify", "product_costs_fictif.xlsx")
 FICHIER_NPS = os.path.join(DOSSIER_PROJET, "data_shopify", "nps_fictif.xlsx")
 FICHIER_SUIVI_SUGGESTIONS = os.path.join(DOSSIER_PROJET, "data_suivi", "suivi_suggestions.xlsx")
+FICHIER_CALENDRIER_EVENEMENTS = os.path.join(DOSSIER_PROJET, "data_calendrier", "calendrier_evenements.xlsx")
 DOSSIER_MACROS = os.path.join(DOSSIER_PROJET, "knowledge_base", "macros")
 DOSSIER_FAQ = os.path.join(DOSSIER_PROJET, "knowledge_base", "faq")
-FENETRE_CONVERSION_JOURS = 30
+# FENETRE_CONVERSION_JOURS vit désormais dans outils.py (source unique, Étape 4D) -- importée ci-dessus.
+# SEUIL_CSAT_INSATISFAISANT vit désormais dans outils.py (source unique, Étape 4E) -- importée ci-dessus.
 
 SEUIL_MINIMUM_SUJET = 5
-SEUIL_MACRO_BASSE = 20
-SEUIL_MACRO_HAUTE = 50
-SEUIL_CSAT_INSATISFAISANT = 4
-SEUIL_HAUSSE_SUJET_SURVEILLER = 5
-SEUIL_HAUSSE_SUJET_CRITIQUE = 10
-SEUIL_REPLIES_FAQ = 3
-SEUIL_CSAT_VERBATIM = 2
-SEUIL_VERBATIMS_GROUPE = 10
 
-OBJECTIF_MACRO_PCT = 70
-SEUIL_DELTA_CSAT_NOTABLE = 0.2
-SEUIL_DELTA_FRT_NOTABLE_MIN = 15
-SEUIL_DELTA_MACRO_NOTABLE_PT = 5
-
-
-# Une ligne par sujet, avec évolution/niveau si une période de comparaison est active — logique
-# inchangée, seulement extraite pour être calculée une fois (réutilisée par les insights
-# prioritaires ET par les expanders détaillés de "Vue d'ensemble", au lieu d'être recalculée à
-# chaque ouverture d'expander).
-def construire_lignes_sujets(tickets_cat_s2, tickets_cat_s1, comparaison_disponible):
-    sujets_cat_s2 = grouper_par(tickets_cat_s2, "subject_cluster")
-    sujets_cat_s1 = grouper_par(tickets_cat_s1, "subject_cluster")
-
-    if comparaison_disponible:
-        sujets_a_afficher = cles_combinees(sujets_cat_s2, sujets_cat_s1)
-    else:
-        sujets_a_afficher = list(sujets_cat_s2.keys())
-
-    lignes_sujets = []
-    for sujet in sujets_a_afficher:
-        tickets_sujet_s2 = sujets_cat_s2.get(sujet, [])
-        volume_s2 = len(tickets_sujet_s2)
-        ligne_sujet = {"Sujet": sujet, "Tickets": volume_s2}
-
-        if comparaison_disponible:
-            volume_s1 = len(sujets_cat_s1.get(sujet, []))
-            delta = volume_s2 - volume_s1
-
-            if delta >= 0:
-                delta_texte = "+" + str(delta)
-            else:
-                delta_texte = str(delta)
-
-            ligne_sujet["Évolution"] = delta_texte
-
-            if volume_s2 == 0:
-                ligne_sujet["Niveau"] = "DISPARU"
-            elif volume_s1 == 0:
-                ligne_sujet["Niveau"] = "NOUVEAU"
-            else:
-                ligne_sujet["Niveau"] = niveau_hausse_sujet(delta, SEUIL_HAUSSE_SUJET_SURVEILLER, SEUIL_HAUSSE_SUJET_CRITIQUE)
-
-        lignes_sujets.append(ligne_sujet)
-
-    return sorted(lignes_sujets, key=obtenir_tickets, reverse=True)
-
-
-# Le seuil de hausse/baisse (niveau_hausse_sujet) travaille déjà sur un delta ABSOLU, pas un % —
-# une variation de 1 vers 2 tickets (100 %) ne franchit jamais ce seuil. Pas besoin d'un garde-fou
-# de volume supplémentaire ici : le seuil absolu joue déjà ce rôle.
-def obtenir_sujets_notables(lignes_sujets):
-    notables = []
-    for ligne in lignes_sujets:
-        niveau = ligne.get("Niveau", "")
-        if niveau == "CRITIQUE" or niveau == "A SURVEILLER":
-            notables.append(ligne)
-        elif niveau == "NOUVEAU" and ligne["Tickets"] >= SEUIL_MINIMUM_SUJET:
-            notables.append(ligne)
-    return notables
-
-
-def obtenir_score_insight(insight):
-    return insight["score"]
-
-
-# 3 à 5 observations maximum, classées par magnitude — pas un insight généré artificiellement pour
-# chaque métrique. Sans comparaison, repli sur des signaux à seuil absolu (objectif macro, CSAT
-# bas, plus gros volume) plutôt que sur des évolutions qui n'existent pas sans période B.
-def construire_insights_vue_ensemble(
-    lignes_categories_apercu_triees, categories_s2, categories_s1, comparaison_disponible,
-    sujets_notables_par_categorie, csat_s2, csat_s1, frt_s2, frt_s1, macro_s2, macro_s1,
-):
-    candidats = []
-
-    if comparaison_disponible:
-        for ligne in lignes_categories_apercu_triees:
-            categorie = ligne["Catégorie"]
-            volume_actuel = ligne["Tickets"]
-            volume_precedent = len(categories_s1.get(categorie, []))
-            if volume_precedent == 0:
-                continue
-
-            delta_absolu = volume_actuel - volume_precedent
-            if abs(delta_absolu) < SEUIL_HAUSSE_SUJET_SURVEILLER:
-                continue
-
-            evolution = evolution_pourcentage(volume_precedent, volume_actuel)
-            if delta_absolu > 0:
-                texte = (
-                    categorie + " augmente de " + str(round(evolution)) + " % par rapport à la "
-                    "période précédente (" + str(volume_precedent) + " → " + str(volume_actuel) + " tickets)."
-                )
-            else:
-                texte = (
-                    categorie + " diminue de " + str(round(abs(evolution))) + " % par rapport à la "
-                    "période précédente (" + str(volume_precedent) + " → " + str(volume_actuel) + " tickets)."
-                )
-            candidats.append({"titre": "Volume — " + categorie, "texte": texte, "score": abs(delta_absolu)})
-
-        if csat_s2 is not None and csat_s1 is not None:
-            delta_csat = csat_s2 - csat_s1
-            if abs(delta_csat) >= SEUIL_DELTA_CSAT_NOTABLE:
-                if delta_csat < 0:
-                    texte = (
-                        "Le CSAT moyen baisse de " + str(round(abs(delta_csat), 2)) + " point(s) par "
-                        "rapport à la période précédente (" + formater_csat(csat_s1) + " → " + formater_csat(csat_s2) + ")."
-                    )
-                else:
-                    texte = (
-                        "Le CSAT moyen progresse de " + str(round(delta_csat, 2)) + " point(s) par "
-                        "rapport à la période précédente (" + formater_csat(csat_s1) + " → " + formater_csat(csat_s2) + ")."
-                    )
-                candidats.append({"titre": "CSAT global", "texte": texte, "score": abs(delta_csat) * 20})
-
-        if frt_s2 is not None and frt_s1 is not None:
-            delta_frt = frt_s2 - frt_s1
-            if abs(delta_frt) >= SEUIL_DELTA_FRT_NOTABLE_MIN:
-                if delta_frt > 0:
-                    texte = (
-                        "Le délai de 1re réponse augmente de " + str(round(delta_frt)) + " min par "
-                        "rapport à la période précédente (" + formater_duree(frt_s1) + " → " + formater_duree(frt_s2) + ")."
-                    )
-                else:
-                    texte = (
-                        "Le délai de 1re réponse s'améliore de " + str(round(abs(delta_frt))) + " min "
-                        "par rapport à la période précédente (" + formater_duree(frt_s1) + " → " + formater_duree(frt_s2) + ")."
-                    )
-                candidats.append({"titre": "Délai de 1re réponse", "texte": texte, "score": abs(delta_frt)})
-
-        if macro_s2 is not None and macro_s1 is not None:
-            delta_macro = macro_s2 - macro_s1
-            if abs(delta_macro) >= SEUIL_DELTA_MACRO_NOTABLE_PT:
-                if delta_macro < 0:
-                    texte = "L'utilisation des macros recule de " + str(round(abs(delta_macro), 1)) + " pt par rapport à la période précédente."
-                else:
-                    texte = "L'utilisation des macros progresse de " + str(round(delta_macro, 1)) + " pt par rapport à la période précédente."
-                candidats.append({"titre": "Utilisation macro", "texte": texte, "score": abs(delta_macro) * 4})
-    else:
-        if macro_s2 is not None and macro_s2 < OBJECTIF_MACRO_PCT:
-            candidats.append({
-                "titre": "Utilisation macro",
-                "texte": (
-                    "L'utilisation des macros est à " + formater_pourcentage(macro_s2) + ", sous "
-                    "l'objectif de " + str(OBJECTIF_MACRO_PCT) + " %."
-                ),
-                "score": OBJECTIF_MACRO_PCT - macro_s2,
-            })
-        if csat_s2 is not None and csat_s2 < SEUIL_CSAT_INSATISFAISANT:
-            candidats.append({
-                "titre": "CSAT global",
-                "texte": "Le CSAT moyen est à " + formater_csat(csat_s2) + " sur 5 sur la période.",
-                "score": (SEUIL_CSAT_INSATISFAISANT - csat_s2) * 20,
-            })
-        if len(lignes_categories_apercu_triees) > 0:
-            plus_gros = lignes_categories_apercu_triees[0]
-            candidats.append({
-                "titre": "Volume — " + plus_gros["Catégorie"],
-                "texte": (
-                    plus_gros["Catégorie"] + " concentre le plus gros volume de la période ("
-                    + str(plus_gros["Tickets"]) + " tickets)."
-                ),
-                "score": 1,
-            })
-
-    # sujets_notables_par_categorie n'est jamais peuplé sans comparaison active (obtenir_sujets_notables
-    # ne garde que des lignes avec "Niveau" défini, lui-même seulement présent quand comparaison_disponible),
-    # et "Évolution" est alors toujours renseigné (y compris pour un sujet NOUVEAU, delta = volume - 0) —
-    # pas de cas où delta_texte serait vide ici.
-    for categorie, sujets_categorie in sujets_notables_par_categorie.items():
-        for sujet_ligne in sujets_categorie:
-            delta_texte = sujet_ligne["Évolution"]
-            niveau_sujet = sujet_ligne["Niveau"]
-            score_sujet = abs(int(delta_texte))
-            texte = (
-                "« " + sujet_ligne["Sujet"] + " » (" + categorie + ") évolue de " + delta_texte
-                + " tickets — " + libelle_niveau(niveau_sujet).lower() + "."
-            )
-
-            candidats.append({"titre": "Sujet — " + sujet_ligne["Sujet"], "texte": texte, "score": score_sujet})
-
-    candidats_tries = sorted(candidats, key=obtenir_score_insight, reverse=True)
-    return candidats_tries[:5]
-
+# Étape 5A -- construire_lignes_sujets / obtenir_sujets_notables / construire_insights_vue_ensemble
+# (ex-moteur d'alerte local à la Vue d'ensemble, recalculant des deltas bruts indépendamment des
+# moteurs 4A-4E validés) supprimées : la Vue d'ensemble consomme désormais directement les sorties
+# des moteurs Produit/Livraison/Avant-vente/Tendances/Impact & confiance (voir onglet_vue plus bas
+# et les fonctions de composition dans outils.py, section "Composition Vue d'ensemble").
+# Étape 5D.1 -- obtenir_score_insight, construire_candidats_categorie et le score inter-familles
+# hétérogène qui les utilisait sont supprimés (voir compte-rendu Étape 5D, section 4 : le score
+# mélangeait des unités incomparables entre familles). SEUIL_MACRO_BASSE/HAUTE, SEUIL_REPLIES_FAQ,
+# SEUIL_CSAT_VERBATIM, SEUIL_VERBATIMS_GROUPE ont déménagé dans outils.py (section "Composition
+# Actions & améliorations, Étape 5D.1") avec les fonctions qui les utilisent.
 
 st.set_page_config(page_title="Dashboard Customer Care : Emyria", layout="wide")
 
@@ -1381,7 +1261,9 @@ st.markdown(
     "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');"
     "html, body, [class*='css'] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }"
     "h1 { letter-spacing: -0.02em; }"
-    "h2, h3 { letter-spacing: -0.01em; font-weight: 600; color: #3A342C; }"
+    # Étape 6J, section 33 : référence le token Text primary au lieu d'un hex local proche mais
+    # distinct (#3A342C) -- même teinte partout, plus de doublon de "texte principal".
+    "h2, h3 { letter-spacing: -0.01em; font-weight: 600; color: " + COULEUR_TEXTE_VALEUR + "; }"
     "[data-testid='stAlert'] { border-radius: 8px; }"
     "[data-testid='stButton'] button { border-radius: 8px; }"
     "</style>",
@@ -1411,9 +1293,7 @@ st.sidebar.header("Période d'analyse")
 date_dernier_export = exports_disponibles[-1][0]
 st.sidebar.caption("Dernières données disponibles : " + date_dernier_export.strftime("%d/%m/%Y"))
 st.sidebar.caption(
-    str(len(semaines_disponibles)) + " semaines représentatives disponibles (pas un historique "
-    "hebdomadaire continu) — les semaines listées ci-dessous sont les seules pour lesquelles un "
-    "export existe."
+    str(len(semaines_disponibles)) + " semaines représentatives disponibles (pas un historique continu)."
 )
 st.sidebar.button("Réinitialiser (dernières données)", on_click=reinitialiser_periode, type="primary")
 
@@ -1482,22 +1362,27 @@ if len(fichiers_actuels) == 0:
     st.warning("Aucun export disponible sur la période A choisie.")
     st.stop()
 
-tickets_s2 = charger_periode(fichiers_actuels)
+# Spinner local (Étape 6C, section 32) : le chargement (lecture fichiers + mise en cache, voir
+# functools.lru_cache sur charger_tickets/charger_planning depuis l'Étape 6A) reste sensible sur un
+# premier chargement à froid ou un changement de période -- un repère visuel discret suffit, pas de
+# restructuration de l'ordre de chargement.
+with st.spinner("Chargement des données de la période..."):
+    tickets_s2 = charger_periode(fichiers_actuels)
 
-if len(tickets_s2) == 0:
-    st.warning("Les exports de la période A ne contiennent aucun ticket.")
-    st.stop()
+    if len(tickets_s2) == 0:
+        st.warning("Les exports de la période A ne contiennent aucun ticket.")
+        st.stop()
 
-planning_s2_dernier = charger_planning(fichiers_actuels[-1])
-planning_s2 = construire_plannings_periode(fichiers_actuels, exports_disponibles)
+    planning_s2_dernier = charger_planning(fichiers_actuels[-1])
+    planning_s2 = construire_plannings_periode(fichiers_actuels, exports_disponibles)
 
-if comparaison_disponible:
-    tickets_s1 = charger_periode(fichiers_precedents)
-    planning_s1_dernier = charger_planning(fichiers_precedents[-1])
-    planning_s1 = construire_plannings_periode(fichiers_precedents, exports_disponibles)
-    agents_s1_liste = list(grouper_par(tickets_s1, "assignee").keys())
-    agents_s2_liste = list(grouper_par(tickets_s2, "assignee").keys())
-    changements_planning = detecter_changements_planning(agents_s1_liste, agents_s2_liste, planning_s1_dernier, planning_s2_dernier)
+    if comparaison_disponible:
+        tickets_s1 = charger_periode(fichiers_precedents)
+        planning_s1_dernier = charger_planning(fichiers_precedents[-1])
+        planning_s1 = construire_plannings_periode(fichiers_precedents, exports_disponibles)
+        agents_s1_liste = list(grouper_par(tickets_s1, "assignee").keys())
+        agents_s2_liste = list(grouper_par(tickets_s2, "assignee").keys())
+        changements_planning = detecter_changements_planning(agents_s1_liste, agents_s2_liste, planning_s1_dernier, planning_s2_dernier)
 
 texte_bandeau_periode = formater_plage_courte(date_a_debut, date_a_fin)
 if comparaison_disponible:
@@ -1518,6 +1403,7 @@ categories_s2 = grouper_par_categorie(tickets_s2)
 # "Avant-vente & conversion" et "Impact & confiance" — éviter de recharger deux fois.
 commandes = charger_commandes(FICHIER_SHOPIFY)
 couts_produits = charger_couts_produits(FICHIER_COUTS_PRODUITS)
+evenements_calendrier = charger_evenements_calendrier(FICHIER_CALENDRIER_EVENEMENTS)
 
 fichiers_tous_business = []
 for date_export_hist, chemin_hist in exports_disponibles:
@@ -1535,14 +1421,18 @@ for chemin_role in fichiers_actuels:
     for agent_role, role_valeur in roles_fichier.items():
         roles_periode[agent_role] = role_valeur
 
+# Contexte en dernier onglet (Étape 6C, section 12-13) : l'app s'ouvre sur le pilotage, pas sur
+# la documentation -- Contexte reste disponible mais n'est plus le premier réflexe. Libellés de la
+# barre raccourcis pour résoudre le débordement identifié en 6B (section 20) ; le nom complet
+# ("Actions & améliorations", "Couverture & réactivité", "Avant-vente & parcours d'achat", "Impact
+# & confiance") reste utilisé dans le texte de contenu (ex. Contexte, "Comment lire les onglets").
 (
-    onglet_contexte, onglet_vue, onglet_tendances, onglet_agents, onglet_alertes,
-    onglet_creneaux, onglet_produit, onglet_livraison, onglet_conversion, onglet_impact,
+    onglet_vue, onglet_tendances, onglet_agents, onglet_alertes, onglet_creneaux,
+    onglet_produit, onglet_livraison, onglet_conversion, onglet_impact, onglet_contexte,
 ) = st.tabs(
     [
-        "Contexte", "Vue d'ensemble", "Tendances", "Agents",
-        "Alertes & suggestions", "Couverture & réactivité", "Produit", "Livraison",
-        "Avant-vente & conversion", "Impact & confiance",
+        "Vue d'ensemble", "Tendances", "Agents", "Actions", "Couverture",
+        "Produit", "Livraison", "Avant-vente", "Impact", "Contexte",
     ]
 )
 
@@ -1552,27 +1442,29 @@ for chemin_role in fichiers_actuels:
 # ------------------------------------------------------------------
 
 with onglet_contexte:
-    colonne_hero_texte, colonne_hero_image = st.columns([2, 1])
+    # Étape 6I, section 4 : patron page title validé -- remplace l'ancien hero (bloc plein orange +
+    # h1 "Emyria") qui était le seul vestige pré-6C de l'app. L'identité produit ("Emyria, diffuseur
+    # d'ambiance connecté...") n'est pas supprimée : elle est reprise mot pour mot dans le panneau
+    # "Ce que vous regardez" ci-dessous, avec le disclaimer données fictives déjà existant (section 6-7
+    # : un seul panneau éditorial, jamais plusieurs grandes cartes pour expliquer le produit).
+    st.subheader("Contexte")
+    st.caption("Comprendre le périmètre, les données et les règles de lecture du dashboard.")
 
-    with colonne_hero_texte:
-        st.markdown(
-            '<div style="background-color:' + COULEUR_PRIMAIRE + '; padding:28px 32px; border-radius:10px; color:white; margin-bottom:20px;">'
-            '<h1 style="margin:0; color:white;">Emyria</h1>'
-            '<p style="margin:6px 0 0; font-size:17px; color:white;">Diffuseur d\'ambiance connecté — lumière LED &amp; capsules de parfum interchangeables</p>'
-            "</div>",
-            unsafe_allow_html=True,
-        )
+    colonne_ctx_texte, colonne_ctx_image = st.columns([2, 1])
 
+    with colonne_ctx_texte:
+        st.markdown(titre_section_principale("Ce que vous regardez"), unsafe_allow_html=True)
         st.markdown(
             construire_bandeau_info(
-                "Ce tableau de bord est une démonstration construite sur des données 100 % fictives "
-                "(tickets, commandes, avis) — pas l'audit d'une entreprise réelle. Il illustre un outil de "
-                "pilotage du service client conçu pour ce type de scale-up e-commerce."
+                "Emyria (fictif) — diffuseur d'ambiance connecté, lumière LED &amp; capsules de parfum "
+                "interchangeables. Ce tableau de bord est une démonstration construite sur des données "
+                "100 % fictives (tickets, commandes, avis) — pas l'audit d'une entreprise réelle. Il "
+                "illustre un outil de pilotage du service client conçu pour ce type de scale-up e-commerce."
             ),
             unsafe_allow_html=True,
         )
 
-    with colonne_hero_image:
+    with colonne_ctx_image:
         st.image(IMAGE_PRODUIT_ASSEMBLEE, caption="Emyria — produit fictif, généré pour cette démo")
 
     colonne_ctx_a, colonne_ctx_b = st.columns(2)
@@ -1603,34 +1495,70 @@ with onglet_contexte:
             "- Repérer ce qui mérite l'attention du manager sur la période choisie (barre latérale), "
             "pas seulement consulter des chiffres\n"
             "- Suivre alertes, réactivité et couverture au quotidien\n"
-            "- Piloter le volet business : conversion avant-vente, coûts SAV, confiance client (NPS), "
+            "- Piloter le volet business : parcours avant-vente, coûts SAV, confiance client (NPS), "
             "opportunités produit hors catalogue"
         )
 
-        st.markdown(titre_section_principale("Comment lire les onglets"), unsafe_allow_html=True)
-        st.markdown(
-            "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
-            "pas un ordre arbitraire :\n"
-            "- **Vue d'ensemble → Alertes** : pilotage courant de l'équipe (catégories incluses)\n"
-            "- **Couverture & réactivité** : disponibilité de l'équipe, SLA, tensions de couverture\n"
-            "- **Produit** : cadence trimestrielle (usure, défauts récurrents)\n"
-            "- **Livraison** : cadence mensuelle, pensé pour un point avec le transporteur\n"
-            "- **Avant-vente & conversion** : conversion réelle après contact avant-vente\n"
-            "- **Impact & confiance** : coûts SAV, confiance client (NPS)\n\n"
-            "CSAT noté sur une échelle de 0 à 5. La période analysée (et la comparaison, si activée) "
-            "est affichée en haut de chaque page, réglée une seule fois dans la barre latérale."
-        )
+    # ------------------------------------------------------------------
+    # Étape 6I, section 8-10 : nouvelle section -- cette distinction Période A / période de
+    # comparaison / historique n'était auparavant condensée qu'en une phrase dans "Comment lire les
+    # onglets" (ci-dessous). Contenu directement dérivé de la mécanique déjà en place dans la barre
+    # latérale (Étape 6A/6C, jamais "dernière période"/"période précédente" -- toujours "période de
+    # comparaison"), aucune règle de calcul nouvelle.
+    # ------------------------------------------------------------------
 
-    st.divider()
-    st.markdown(titre_section_principale("Sources de données"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Période & comparaison"), unsafe_allow_html=True)
     st.markdown(
-        "- **Tickets support** — export hebdomadaire représentatif (canal, catégorie, agent, "
-        "délais, CSAT)\n"
-        "- **Planning des agents** — horaires, rôles, présence par créneau\n"
-        "- **Commandes** — fichier Shopify (produit, montant, pays, date)\n"
-        "- **Réponses NPS** — score de recommandation par client, indépendant de la période affichée\n"
-        "- **Suivi des suggestions** — macros/FAQ créées et leur effet mesuré"
+        "- **Période A** : la période analysée -- réglée une seule fois dans la barre latérale, "
+        "affichée en haut de chaque page.\n"
+        "- **Période de comparaison** (optionnelle) : une deuxième période, affichée uniquement si "
+        "vous cochez « Comparer à une autre période ».\n"
+        "- **Historique** : la suite des observations disponibles jusqu'à la période analysée, "
+        "utilisée pour resituer les chiffres dans le temps -- distinct d'une comparaison A/B "
+        "explicite, chaque moteur applique ses propres règles pour la construire."
     )
+
+    # ------------------------------------------------------------------
+    # Étape 6I, section 14-18 : les 10 onglets, ordre et libellés courts identiques à la barre de
+    # navigation (Étape 6C). Chaque description reprend mot pour mot l'intro déjà validée de
+    # l'onglet correspondant (6D-6H) -- jamais un nouveau texte, jamais l'ancien nom d'onglet.
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Comment lire les onglets"), unsafe_allow_html=True)
+    st.markdown(
+        "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
+        "pas un ordre arbitraire :\n"
+        "- **Vue d'ensemble** : ce qui s'est passé sur la période, ce qui mérite attention, ce qui tient\n"
+        "- **Tendances** : ce que racontent les observations disponibles dans le temps -- jalons, "
+        "vigilances, contrastes\n"
+        "- **Agents** : qui compose l'équipe sur la période, comment la charge se répartit -- sans classement\n"
+        "- **Actions** : pistes d'amélioration à explorer et actions déjà menées\n"
+        "- **Couverture** : sommes-nous disponibles aux bons moments et répondons-nous suffisamment vite\n"
+        "- **Produit** : signaux SAV produit et composants concernés -- cadence trimestrielle recommandée\n"
+        "- **Livraison** : motifs logistiques et leurs conséquences -- cadence mensuelle, pensé pour un "
+        "point avec le transporteur\n"
+        "- **Avant-vente** : parcours de contact, opportunités à investiguer, achats observés après contact\n"
+        "- **Impact** : confiance client (NPS) et coûts SAV, avec quel niveau de prudence\n"
+        "- **Contexte** : comprendre le périmètre, les sources et les règles de lecture (cette page)"
+    )
+    st.caption("CSAT noté sur une échelle de 0 à 5.")
+
+    st.markdown(titre_section_principale("Sources de données"), unsafe_allow_html=True)
+    lignes_sources_contexte = [
+        {"Source": "Tickets support", "Ce qu'elle apporte": "Canal, catégorie, agent, délais, CSAT"},
+        {"Source": "Planning des agents", "Ce qu'elle apporte": "Horaires, rôles, présence par créneau"},
+        {
+            "Source": "Calendrier commercial / événements",
+            "Ce qu'elle apporte": "Campagnes, lancements, absences prévues -- contexte de la période",
+        },
+        {"Source": "Commandes", "Ce qu'elle apporte": "Produit, montant, pays, date (fichier Shopify)"},
+        {
+            "Source": "Réponses NPS",
+            "Ce qu'elle apporte": "Score de recommandation par client, indépendant de la période affichée",
+        },
+        {"Source": "Suivi des suggestions", "Ce qu'elle apporte": "Macros/FAQ créées et leur effet mesuré"},
+    ]
+    st.dataframe(lignes_sources_contexte, hide_index=True, width="stretch")
     st.caption(
         "Toutes les données (tickets, commandes, avis NPS) sont générées aléatoirement pour cette "
         "démonstration — les chiffres n'ont aucune valeur réelle."
@@ -1641,13 +1569,13 @@ with onglet_contexte:
             "- **Coût des incidents clients** : remboursement et remplacement/garantie utilisent un vrai "
             "coût de revient produit (product_costs_fictif.xlsx) ; seul le geste commercial reste une "
             "fraction estimée du prix de vente, faute d'un montant réellement accordé enregistré par "
-            "ticket — voir l'onglet Impact & confiance pour le détail par ligne.\n"
+            "ticket — voir l'onglet Impact pour le détail par ligne.\n"
             "- **Exports disponibles** : semaines représentatives espacées dans l'année (pas un "
             "historique hebdomadaire continu) — voir l'onglet Tendances pour le détail des écarts.\n"
             "- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le "
             "rythme soutenable d'un fonctionnement normal — volontaire, pensé comme un mode « surge » "
             "temporaire plutôt qu'un défaut de modélisation.\n"
-            "- **Suivi des suggestions** (onglet Alertes & suggestions) : inclut volontairement un cas "
+            "- **Suivi des actions** (onglet Actions) : inclut volontairement un cas "
             "(MAC-018) où la macro créée a bien été adoptée par l'équipe mais n'a pas amélioré le CSAT — "
             "un vrai outil de pilotage doit pouvoir montrer un échec, pas seulement des réussites."
         )
@@ -1658,40 +1586,201 @@ with onglet_contexte:
 # ------------------------------------------------------------------
 
 with onglet_vue:
+    # Titre de page (Étape 6D, section 4) : reprend la règle CSS globale h2/h3 (Étape 6C) plutôt
+    # qu'un nouveau bloc HTML -- pas de hero, la période reste affichée dans le bandeau global
+    # au-dessus des onglets, jamais dupliquée ici en plus grand.
+    st.subheader("Vue d'ensemble")
+    st.caption("Ce qui s'est passé sur la période, ce qui mérite attention, ce qui tient.")
+
     nombre_s2 = len(tickets_s2)
     csat_s2 = moyenne(tickets_s2, "csat")
     frt_s2 = moyenne(tickets_s2, "first_reply_time_min")
     macro_s2 = taux_rempli(tickets_s2, "macro_applied")
+    # Étape 5A.1 -- audit KPI (macro vs résolution, 5 périodes réelles Dec/Jan/Mai/Jul/Sep) :
+    # l'utilisation macro reste dans une bande étroite (22-38 %), toujours loin de l'objectif de
+    # 70 % quelle que soit la difficulté réelle de la période -- peu discriminante. La résolution
+    # moyenne, elle, varie de 36h à 62h et signale précisément janvier (la période la plus dure
+    # des 5 testées) -- bien plus informative en KPI principal. Macro reste visible dans le détail
+    # "Performance par catégorie" (accordéon), simplement retirée des 4 indicateurs essentiels.
+    resolution_s2 = moyenne(tickets_s2, "full_resolution_time_hours")
 
-    # Calculés inconditionnellement (moyenne/taux_rempli renvoient None sur une liste vide) —
-    # réutilisés à la fois par les cartes KPI ci-dessous et par les insights prioritaires plus bas.
     nombre_s1 = len(tickets_s1)
     csat_s1 = moyenne(tickets_s1, "csat")
     frt_s1 = moyenne(tickets_s1, "first_reply_time_min")
     macro_s1 = taux_rempli(tickets_s1, "macro_applied")
+    resolution_s1 = moyenne(tickets_s1, "full_resolution_time_hours")
 
+    # ------------------------------------------------------------------
+    # Étape 5A -- la Vue d'ensemble consomme les moteurs validés (Tendances/Produit/Livraison/
+    # Avant-vente/Impact & confiance), jamais une seconde vérité recalculée localement. Chaque
+    # moteur est réinvoqué ici avec les mêmes entrées que dans son propre onglet (l'onglet Vue
+    # d'ensemble s'exécute avant les onglets spécialisés dans le script -- leurs résultats ne sont
+    # pas encore disponibles à ce stade) : duplication de calcul assumée et documentée (voir
+    # compte-rendu Étape 5A, limites), jamais de logique métier réécrite.
+    # ------------------------------------------------------------------
+
+    exports_jusqu_a_periode_ve = []
+    for date_export_ve, chemin_ve in exports_disponibles:
+        if date_export_ve <= date_a_fin:
+            exports_jusqu_a_periode_ve.append((date_export_ve, chemin_ve))
+
+    profils_historique_ve = []
+    for date_export_ve, chemin_ve in exports_jusqu_a_periode_ve:
+        tickets_fichier_ve = charger_tickets(chemin_ve)
+        if len(tickets_fichier_ve) == 0:
+            continue
+        planning_fichier_ve = charger_planning(chemin_ve)
+        date_fin_fichier_ve = date_export_ve + datetime.timedelta(days=6)
+        profils_historique_ve.append(construire_profil_observation(
+            tickets_fichier_ve, planning_fichier_ve, evenements_calendrier, date_export_ve, date_fin_fichier_ve,
+        ))
+
+    lecture_tendance_ve = construire_lecture_tendances(profils_historique_ve, len(fichiers_actuels))
+
+    vigilance_derniere_ve = None
+    if len(lecture_tendance_ve["vigilances"]) > 0:
+        vigilance_derniere_ve = lecture_tendance_ve["vigilances"][-1]
+
+    index_dernier_profil_ve = len(profils_historique_ve) - 1
+    rang_capacite_ve = None
+    rang_volume_ve = None
+    if index_dernier_profil_ve >= 0:
+        capacites_ve = []
+        volumes_profils_ve = []
+        for profil_ve in profils_historique_ve:
+            capacites_ve.append(profil_ve["capacite_heures"])
+            volumes_profils_ve.append(profil_ve["volume"])
+        rang_capacite_ve = rang_relatif(capacites_ve, index_dernier_profil_ve)
+        rang_volume_ve = rang_relatif(volumes_profils_ve, index_dernier_profil_ve)
+
+    historique_sav_produit_par_fichier_ve = []
+    historique_livraison_par_fichier_ve = []
+    historique_av_par_fichier_ve = []
+    for date_export_hist_ve, chemin_hist_ve in exports_disponibles:
+        if date_export_hist_ve < date_a_debut:
+            tickets_fichier_hist_ve = charger_tickets(chemin_hist_ve)
+            tickets_sav_hist_ve = []
+            tickets_liv_hist_ve = []
+            tickets_av_hist_ve = []
+            for ticket_hist_ve in tickets_fichier_hist_ve:
+                categorie_hist_ve = categoriser(ticket_hist_ve)
+                if categorie_hist_ve == CATEGORIE_SAV_PRODUIT:
+                    tickets_sav_hist_ve.append(ticket_hist_ve)
+                elif categorie_hist_ve == "Livraison":
+                    tickets_liv_hist_ve.append(ticket_hist_ve)
+                elif categorie_hist_ve == "Avant-vente / conseil":
+                    tickets_av_hist_ve.append(ticket_hist_ve)
+            historique_sav_produit_par_fichier_ve.append(tickets_sav_hist_ve)
+            historique_livraison_par_fichier_ve.append(tickets_liv_hist_ve)
+            historique_av_par_fichier_ve.append(tickets_av_hist_ve)
+
+    tickets_sav_produit_ve = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
+    tickets_livraison_ve = categories_s2.get("Livraison", [])
+    tickets_av_ve = categories_s2.get("Avant-vente / conseil", [])
+
+    resultats_produit_ve = moteur_produit_voie_a(
+        tickets_sav_produit_ve, historique_sav_produit_par_fichier_ve, commandes, couts_produits, 5,
+    )
+    resultats_livraison_ve = moteur_livraison_voie_a(tickets_livraison_ve, historique_livraison_par_fichier_ve, 5)
+
+    contexte_periode_ve = contexte_periode(evenements_calendrier, date_a_debut, date_a_fin)
+    index_commandes_email_ve = commandes_par_email(commandes)
+    resultats_achats_av_ve = resoudre_achats_observes_avant_vente(
+        tickets_av_ve, index_commandes_email_ve, FENETRE_CONVERSION_JOURS,
+    )
+    resultats_motifs_av_ve = moteur_avant_vente_motifs(
+        tickets_av_ve, resultats_achats_av_ve, historique_av_par_fichier_ve, contexte_periode_ve, 5,
+    )
+
+    reponses_nps_ve = charger_nps(FICHIER_NPS)
+    historique_nps_mensuel_ve = construire_historique_nps_par_mois(reponses_nps_ve)
+    cle_mois_periode_ve = date_a_debut.strftime("%Y-%m")
+    index_mois_nps_ve = None
+    for i_mois_ve in range(len(historique_nps_mensuel_ve)):
+        if historique_nps_mensuel_ve[i_mois_ve]["cle_mois"] == cle_mois_periode_ve:
+            index_mois_nps_ve = i_mois_ve
+
+    alignement_nps_ve = None
+    texte_alignement_nps_ve = None
+    item_nps_ve = None
+    if index_mois_nps_ve is not None:
+        item_nps_ve = historique_nps_mensuel_ve[index_mois_nps_ve]
+        tickets_par_mois_care_ve = {}
+        for ticket_care_ve in tickets_historique_business:
+            cle_mois_ticket_ve = ticket_care_ve["created_at"].strftime("%Y-%m")
+            if cle_mois_ticket_ve in tickets_par_mois_care_ve:
+                tickets_par_mois_care_ve[cle_mois_ticket_ve].append(ticket_care_ve)
+            else:
+                tickets_par_mois_care_ve[cle_mois_ticket_ve] = [ticket_care_ve]
+        historique_care_mensuel_ve = []
+        for item_mois_ve in historique_nps_mensuel_ve:
+            historique_care_mensuel_ve.append(
+                construire_profil_care_mensuel(tickets_par_mois_care_ve.get(item_mois_ve["cle_mois"], []))
+            )
+        alignement_nps_ve = evaluer_alignement_care_nps(
+            historique_nps_mensuel_ve, historique_care_mensuel_ve, index_mois_nps_ve,
+        )
+        if alignement_nps_ve is not None:
+            texte_alignement_nps_ve = texte_alignement_care_nps(
+                alignement_nps_ve, historique_care_mensuel_ve[index_mois_nps_ve], "cette période",
+            )
+
+    candidats_categoriels_ve = extraire_candidats_categoriels_vue_ensemble(
+        resultats_produit_ve["prioritaires"], resultats_livraison_ve["prioritaires"], resultats_motifs_av_ve["opportunites"],
+    )
+    diagnostics_transversaux_ve = evaluer_diagnostics_structures_transversal_vue_ensemble(
+        profils_historique_ve, index_dernier_profil_ve,
+        [CATEGORIE_SAV_PRODUIT, CATEGORIE_LIVRAISON_VUE_ENSEMBLE, CATEGORIE_AVANT_VENTE_VUE_ENSEMBLE],
+    )
+    resultat_attention_ve = construire_signaux_attention_vue_ensemble(
+        candidats_categoriels_ve, vigilance_derniere_ve, alignement_nps_ve, texte_alignement_nps_ve,
+        diagnostics_transversaux_ve, SEUIL_MAX_SIGNAUX_ATTENTION_VUE_ENSEMBLE,
+    )
+    signaux_positifs_ve = construire_signal_positif_vue_ensemble(
+        rang_capacite_ve, rang_volume_ve, alignement_nps_ve, texte_alignement_nps_ve,
+    )
+    anticipations_ve = construire_points_anticipation_vue_ensemble(evenements_calendrier, date_a_fin)
+    navigation_ve = construire_navigation_vue_ensemble(resultat_attention_ve["retenus"])
+
+    # ---- A. Lecture de la période ----
+    # Étape 6D, section 5 : bloc éditorial distinct d'une simple caption -- réutilise l'info panel
+    # 6C (construire_bandeau_info), texte inchangé (même synthèse, même phrase NPS, jamais réécrite).
+    st.markdown(titre_section_principale(lecture_tendance_ve["titre"]), unsafe_allow_html=True)
+    texte_lecture_ve_html = lecture_tendance_ve["synthese"]
+    if item_nps_ve is not None:
+        texte_lecture_ve_html = texte_lecture_ve_html + (
+            '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">NPS '
+            + formater_nps_entier(item_nps_ve["nps"]) + " (n=" + str(item_nps_ve["n"])
+            + ") sur le mois correspondant -- voir Impact & confiance pour le détail et la prudence "
+            "d'échantillon.</span>"
+        )
+    st.markdown(construire_bandeau_info(texte_lecture_ve_html), unsafe_allow_html=True)
+
+    # ---- B. Indicateurs essentiels ----
     with st.container(border=True):
-        colonne1, colonne2, colonne3, colonne4 = st.columns(4)
+        if item_nps_ve is not None:
+            colonnes_kpi_ve = st.columns(5)
+        else:
+            colonnes_kpi_ve = st.columns(4)
 
         if comparaison_disponible:
-            colonne1.markdown(
+            colonnes_kpi_ve[0].markdown(
                 construire_carte_kpi(
                     "Tickets reçus", formater_nombre_espace(nombre_s2),
                     delta=nombre_s2 - nombre_s1, delta_couleur="off",
+                    sous_texte="vs période de comparaison",
                 ),
                 unsafe_allow_html=True,
             )
-
             if csat_s2 is not None and csat_s1 is not None:
-                colonne2.markdown(
+                colonnes_kpi_ve[1].markdown(
                     construire_carte_kpi("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2)),
                     unsafe_allow_html=True,
                 )
             else:
-                colonne2.markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
-
+                colonnes_kpi_ve[1].markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
             if frt_s2 is not None and frt_s1 is not None:
-                colonne3.markdown(
+                colonnes_kpi_ve[2].markdown(
                     construire_carte_kpi(
                         "1re réponse", formater_duree(frt_s2),
                         delta=str(round(frt_s2 - frt_s1)) + " min", delta_couleur="inverse",
@@ -1699,40 +1788,95 @@ with onglet_vue:
                     unsafe_allow_html=True,
                 )
             else:
-                colonne3.markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
-
-            if macro_s2 is not None and macro_s1 is not None:
-                colonne4.markdown(
+                colonnes_kpi_ve[2].markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
+            if resolution_s2 is not None and resolution_s1 is not None:
+                colonnes_kpi_ve[3].markdown(
                     construire_carte_kpi(
-                        "Utilisation macro", formater_pourcentage(macro_s2),
-                        delta=str(round(macro_s2 - macro_s1, 1)) + " pt",
+                        "Résolution moyenne", formater_duree(resolution_s2 * 60),
+                        delta=str(round((resolution_s2 - resolution_s1) * 60)) + " min", delta_couleur="inverse",
                     ),
                     unsafe_allow_html=True,
                 )
-            else:
-                colonne4.markdown(
-                    construire_carte_kpi("Utilisation macro", formater_pourcentage(macro_s2)), unsafe_allow_html=True
+            elif resolution_s2 is not None:
+                colonnes_kpi_ve[3].markdown(
+                    construire_carte_kpi("Résolution moyenne", formater_duree(resolution_s2 * 60)), unsafe_allow_html=True
                 )
         else:
-            colonne1.markdown(
+            colonnes_kpi_ve[0].markdown(
                 construire_carte_kpi("Tickets reçus", formater_nombre_espace(nombre_s2)), unsafe_allow_html=True
             )
-            colonne2.markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
-            colonne3.markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
-            colonne4.markdown(
-                construire_carte_kpi("Utilisation macro", formater_pourcentage(macro_s2)), unsafe_allow_html=True
+            colonnes_kpi_ve[1].markdown(construire_carte_kpi("CSAT moyen", formater_csat(csat_s2)), unsafe_allow_html=True)
+            colonnes_kpi_ve[2].markdown(construire_carte_kpi("1re réponse", formater_duree(frt_s2)), unsafe_allow_html=True)
+            if resolution_s2 is not None:
+                colonnes_kpi_ve[3].markdown(
+                    construire_carte_kpi("Résolution moyenne", formater_duree(resolution_s2 * 60)), unsafe_allow_html=True
+                )
+
+        if item_nps_ve is not None:
+            colonnes_kpi_ve[4].markdown(
+                construire_carte_kpi(
+                    "NPS", formater_nps_entier(item_nps_ve["nps"]), sous_texte="n=" + str(item_nps_ve["n"]),
+                ),
+                unsafe_allow_html=True,
             )
 
+    # ---- C. Ce qui mérite votre attention ----
+    # Étape 6D, section 8-9 : première migration vers construire_carte_signal (Étape 6C). Statut
+    # "attention" uniforme -- rien dans la structure de ces signaux (titre/texte/onglet_cible) ne
+    # distingue aujourd'hui un niveau de gravité, donc jamais "critique" ici (réservé à un signal
+    # réellement produit comme tel par la logique métier, absent de cette liste). "Approfondir
+    # dans" devient le badge -- même contenu, seulement la mise en forme change.
+    st.markdown(titre_section_principale("Ce qui mérite votre attention"), unsafe_allow_html=True)
+    if len(resultat_attention_ve["retenus"]) == 0:
+        st.caption("Aucun signal prioritaire ne se détache sur cette période avec les critères actuels.")
+    else:
+        for signal_ve in resultat_attention_ve["retenus"]:
+            st.markdown(
+                construire_carte_signal(
+                    signal_ve["titre"], "attention", signal_ve["texte"],
+                    badge="Approfondir dans : " + signal_ve["onglet_cible"],
+                ),
+                unsafe_allow_html=True,
+            )
+
+    # ---- D. Ce qui tient ----
+    # Étape 6D, section 10-11 : contrepartie visuelle de "Ce qui mérite votre attention", même
+    # socle (radius/border/typo/espacements de construire_carte_signal) mais hiérarchie plus
+    # légère -- statut "positive" en accent discret, pas de titre par carte (la donnée n'en fournit
+    # pas), pas de badge. Jamais présenté comme un "succès" : wording métier (signaux_positifs_ve)
+    # inchangé.
+    if len(signaux_positifs_ve) > 0:
+        st.markdown(titre_section_principale("Ce qui tient"), unsafe_allow_html=True)
+        for texte_positif_ve in signaux_positifs_ve:
+            st.markdown(
+                construire_carte_signal(None, "positive", texte_positif_ve), unsafe_allow_html=True
+            )
+
+    # ---- E. Contexte de la période ----
+    st.markdown(titre_section_principale("Contexte de la période"), unsafe_allow_html=True)
     evenements_texte = construire_texte_evenements(exports_disponibles, date_a_debut, date_a_fin)
     for changement in changements_planning:
         evenements_texte = evenements_texte + "  \nChangement planning : " + changement
-
     evenements_html = "Événement(s) de la période :<br>" + evenements_texte.replace("  \n", "<br>")
     st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
+    if len(anticipations_ve) > 0:
+        st.markdown("**Point(s) d'anticipation**")
+        st.caption(
+            "Événements à venir dans les " + str(FENETRE_ANTICIPATION_VUE_ENSEMBLE_JOURS) + " jours suivant "
+            "cette période -- un repère, pas une dégradation actuelle."
+        )
+        for anticipation_ve in anticipations_ve:
+            st.caption(str(anticipation_ve["date_debut"]) + " — " + anticipation_ve["type"] + " : " + anticipation_ve["nom_evenement"])
+
+    # ---- F. Pour aller plus loin ----
+    if len(navigation_ve) > 0:
+        st.markdown("**Pour aller plus loin**")
+        st.caption("Approfondir dans : " + ", ".join(navigation_ve))
+
     # ------------------------------------------------------------------
-    # Sujets par catégorie — calculés une seule fois ici (réutilisés par les insights
-    # prioritaires ci-dessous ET par les expanders détaillés plus bas, pas recalculés deux fois).
+    # Détail (accordéons fermés, jamais affiché en avant -- section 36) : sujets par catégorie
+    # (calculés une seule fois ici) pour le graphique de répartition et la performance détaillée.
     # ------------------------------------------------------------------
 
     if comparaison_disponible:
@@ -1747,132 +1891,82 @@ with onglet_vue:
 
     lignes_categories_apercu_triees = sorted(lignes_categories_apercu, key=obtenir_tickets, reverse=True)
 
-    sujets_par_categorie = {}
-    sujets_notables_par_categorie = {}
-    for ligne in lignes_categories_apercu_triees:
-        categorie = ligne["Catégorie"]
-        tickets_cat_s2 = categories_s2.get(categorie, [])
-        tickets_cat_s1 = categories_s1.get(categorie, [])
-        lignes_sujets_cat = construire_lignes_sujets(tickets_cat_s2, tickets_cat_s1, comparaison_disponible)
-        sujets_par_categorie[categorie] = lignes_sujets_cat
-        sujets_notables_par_categorie[categorie] = obtenir_sujets_notables(lignes_sujets_cat)
+    with st.expander("Répartition par famille (détail)"):
+        if comparaison_disponible:
+            st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
 
-    # ------------------------------------------------------------------
-    # Insights prioritaires — 3 à 5 observations maximum, pas un dump de tous les chiffres.
-    # ------------------------------------------------------------------
+        if comparaison_disponible:
+            ordre_categories = []
+            lignes_graphique_long = []
+            lignes_graphique_deltas = []
 
-    insights_vue_ensemble = construire_insights_vue_ensemble(
-        lignes_categories_apercu_triees, categories_s2, categories_s1, comparaison_disponible,
-        sujets_notables_par_categorie, csat_s2, csat_s1, frt_s2, frt_s1, macro_s2, macro_s1,
-    )
+            for ligne in lignes_categories_apercu_triees:
+                categorie = ligne["Catégorie"]
+                ordre_categories.append(categorie)
+                volume_actuel = ligne["Tickets"]
+                volume_precedent = len(categories_s1.get(categorie, []))
 
-    st.markdown(titre_section_principale("Ce qui mérite votre attention"), unsafe_allow_html=True)
-    if len(insights_vue_ensemble) > 0:
-        for insight in insights_vue_ensemble:
-            st.markdown(
-                '<div style="margin-bottom:10px;"><span style="font-size:11px; font-weight:700; '
-                'text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_PRIMAIRE + ';">'
-                + insight["titre"] + '</span><br><span style="font-size:14px; color:' + COULEUR_TEXTE_VALEUR + ';">'
-                + insight["texte"] + "</span></div>",
-                unsafe_allow_html=True,
-            )
-    else:
-        st.caption("Aucune variation significative sur cette période — situation stable.")
+                lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période actuelle", "Tickets": volume_actuel})
+                lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période précédente", "Tickets": volume_precedent})
 
-    st.divider()
-    st.markdown(titre_section_principale("Répartition par famille"), unsafe_allow_html=True)
-    if comparaison_disponible:
-        st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
-
-    if comparaison_disponible:
-        ordre_categories = []
-        lignes_graphique_long = []
-        lignes_graphique_deltas = []
-
-        for ligne in lignes_categories_apercu_triees:
-            categorie = ligne["Catégorie"]
-            ordre_categories.append(categorie)
-            volume_actuel = ligne["Tickets"]
-            volume_precedent = len(categories_s1.get(categorie, []))
-
-            lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période actuelle", "Tickets": volume_actuel})
-            lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période précédente", "Tickets": volume_precedent})
-
-            volume_max = max(volume_actuel, volume_precedent)
-            if volume_precedent > 0:
-                evolution = evolution_pourcentage(volume_precedent, volume_actuel)
-                if evolution >= 0:
-                    texte_evolution = "▲ +" + str(round(evolution)) + " %"
+                volume_max = max(volume_actuel, volume_precedent)
+                if volume_precedent > 0:
+                    evolution = evolution_pourcentage(volume_precedent, volume_actuel)
+                    if evolution >= 0:
+                        texte_evolution = "▲ +" + str(round(evolution)) + " %"
+                    else:
+                        texte_evolution = "▼ " + str(round(evolution)) + " %"
                 else:
-                    texte_evolution = "▼ " + str(round(evolution)) + " %"
-            else:
-                texte_evolution = "Nouveau"
+                    texte_evolution = "Nouveau"
 
-            lignes_graphique_deltas.append({"Catégorie": categorie, "Volume max": volume_max, "Évolution": texte_evolution})
+                lignes_graphique_deltas.append({"Catégorie": categorie, "Volume max": volume_max, "Évolution": texte_evolution})
 
-        tableau_long = pd.DataFrame(lignes_graphique_long)
-        tableau_deltas = pd.DataFrame(lignes_graphique_deltas)
+            tableau_long = pd.DataFrame(lignes_graphique_long)
+            tableau_deltas = pd.DataFrame(lignes_graphique_deltas)
 
-        barres_categories = alt.Chart(tableau_long).mark_bar().encode(
-            x=alt.X("Catégorie:N", sort=ordre_categories, title=None),
-            xOffset=alt.XOffset("Période:N", sort=["Période actuelle", "Période précédente"]),
-            y=alt.Y("Tickets:Q", title="Tickets"),
-            color=alt.Color(
-                "Période:N",
-                sort=["Période actuelle", "Période précédente"],
-                scale=alt.Scale(
-                    domain=["Période actuelle", "Période précédente"],
-                    range=[COULEUR_PRIMAIRE, COULEUR_SECONDAIRE],
+            barres_categories = alt.Chart(tableau_long).mark_bar().encode(
+                x=alt.X("Catégorie:N", sort=ordre_categories, title=None),
+                xOffset=alt.XOffset("Période:N", sort=["Période actuelle", "Période précédente"]),
+                y=alt.Y("Tickets:Q", title="Tickets"),
+                color=alt.Color(
+                    "Période:N",
+                    sort=["Période actuelle", "Période précédente"],
+                    # Période précédente = une référence temporelle, pas une 2e série de données au
+                    # même titre que la période actuelle -- gris neutre, jamais l'Accent secondaire
+                    # (Étape 6C, section 15 ; Étape 6B, section 24).
+                    scale=alt.Scale(
+                        domain=["Période actuelle", "Période précédente"],
+                        range=[COULEUR_PRIMAIRE, COULEUR_NEUTRE_TEXTE],
+                    ),
+                    legend=alt.Legend(title=None),
                 ),
-                legend=alt.Legend(title=None),
-            ),
-        )
-
-        etiquettes_evolution = alt.Chart(tableau_deltas).mark_text(
-            align="center", dy=-8, fontSize=13, fontWeight="bold", color=COULEUR_ACCENT_FONCE
-        ).encode(
-            x=alt.X("Catégorie:N", sort=ordre_categories),
-            y=alt.Y("Volume max:Q"),
-            text="Évolution:N",
-        )
-
-        graphique_categories = (
-            (barres_categories + etiquettes_evolution)
-            .properties(height=340)
-            .configure_view(strokeWidth=0)
-            .configure_axisX(labelAngle=-30)
-        )
-        with st.container(border=True):
-            st.altair_chart(graphique_categories, width="stretch")
-    else:
-        lignes_graphique_categories = []
-        for ligne in lignes_categories_apercu_triees:
-            lignes_graphique_categories.append(
-                {"Catégorie": ligne["Catégorie"], "Période actuelle": ligne["Tickets"]}
             )
-        tableau_graphique_categories = pd.DataFrame(lignes_graphique_categories).set_index("Catégorie")
-        with st.container(border=True):
+
+            etiquettes_evolution = alt.Chart(tableau_deltas).mark_text(
+                align="center", dy=-8, fontSize=13, fontWeight="bold", color=COULEUR_ACCENT_FONCE
+            ).encode(
+                x=alt.X("Catégorie:N", sort=ordre_categories),
+                y=alt.Y("Volume max:Q"),
+                text="Évolution:N",
+            )
+
+            # Étape 6J, section 19 : seul graphique de l'app encore hors configurer_apparence_graphique
+            # (Vue d'ensemble, verrouillée depuis 6D, mais ce token manquant est un P1 visuel évident --
+            # migration triviale, aucun changement de type/données). configure_axisX reste ensuite pour
+            # la rotation des labels, compatible avec le config.axis déjà posé par le helper.
+            graphique_categories = configurer_apparence_graphique(
+                (barres_categories + etiquettes_evolution).properties(height=340)
+            ).configure_axisX(labelAngle=-30)
+            st.altair_chart(graphique_categories, width="stretch")
+        else:
+            lignes_graphique_categories = []
+            for ligne in lignes_categories_apercu_triees:
+                lignes_graphique_categories.append(
+                    {"Catégorie": ligne["Catégorie"], "Période actuelle": ligne["Tickets"]}
+                )
+            tableau_graphique_categories = pd.DataFrame(lignes_graphique_categories).set_index("Catégorie")
             st.bar_chart(tableau_graphique_categories, color=COULEUR_PRIMAIRE)
 
-    st.caption(
-        "Sujets qui évoluent significativement (À surveiller/Critique) mise en avant ; le détail "
-        "complet de chaque catégorie reste accessible."
-    )
-    for ligne in lignes_categories_apercu_triees:
-        categorie = ligne["Catégorie"]
-        lignes_sujets_cat_triees = sujets_par_categorie[categorie]
-        sujets_notables = sujets_notables_par_categorie[categorie]
-
-        with st.expander(categorie + " — " + str(ligne["Tickets"]) + " tickets"):
-            if len(sujets_notables) > 0:
-                afficher_tableau_colore(sujets_notables)
-            elif comparaison_disponible:
-                st.caption("Aucun sujet en évolution notable dans cette catégorie.")
-
-            with st.expander("Voir tous les sujets de " + categorie):
-                afficher_tableau_colore(lignes_sujets_cat_triees)
-
-    st.divider()
     with st.expander("Performance par catégorie (détail)"):
         st.caption(DEFINITION_EN_CRENEAU)
         st.caption(
@@ -1934,217 +2028,271 @@ with onglet_vue:
         )
 
 
-SEUIL_TENDANCE_STABLE_PCT = 15
-
-
-def obtenir_valeurs_colonne(lignes_tendance, cle):
-    valeurs = []
-    for ligne in lignes_tendance:
-        valeur = ligne[cle]
-        if valeur is not None:
-            valeurs.append(valeur)
-    return valeurs
-
-
-# Classification simple à partir d'une moyenne glissante (tous les points sauf les deux
-# derniers) : le dernier point ET l'avant-dernier au-dessus de cette moyenne = tendance
-# structurelle ; seul le dernier point élevé, l'avant-dernier proche de la moyenne = pic ponctuel ;
-# le dernier point revient proche de la moyenne après un avant-dernier élevé = retour à la normale.
-# Pas assez de points pour distinguer un aléa d'une vraie tendance -> le dire plutôt qu'inventer.
-def classifier_tendance(valeurs):
-    if len(valeurs) < 3:
-        return "historique insuffisant"
-
-    dernier = valeurs[-1]
-    avant_dernier = valeurs[-2]
-    # valeurs[:-2] a toujours au moins 1 élément ici (garanti par le "len(valeurs) < 3" ci-dessus).
-    historique = valeurs[:-2]
-
-    moyenne_historique = sum(historique) / len(historique)
-    if moyenne_historique == 0:
-        return "historique insuffisant"
-
-    ecart_dernier_pct = (dernier - moyenne_historique) / moyenne_historique * 100
-    ecart_avant_dernier_pct = (avant_dernier - moyenne_historique) / moyenne_historique * 100
-
-    dernier_stable = abs(ecart_dernier_pct) < SEUIL_TENDANCE_STABLE_PCT
-    avant_dernier_stable = abs(ecart_avant_dernier_pct) < SEUIL_TENDANCE_STABLE_PCT
-    dernier_eleve = ecart_dernier_pct >= SEUIL_TENDANCE_STABLE_PCT
-    avant_dernier_eleve = ecart_avant_dernier_pct >= SEUIL_TENDANCE_STABLE_PCT
-    dernier_bas = ecart_dernier_pct <= -SEUIL_TENDANCE_STABLE_PCT
-    avant_dernier_bas = ecart_avant_dernier_pct <= -SEUIL_TENDANCE_STABLE_PCT
-
-    # Le retour à la normale doit être vérifié avant tout, sinon un dernier point simplement
-    # stable masque le fait que l'avant-dernier était, lui, nettement écarté de la moyenne.
-    if dernier_stable:
-        if avant_dernier_stable:
-            return "stabilité"
-        return "retour à la normale"
-
-    if dernier_eleve and avant_dernier_eleve:
-        return "hausse structurelle"
-    if dernier_bas and avant_dernier_bas:
-        return "baisse structurelle"
-    return "pic ponctuel"
-
-
-def construire_ligne_classification_tendances(lignes_tendance):
-    metriques = [
-        ("Volume", "Tickets"),
-        ("CSAT", "CSAT"),
-        ("1re réponse", "1re réponse (min)"),
-        ("Utilisation macro", "Utilisation macro (%)"),
-    ]
-
-    morceaux = []
-    for label, cle in metriques:
-        valeurs = obtenir_valeurs_colonne(lignes_tendance, cle)
-        morceaux.append(label + " : " + classifier_tendance(valeurs))
-
-    return " · ".join(morceaux)
-
-
 # ------------------------------------------------------------------
 # Onglet 2 : Tendances
 # ------------------------------------------------------------------
 
 with onglet_tendances:
+    st.subheader("Tendances")
+    st.caption("Ce que racontent les observations disponibles dans le temps : jalons, vigilances, contrastes.")
+
     exports_jusqu_a_periode = []
     for date_export, chemin in exports_disponibles:
         if date_export <= date_a_fin:
             exports_jusqu_a_periode.append((date_export, chemin))
 
-    if len(exports_jusqu_a_periode) > 1:
-        texte_nombre_exports = str(len(exports_jusqu_a_periode)) + " exports disponibles"
-    else:
-        texte_nombre_exports = str(len(exports_jusqu_a_periode)) + " export disponible"
-
     st.caption(
-        "Évolution sur les " + texte_nombre_exports + " jusqu'à la période sélectionnée dans la barre "
-        "latérale — pas de données au-delà de la Période A, pour garder une lecture cohérente avec "
-        "« où on en est ». Voir une vraie tendance plutôt que comparer seulement deux instantanés."
-    )
-    st.caption(
-        "⚠️ Chaque point est une semaine représentative isolée, pas un suivi hebdomadaire continu — "
-        "certains écarts entre points vont jusqu'à 6-7 semaines sans export. Les lignes en pointillé "
-        "relient les points pour la lisibilité, mais n'illustrent pas une évolution semaine par semaine réelle."
+        "⚠️ Chaque point est une semaine représentative isolée, pas un suivi hebdomadaire continu — certains "
+        "écarts entre observations vont jusqu'à 6-7 semaines. Les comparaisons ci-dessous se font contre "
+        "l'ensemble des observations disponibles, jamais entre deux points voisins traités comme des semaines "
+        "consécutives."
     )
 
+    # profils_historique = TOUTES les observations disponibles jusqu'à la fin de la Période A
+    # (aucune fuite du futur, par construction : exports_jusqu_a_periode ne contient jamais un
+    # export postérieur à date_a_fin). nb_observations_periode = celles qui appartiennent
+    # effectivement à la sélection de l'utilisatrice (fichiers_actuels) -- le reste, en tête de
+    # liste, ne sert que d'historique de référence (Étape 4B.3).
+    profils_historique = []
     lignes_tendance = []
     for date_export, chemin in exports_jusqu_a_periode:
         tickets_fichier = charger_tickets(chemin)
         if len(tickets_fichier) == 0:
             continue
 
+        planning_fichier = charger_planning(chemin)
+        date_fin_fichier = date_export + datetime.timedelta(days=6)
+        profils_historique.append(construire_profil_observation(
+            tickets_fichier, planning_fichier, evenements_calendrier, date_export, date_fin_fichier,
+        ))
+        profil_courant_tendance = profils_historique[-1]
+
         lignes_tendance.append({
             "Date": date_export,
+            "Date fin": date_fin_fichier,
             "Tickets": len(tickets_fichier),
             "CSAT": moyenne(tickets_fichier, "csat"),
             "1re réponse (min)": moyenne(tickets_fichier, "first_reply_time_min"),
+            "Resolution (h)": profil_courant_tendance["resolution_h"],
             "Utilisation macro (%)": taux_rempli(tickets_fichier, "macro_applied"),
             "Événement": evenements_periode(tickets_fichier),
+            "Mix": profil_courant_tendance["mix_categories"],
         })
 
-    tableau_tendance = pd.DataFrame(lignes_tendance)
+    lecture_tendance = construire_lecture_tendances(profils_historique, len(fichiers_actuels))
 
-    st.markdown(
-        '<div style="font-size:13px; font-weight:600; color:' + COULEUR_TEXTE_VALEUR + '; margin-bottom:14px;">'
-        + construire_ligne_classification_tendances(lignes_tendance) + "</div>",
-        unsafe_allow_html=True,
+    # Étape 5B -- "Période analysée" vs "Historique de référence" (section 8) : une ligne discrète,
+    # dérivée des observations déjà chargées ci-dessus, jamais un nouveau calcul métier.
+    texte_periode_reference_tendances = construire_texte_periode_reference_tendances(
+        profils_historique, lecture_tendance["mode"], lecture_tendance["nb_observations_periode"],
     )
+    if texte_periode_reference_tendances is not None:
+        st.caption(texte_periode_reference_tendances)
 
-    st.markdown(titre_section_principale("Volume de tickets"), unsafe_allow_html=True)
-    graphique_volume = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
-        x=alt.X("Date:T", title=None),
-        y=alt.Y("Tickets:Q"),
-        tooltip=["Date:T", "Tickets:Q", "Événement:N"],
-    ).properties(height=260).configure_view(strokeWidth=0)
-    with st.container(border=True):
-        st.altair_chart(graphique_volume, width="stretch")
+    # Étape 6E, section 5 : migration vers le panneau éditorial 6D (même patron que Vue
+    # d'ensemble) -- texte inchangé, mêmes séquences, seulement la mise en forme change.
+    st.markdown(titre_section_principale(lecture_tendance["titre"]), unsafe_allow_html=True)
+    texte_lecture_tendance_html = lecture_tendance["synthese"]
+    lignes_lecture_tendance_secondaires = []
+    for repere_tendance in lecture_tendance["reperes"]:
+        lignes_lecture_tendance_secondaires.append(repere_tendance)
+    if lecture_tendance["contexte"] is not None:
+        lignes_lecture_tendance_secondaires.append(lecture_tendance["contexte"])
+    lignes_lecture_tendance_secondaires.append(lecture_tendance["niveau_confiance"])
+    if lecture_tendance["saisonnalite"] is not None:
+        lignes_lecture_tendance_secondaires.append(lecture_tendance["saisonnalite"]["observation"])
+        lignes_lecture_tendance_secondaires.append(lecture_tendance["saisonnalite"]["prudence"])
+    if len(lecture_tendance["jalons_metier"]) == 0 and len(lecture_tendance["vigilances"]) == 0:
+        if lecture_tendance["mode"] != MODE_OBSERVATION_UNIQUE:
+            lignes_lecture_tendance_secondaires.append("Aucun changement majeur ne se détache sur cette période.")
+    for ligne_lecture_secondaire in lignes_lecture_tendance_secondaires:
+        texte_lecture_tendance_html = texte_lecture_tendance_html + (
+            '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+            + ligne_lecture_secondaire + "</span>"
+        )
+    st.markdown(construire_bandeau_info(texte_lecture_tendance_html), unsafe_allow_html=True)
 
-    st.markdown(titre_section_principale("CSAT moyen"), unsafe_allow_html=True)
-    graphique_csat = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_SECONDAIRE, strokeDash=[4, 4]).encode(
-        x=alt.X("Date:T", title=None),
-        y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
-        tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"],
-    ).properties(height=260).configure_view(strokeWidth=0)
-    with st.container(border=True):
-        st.altair_chart(graphique_csat, width="stretch")
+    # Jalons : registre léger (une ligne), pas de grosses cartes -- ce ne sont pas des alertes.
+    # Jamais affichés en mode "observation unique" (le sujet est la semaine sélectionnée, pas
+    # l'historique -- si elle est elle-même un jalon, c'est déjà dit dans la synthèse ci-dessus).
+    if len(lecture_tendance["jalons_metier"]) > 0:
+        st.markdown(titre_section_principale("Jalons"), unsafe_allow_html=True)
+        for jalon_tendance in lecture_tendance["jalons_metier"]:
+            texte_jalon = (
+                "**" + str(jalon_tendance["date_debut"]) + "** — " + jalon_tendance["registre"] + " : "
+                + jalon_tendance["observation"]
+            )
+            if jalon_tendance["contexte"] is not None:
+                texte_jalon = texte_jalon + " (" + jalon_tendance["contexte"] + ")"
+            st.markdown(texte_jalon)
 
-    st.markdown(titre_section_principale("Temps de 1re réponse moyen"), unsafe_allow_html=True)
-    graphique_frt = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_ACCENT_FONCE, strokeDash=[4, 4]).encode(
-        x=alt.X("Date:T", title=None),
-        y=alt.Y("1re réponse (min):Q", title="Minutes"),
-        tooltip=["Date:T", alt.Tooltip("1re réponse (min):Q", format=".0f"), "Événement:N"],
-    ).properties(height=260).configure_view(strokeWidth=0)
-    with st.container(border=True):
-        st.altair_chart(graphique_frt, width="stretch")
+    # Vigilances : seule catégorie encore présentée en carte marquée -- réservée aux dégradations
+    # réelles, jamais utilisée pour un simple écart de volume. Statut "watch" (Étape 6E, section 6) :
+    # une vigilance de tendance, pas un signal métier matériel comme "attention" en Vue d'ensemble --
+    # doit attirer l'œil sans transformer l'observation en crise, donc jamais "critique" ici.
+    if len(lecture_tendance["vigilances"]) > 0:
+        st.markdown(titre_section_principale("Vigilances"), unsafe_allow_html=True)
+        for vigilance_tendance in lecture_tendance["vigilances"]:
+            corps_vigilance_html = vigilance_tendance["observation"]
+            lignes_meta_vigilance = [vigilance_tendance["pourquoi"]]
+            if vigilance_tendance["contexte"] is not None:
+                lignes_meta_vigilance.append(vigilance_tendance["contexte"])
+            if vigilance_tendance["prudence"] is not None:
+                lignes_meta_vigilance.append(vigilance_tendance["prudence"])
+            for ligne_meta_vigilance in lignes_meta_vigilance:
+                corps_vigilance_html = corps_vigilance_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + ligne_meta_vigilance + "</span>"
+                )
+            st.markdown(
+                construire_carte_signal("⚠️ " + str(vigilance_tendance["date_debut"]), "watch", corps_vigilance_html),
+                unsafe_allow_html=True,
+            )
 
-    st.markdown(titre_section_principale("Utilisation macro"), unsafe_allow_html=True)
-    graphique_macro = alt.Chart(tableau_tendance).mark_line(point=True, color=COULEUR_PRIMAIRE, strokeDash=[4, 4]).encode(
-        x=alt.X("Date:T", title=None),
-        y=alt.Y("Utilisation macro (%):Q", scale=alt.Scale(domain=[0, 100])),
-        tooltip=["Date:T", alt.Tooltip("Utilisation macro (%):Q", format=".0f"), "Événement:N"],
-    ).properties(height=260).configure_view(strokeWidth=0)
-    with st.container(border=True):
-        st.altair_chart(graphique_macro, width="stretch")
+    # Contrastes : information analytique riche mais pas une vigilance -- carte neutre (statut
+    # None), aucune couleur d'alerte (Étape 6E, section 8). Wording inchangé.
+    if len(lecture_tendance["contrastes"]) > 0:
+        st.markdown(titre_section_principale("Contrastes entre observations comparables"), unsafe_allow_html=True)
+        for contraste_tendance in lecture_tendance["contrastes"]:
+            corps_contraste_html = contraste_tendance["observation"]
+            lignes_meta_contraste = [contraste_tendance["pourquoi"]]
+            if contraste_tendance["prudence"] is not None:
+                lignes_meta_contraste.append(contraste_tendance["prudence"])
+            for ligne_meta_contraste in lignes_meta_contraste:
+                corps_contraste_html = corps_contraste_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + ligne_meta_contraste + "</span>"
+                )
+            st.markdown(construire_carte_signal(None, None, corps_contraste_html), unsafe_allow_html=True)
 
-
-# Le quadrant volume/CSAT reste un signal relatif à comprendre, jamais un jugement — les 4
-# libellés décrivent symétriquement les deux axes (volume, CSAT) plutôt que de qualifier l'agent
-# ("va vite"/"soigné"), et l'écart réel (pas juste au-dessus/en-dessous) est toujours affiché.
-def construire_profil_agent(volume, volume_moyen_equipe, csat_agent, csat_moyen_equipe):
-    if volume_moyen_equipe > 0:
-        ecart_volume_pct = (volume - volume_moyen_equipe) / volume_moyen_equipe * 100
+    # Graphiques : scope selon le mode -- mode 1 affiche l'historique complet en repère (avec la
+    # période analysée distinguée visuellement), mode 2 se limite aux observations de la fenêtre
+    # sélectionnée, mode 3 conserve le comportement d'origine (tout l'historique).
+    date_semaine_analysee = None
+    if lecture_tendance["mode"] == MODE_OBSERVATION_UNIQUE:
+        titre_expander_tendance = "Replacer cette période dans l'historique"
+        lignes_graphique = lignes_tendance
+        if len(profils_historique) > 0:
+            date_semaine_analysee = profils_historique[-1]["date_debut"]
     else:
-        ecart_volume_pct = 0
+        titre_expander_tendance = "Détail métrique par observation"
+        nb_lignes_periode = lecture_tendance["nb_observations_periode"]
+        lignes_graphique = lignes_tendance[len(lignes_tendance) - nb_lignes_periode:]
 
-    volume_haut = volume > volume_moyen_equipe
+    tableau_tendance = pd.DataFrame(lignes_graphique)
 
-    if csat_agent is not None and csat_moyen_equipe is not None:
-        ecart_csat = csat_agent - csat_moyen_equipe
-        csat_haut = csat_agent > csat_moyen_equipe
-    else:
-        ecart_csat = None
-        csat_haut = False
+    encodage_couleur_volume = alt.value(COULEUR_PRIMAIRE)
+    encodage_couleur_csat = alt.value(COULEUR_SECONDAIRE)
+    encodage_couleur_effort = alt.value(COULEUR_ACCENT_FONCE)
+    colonnes_tooltip_supplementaires = []
 
-    if ecart_volume_pct >= 0:
-        texte_volume = "volume +" + str(round(ecart_volume_pct)) + " % vs équipe"
-    else:
-        texte_volume = "volume " + str(round(ecart_volume_pct)) + " % vs équipe"
+    if date_semaine_analysee is not None and len(tableau_tendance) > 0:
+        valeurs_selection = []
+        for date_valeur in tableau_tendance["Date"]:
+            if date_valeur == date_semaine_analysee:
+                valeurs_selection.append("Période analysée")
+            else:
+                valeurs_selection.append("Historique")
+        tableau_tendance["Sélection"] = valeurs_selection
+        echelle_selection = alt.Scale(
+            domain=["Historique", "Période analysée"], range=[COULEUR_TEXTE_LABEL, COULEUR_PRIMAIRE],
+        )
+        encodage_couleur_volume = alt.Color("Sélection:N", scale=echelle_selection, legend=alt.Legend(title=None))
+        encodage_couleur_csat = encodage_couleur_volume
+        encodage_couleur_effort = encodage_couleur_volume
+        colonnes_tooltip_supplementaires = ["Sélection:N"]
 
-    if ecart_csat is not None:
-        if ecart_csat >= 0:
-            texte_csat = "CSAT +" + str(round(ecart_csat, 2)) + " vs équipe"
-        else:
-            texte_csat = "CSAT " + str(round(ecart_csat, 2)) + " vs équipe"
-    else:
-        texte_csat = "CSAT N/A"
+    # Étape 5B -- 4 graphiques principaux maximum, chacun répondant à une question distincte
+    # (section 34/40) : Activité (volume), Expérience (CSAT), Effort/complexité (résolution --
+    # remplace macro/FRT ici, tous deux peu discriminants entre périodes, voir compte-rendu),
+    # Composition de la demande (mix catégories, jamais montré avant faute de graphique dédié).
+    # FRT et Utilisation macro restent accessibles dans le détail chiffré ci-dessous, jamais
+    # supprimés.
+    with st.expander(titre_expander_tendance):
+        st.markdown(titre_section_principale("Activité"), unsafe_allow_html=True)
+        st.caption("Comment le niveau d'activité évolue-t-il entre les observations disponibles ?")
+        graphique_volume = configurer_apparence_graphique(
+            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+                x=alt.X("Date:T", title=None),
+                y=alt.Y("Tickets:Q"),
+                color=encodage_couleur_volume,
+                tooltip=["Date:T", "Tickets:Q", "Événement:N"] + colonnes_tooltip_supplementaires,
+            ).properties(height=260)
+        )
+        with st.container(border=True):
+            st.altair_chart(graphique_volume, width="stretch")
 
-    if volume_haut and csat_haut:
-        libelle = "Volume et CSAT au-dessus de la moyenne"
-    elif volume_haut and not csat_haut:
-        libelle = "Volume élevé, CSAT sous la moyenne"
-    elif not volume_haut and csat_haut:
-        libelle = "CSAT élevé, volume sous la moyenne"
-    else:
-        libelle = "Volume et CSAT sous la moyenne — à investiguer"
+        st.markdown(titre_section_principale("Expérience (CSAT)"), unsafe_allow_html=True)
+        st.caption("La satisfaction se dégrade-t-elle ou se maintient-elle entre les observations ?")
+        graphique_csat = configurer_apparence_graphique(
+            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+                x=alt.X("Date:T", title=None),
+                y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
+                color=encodage_couleur_csat,
+                tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"] + colonnes_tooltip_supplementaires,
+            ).properties(height=260)
+        )
+        with st.container(border=True):
+            st.altair_chart(graphique_csat, width="stretch")
 
-    return libelle + " (" + texte_volume + ", " + texte_csat + ")"
+        st.markdown(titre_section_principale("Effort / complexité (résolution)"), unsafe_allow_html=True)
+        st.caption("Les dossiers demandent-ils plus de temps à clôturer d'une observation à l'autre ?")
+        graphique_resolution = configurer_apparence_graphique(
+            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+                x=alt.X("Date:T", title=None),
+                y=alt.Y("Resolution (h):Q", title="Heures"),
+                color=encodage_couleur_effort,
+                tooltip=["Date:T", alt.Tooltip("Resolution (h):Q", format=".1f"), "Événement:N"] + colonnes_tooltip_supplementaires,
+            ).properties(height=260)
+        )
+        with st.container(border=True):
+            st.altair_chart(graphique_resolution, width="stretch")
+
+        st.markdown(titre_section_principale("Composition de la demande"), unsafe_allow_html=True)
+        st.caption("La nature des demandes change-t-elle d'une observation à l'autre (ex. Livraison en pic saisonnier, SAV en janvier) ?")
+        lignes_mix_long = []
+        for ligne_mix in lignes_graphique:
+            for categorie_mix, n_categorie_mix in ligne_mix["Mix"].items():
+                lignes_mix_long.append({"Date": ligne_mix["Date"], "Catégorie": categorie_mix, "Tickets": n_categorie_mix})
+        tableau_mix = pd.DataFrame(lignes_mix_long)
+        graphique_mix = configurer_apparence_graphique(
+            alt.Chart(tableau_mix).mark_bar().encode(
+                x=alt.X("Date:T", title=None),
+                y=alt.Y("Tickets:Q", stack="normalize", axis=alt.Axis(format="%"), title="Part de la demande"),
+                # Mapping fixe (jamais la palette par défaut d'Altair, qui recycle des teintes selon
+                # l'ordre d'apparition et change de sens d'une période à l'autre -- Étape 6C, section 16).
+                color=alt.Color(
+                    "Catégorie:N",
+                    scale=alt.Scale(domain=DOMAINE_CATEGORIES, range=PLAGE_COULEURS_CATEGORIES),
+                    legend=alt.Legend(title=None),
+                ),
+                tooltip=["Date:T", "Catégorie:N", "Tickets:Q"],
+            ).properties(height=260)
+        )
+        with st.container(border=True):
+            st.altair_chart(graphique_mix, width="stretch")
+        st.caption("Répartition en %, pas en volume — voir « Activité » ci-dessus pour le volume total.")
+
+        with st.expander("Détail chiffré par observation"):
+            lignes_detail_tendance = []
+            for ligne_detail in lignes_graphique:
+                lignes_detail_tendance.append({
+                    "Observation": str(ligne_detail["Date"]) + " → " + str(ligne_detail["Date fin"]),
+                    "Volume": ligne_detail["Tickets"],
+                    "CSAT": formater_csat(ligne_detail["CSAT"]) if ligne_detail["CSAT"] is not None else "N/A",
+                    "1re réponse": formater_duree(ligne_detail["1re réponse (min)"]) if ligne_detail["1re réponse (min)"] is not None else "N/A",
+                    "Résolution (h)": str(round(ligne_detail["Resolution (h)"], 1)) if ligne_detail["Resolution (h)"] is not None else "N/A",
+                    "Utilisation macro (%)": formater_pourcentage(ligne_detail["Utilisation macro (%)"]),
+                    "Mix principal": categorie_dominante_mix_tendances(ligne_detail["Mix"]),
+                    "Contexte": ligne_detail["Événement"],
+                })
+            st.dataframe(lignes_detail_tendance, hide_index=True, width="stretch")
 
 
-def obtenir_categorie_dominante(tickets_agent):
-    categories_agent = grouper_par_categorie(tickets_agent)
-    if len(categories_agent) == 0:
-        return "N/A"
-
-    plus_grosse_categorie = None
-    plus_gros_volume = -1
-    for categorie, tickets_cat in categories_agent.items():
-        if len(tickets_cat) > plus_gros_volume:
-            plus_gros_volume = len(tickets_cat)
-            plus_grosse_categorie = categorie
-    return plus_grosse_categorie
+# Étape 5C.1 -- construire_profil_agent (quadrant volume/CSAT non normalisé par les heures ni le
+# mix -- audité et jugé non défendable, voir compte-rendu Étape 5C) et obtenir_categorie_dominante
+# (remplacée par categorie_dominante_mix_tendances, déjà réutilisée depuis 5B, qui accepte aussi
+# bien des comptes que des %) supprimées. Aucun autre usage dans l'application (vérifié).
 
 
 # ------------------------------------------------------------------
@@ -2152,117 +2300,123 @@ def obtenir_categorie_dominante(tickets_agent):
 # ------------------------------------------------------------------
 
 with onglet_agents:
+    st.subheader("Agents")
+    st.caption("Qui compose l'équipe sur la période, comment la charge se répartit -- sans classement.")
+
     st.caption(DEFINITION_EN_CRENEAU)
-
-    par_agent = grouper_par(tickets_s2, "assignee")
-
-    # Le/la responsable d'équipe traite volontairement moins de tickets (temps pris par le
-    # management) : l'inclure dans la moyenne d'équipe fausserait le point de comparaison pour
-    # tout le monde, et la comparer aux autres sur le volume n'a pas de sens non plus.
-    volumes = []
-    csats_valides = []
-
-    for agent, tickets_agent in par_agent.items():
-        if roles_periode.get(agent) == ROLE_RESPONSABLE_EQUIPE:
-            continue
-        volumes.append(len(tickets_agent))
-        csat_agent_valeur = moyenne(tickets_agent, "csat")
-        if csat_agent_valeur is not None:
-            csats_valides.append(csat_agent_valeur)
-
-    if len(volumes) > 0:
-        volume_moyen_equipe = sum(volumes) / len(volumes)
-    else:
-        volume_moyen_equipe = 0
-
-    if len(csats_valides) > 0:
-        csat_moyen_equipe = sum(csats_valides) / len(csats_valides)
-    else:
-        csat_moyen_equipe = None
-
-    lignes_agents_avec_niveaux = []
-
-    for agent, tickets_agent in par_agent.items():
-        volume = len(tickets_agent)
-        csat_agent = moyenne(tickets_agent, "csat")
-        macro_agent = taux_rempli(tickets_agent, "macro_applied")
-
-        en_creneau_agent = separer_creneau(tickets_agent, planning_s2)[0]
-        frt_en_creneau_agent = moyenne(en_creneau_agent, "first_reply_time_min")
-
-        resolution_agent = moyenne(tickets_agent, "full_resolution_time_hours")
-        reopens_agent = moyenne(tickets_agent, "reopens")
-
-        role_agent = roles_periode.get(agent, "—")
-
-        if role_agent == ROLE_RESPONSABLE_EQUIPE:
-            profil = "Management (volume non comparable aux conseillers)"
-        else:
-            profil = construire_profil_agent(volume, volume_moyen_equipe, csat_agent, csat_moyen_equipe)
-
-        ligne = {
-            "Agent": agent,
-            "Rôle": role_agent,
-            "Tickets": volume,
-            "Catégorie dominante": obtenir_categorie_dominante(tickets_agent),
-            "CSAT": formater_csat(csat_agent),
-            "1re réponse (en créneau)": "N/A",
-            "Résolution moyenne": "N/A",
-            "Réouvertures moyennes": "N/A",
-            "Utilisation macro (%)": formater_pourcentage(macro_agent),
-            "Profil": profil,
-        }
-
-        if resolution_agent is not None:
-            ligne["Résolution moyenne"] = formater_duree(resolution_agent * 60)
-
-        if reopens_agent is not None:
-            ligne["Réouvertures moyennes"] = str(round(reopens_agent, 2))
-
-        niveau_reponse_agent = ""
-        if frt_en_creneau_agent is not None:
-            ligne["1re réponse (en créneau)"] = formater_duree(frt_en_creneau_agent)
-            niveau_reponse_agent = niveau_reponse_ouvree(frt_en_creneau_agent)
-
-        lignes_agents_avec_niveaux.append((ligne, niveau_reponse_agent, niveau_macro(macro_agent)))
-
-    def obtenir_tickets_agent_avec_niveaux(item):
-        ligne_agent, niveau_reponse_item, niveau_macro_item = item
-        return ligne_agent["Tickets"]
-
-    lignes_agents_avec_niveaux_triees = sorted(
-        lignes_agents_avec_niveaux, key=obtenir_tickets_agent_avec_niveaux, reverse=True
+    st.caption(
+        "Le volume rapporté aux heures planifiées décrit la charge observée ; il ne constitue pas une "
+        "mesure de performance. Le type de dossiers traité peut fortement modifier le rythme de "
+        "traitement -- voir la répartition par catégorie ci-dessous et le détail par agent."
     )
 
-    lignes_agents_triees = []
-    niveaux_reponse_agents = []
-    niveaux_macro_agents = []
-    for ligne_agent, niveau_reponse_item, niveau_macro_item in lignes_agents_avec_niveaux_triees:
-        lignes_agents_triees.append(ligne_agent)
-        niveaux_reponse_agents.append(niveau_reponse_item)
-        niveaux_macro_agents.append(niveau_macro_item)
+    roster_agents = construire_roster_agents(tickets_s2, planning_s2, evenements_calendrier, date_a_debut, date_a_fin)
+
+    n_tickets_non_assignes = 0
+    for ticket_verif_assignee in tickets_s2:
+        if ticket_verif_assignee["assignee"] is None:
+            n_tickets_non_assignes = n_tickets_non_assignes + 1
+    if n_tickets_non_assignes > 0:
+        st.caption(str(n_tickets_non_assignes) + " ticket(s) non assigné(s) cette période (non inclus ci-dessous).")
+
+    # ---- Lecture de l'équipe (factuelle, jamais un classement -- Étape 5C.1) ----
+    # Étape 6E, section 15 : panneau éditorial 6D, texte inchangé, aucun jugement ajouté.
+    st.markdown(titre_section_principale("Lecture de l'équipe"), unsafe_allow_html=True)
+    st.markdown(construire_bandeau_info(construire_lecture_equipe_agents(roster_agents)), unsafe_allow_html=True)
+
+    # ---- Table principale : 6 colonnes, ordre alphabétique (jamais par volume/CSAT), aucune
+    # couleur bon/mauvais -- la charge relative et le CSAT+n remplacent le champ "Profil" supprimé.
+    lignes_table_agents = []
+    for ligne_roster in roster_agents:
+        agent_ligne = ligne_roster["agent"]
+        tickets_agent_ligne = ligne_roster["tickets"]
+        heures_ligne = ligne_roster["heures_planifiees"]
+        statut_ligne = ligne_roster["statut"]
+        nb_tickets_ligne = len(tickets_agent_ligne)
+
+        if statut_ligne == STATUT_AGENT_ABSENT:
+            if ligne_roster["evenement_absence"] is not None:
+                texte_presence = ligne_roster["evenement_absence"]["nom_evenement"]
+            else:
+                texte_presence = "Non planifié cette période"
+        elif statut_ligne == STATUT_AGENT_RENFORT_NON_PLANIFIE:
+            texte_presence = "Non planifié (activité observée)"
+        else:
+            texte_presence = str(heures_ligne) + "h planifiées"
+
+        charge_ligne = charge_relative_agent(nb_tickets_ligne, heures_ligne)
+        if charge_ligne is not None:
+            texte_charge = str(round(charge_ligne, 1))
+        else:
+            texte_charge = "N/A"
+
+        mix_ligne = mix_pct_agent(tickets_agent_ligne)
+        if len(mix_ligne) > 0:
+            mix_principal_ligne = categorie_dominante_mix_tendances(mix_ligne)
+        else:
+            mix_principal_ligne = "N/A"
+
+        csat_agent_ligne = moyenne(tickets_agent_ligne, "csat")
+        n_csat_agent_ligne = 0
+        for ticket_csat_ligne in tickets_agent_ligne:
+            if ticket_csat_ligne["csat"] is not None:
+                n_csat_agent_ligne = n_csat_agent_ligne + 1
+        if csat_agent_ligne is not None:
+            texte_csat_ligne = formater_csat(csat_agent_ligne) + " (n=" + str(n_csat_agent_ligne) + ")"
+        else:
+            texte_csat_ligne = "N/A"
+
+        lignes_table_agents.append({
+            "Agent": agent_ligne,
+            "Présence": texte_presence,
+            "Tickets": nb_tickets_ligne,
+            "Tickets / h planifiée": texte_charge,
+            "Mix principal": mix_principal_ligne,
+            "CSAT (n)": texte_csat_ligne,
+        })
 
     with st.container(border=True):
-        afficher_tableau_colore(
-            lignes_agents_triees,
-            colonne_figee="Agent",
-            colonnes_couleur_bloc={
-                "1re réponse (en créneau)": niveaux_reponse_agents,
-                "Utilisation macro (%)": niveaux_macro_agents,
-            },
-        )
+        afficher_tableau_colore(lignes_table_agents, colonne_figee="Agent")
 
+    # ---- Détail par agent : résumé factuel, puis catégorie -> sujet (architecture existante) ----
     st.markdown(titre_section_principale("Détail par agent"), unsafe_allow_html=True)
-    st.caption("D'abord par grande catégorie, puis choisis une catégorie pour voir le détail par sujet")
+    st.caption("D'abord un résumé et la répartition par catégorie, puis choisis une catégorie pour voir le détail par sujet.")
 
-    for agent, tickets_agent in par_agent.items():
-        if agent is not None:
-            agent_affiche = agent
-        else:
-            agent_affiche = "Non assigné"
+    for ligne_roster in roster_agents:
+        agent_detail = ligne_roster["agent"]
+        tickets_agent_detail = ligne_roster["tickets"]
 
-        with st.expander(agent_affiche):
-            categories_agent = grouper_par_categorie(tickets_agent)
+        if len(tickets_agent_detail) == 0:
+            continue  # rien à détailler pour un agent sans activité observée cette période
+
+        with st.expander(agent_detail):
+            heures_detail = ligne_roster["heures_planifiees"]
+            charge_detail = charge_relative_agent(len(tickets_agent_detail), heures_detail)
+            csat_detail = moyenne(tickets_agent_detail, "csat")
+            n_csat_detail = 0
+            for ticket_csat_detail in tickets_agent_detail:
+                if ticket_csat_detail["csat"] is not None:
+                    n_csat_detail = n_csat_detail + 1
+            resolution_detail = moyenne(tickets_agent_detail, "full_resolution_time_hours")
+            macro_detail = taux_rempli(tickets_agent_detail, "macro_applied")
+            role_detail = roles_periode.get(agent_detail, "—")
+
+            texte_resume_detail = role_detail + " · " + str(len(tickets_agent_detail)) + " tickets"
+            if charge_detail is not None:
+                texte_resume_detail = texte_resume_detail + " · " + str(round(charge_detail, 1)) + " tickets/h planifiée"
+            if csat_detail is not None:
+                texte_resume_detail = texte_resume_detail + " · CSAT " + formater_csat(csat_detail) + " (n=" + str(n_csat_detail) + ")"
+            if resolution_detail is not None:
+                texte_resume_detail = texte_resume_detail + " · résolution moyenne " + formater_duree(resolution_detail * 60)
+            if macro_detail is not None:
+                texte_resume_detail = texte_resume_detail + " · macro " + formater_pourcentage(macro_detail)
+            st.caption(texte_resume_detail)
+            st.caption(
+                "Les temps de résolution dépendent fortement du type de demande : SAV et dossiers "
+                "impliquant des tiers peuvent rester ouverts plusieurs jours."
+            )
+
+            categories_agent = grouper_par_categorie(tickets_agent_detail)
 
             lignes_categories_agent = []
             for categorie, tickets_cat_agent in categories_agent.items():
@@ -2293,7 +2447,7 @@ with onglet_agents:
 
             noms_categories_agent = list(categories_agent.keys())
             categorie_choisie = st.selectbox(
-                "Détail par sujet pour :", noms_categories_agent, key="categorie_" + agent_affiche
+                "Détail par sujet pour :", noms_categories_agent, key="categorie_" + agent_detail
             )
 
             tickets_cat_choisie = categories_agent[categorie_choisie]
@@ -2331,190 +2485,266 @@ with onglet_agents:
             lignes_sujets_agent_triees = sorted(lignes_sujets_agent, key=obtenir_tickets, reverse=True)
             st.dataframe(lignes_sujets_agent_triees, hide_index=True, width="stretch")
 
+    # ---- Évolution d'un agent (Étape 5C.1, section 26-31) : uniquement les observations où
+    # l'agent a une activité réelle, jamais un point fabriqué pendant une absence ou avant son
+    # arrivée. Aucune fuite du futur (exports bornés à date_a_fin, même discipline que 4B/5B).
+    st.markdown(titre_section_principale("Évolution d'un agent"), unsafe_allow_html=True)
+    st.caption(
+        "Observations disponibles où l'agent a une activité réelle uniquement -- jamais un point "
+        "artificiel pendant une absence ou avant son arrivée dans l'équipe."
+    )
 
-SEUIL_TOP_ALERTES = 6
+    agents_pour_historique = []
+    for ligne_roster in roster_agents:
+        if len(ligne_roster["tickets"]) > 0:
+            agents_pour_historique.append(ligne_roster["agent"])
+
+    if len(agents_pour_historique) == 0:
+        st.caption("Aucun agent actif sur cette période.")
+    else:
+        agent_choisi_historique = st.selectbox("Voir l'évolution de :", agents_pour_historique, key="agent_historique_selectbox")
+
+        exports_avec_donnees_historique_agent = []
+        for date_export_hist_agent, chemin_hist_agent in exports_disponibles:
+            if date_export_hist_agent <= date_a_fin:
+                tickets_fichier_hist_agent = charger_tickets(chemin_hist_agent)
+                planning_fichier_hist_agent = charger_planning(chemin_hist_agent)
+                exports_avec_donnees_historique_agent.append((
+                    date_export_hist_agent, date_export_hist_agent + datetime.timedelta(days=6),
+                    tickets_fichier_hist_agent, planning_fichier_hist_agent,
+                ))
+
+        historique_agent_choisi = construire_historique_agent(exports_avec_donnees_historique_agent, agent_choisi_historique)
+
+        if len(historique_agent_choisi) <= 1:
+            st.caption("Pas encore assez d'observations disponibles pour cet agent pour tracer une évolution.")
+        else:
+            lignes_historique_agent_choisi = []
+            for item_historique_agent in historique_agent_choisi:
+                lignes_historique_agent_choisi.append({
+                    "Date": item_historique_agent["date_debut"],
+                    "Charge (tickets/h)": item_historique_agent["charge_relative"],
+                    "CSAT": item_historique_agent["csat"],
+                    "n (CSAT)": item_historique_agent["n_csat"],
+                })
+            tableau_historique_agent_choisi = pd.DataFrame(lignes_historique_agent_choisi)
+
+            st.markdown("**Charge observée (tickets / heure planifiée)**")
+            graphique_charge_agent_choisi = configurer_apparence_graphique(
+                alt.Chart(tableau_historique_agent_choisi).mark_line(point=True, strokeDash=[4, 4]).encode(
+                    x=alt.X("Date:T", title=None),
+                    y=alt.Y("Charge (tickets/h):Q"),
+                    color=alt.value(COULEUR_PRIMAIRE),
+                    tooltip=["Date:T", alt.Tooltip("Charge (tickets/h):Q", format=".1f")],
+                ).properties(height=220)
+            )
+            with st.container(border=True):
+                st.altair_chart(graphique_charge_agent_choisi, width="stretch")
+
+            st.markdown("**CSAT**")
+            graphique_csat_agent_choisi = configurer_apparence_graphique(
+                alt.Chart(tableau_historique_agent_choisi).mark_line(point=True, strokeDash=[4, 4]).encode(
+                    x=alt.X("Date:T", title=None),
+                    y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
+                    color=alt.value(COULEUR_SECONDAIRE),
+                    tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "n (CSAT):Q"],
+                ).properties(height=220)
+            )
+            with st.container(border=True):
+                st.altair_chart(graphique_csat_agent_choisi, width="stretch")
 
 
-def construire_carte_alerte(alerte):
+
+# Carte neutre pour une piste d'amélioration -- pas d'accent coloré (bordure fine standard, comme
+# construire_carte_kpi sans accent), volontairement pas l'esthétique "alerte critique" de l'ancien
+# onglet (Étape 5D.1, section 39). QUOI / POURQUOI / PISTE seulement, jamais "cause" ni "action"
+# prescriptive (section 27). Une piste n'est pas un signal -- jamais construire_carte_signal avec
+# un statut coloré ici (Étape 6E, section 23) ; tokens 6C alignés sur RADIUS_CARTE/ESPACE_M/ESPACE_S
+# en 6E, sans changer le langage visuel déjà validé en 5D.1.
+def construire_carte_piste_actions(piste, quoi, pourquoi):
     return (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
-        "border-left:6px solid " + COULEUR_ACCENT_CRITIQUE + '; border-radius:10px; padding:14px 16px; margin-bottom:10px;">'
-        '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + alerte["quoi"] + "</div>"
-        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:5px;"><b>Pourquoi</b> : '
-        + alerte["pourquoi"] + "</div>"
-        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:2px;"><b>Cause probable</b> : '
-        + alerte["cause"] + "</div>"
-        '<div style="font-size:12px; font-weight:600; color:' + COULEUR_ACCENT_CRITIQUE + '; margin-top:5px;">'
-        "<b>Action</b> : " + alerte["action"] + "</div>"
+        "border-radius:" + RADIUS_CARTE + "; padding:14px " + ESPACE_M + "; margin-bottom:" + ESPACE_S + ';">'
+        '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + quoi + "</div>"
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:5px;"><b>Observé</b> : '
+        + pourquoi + "</div>"
+        '<div style="font-size:12px; font-weight:600; color:' + COULEUR_PRIMAIRE + '; margin-top:5px;">'
+        + piste["piste"] + "</div>"
         "</div>"
     )
 
 
-# Catégorie où CSAT ET délai se dégradent ensemble — le score pondère par le volume concerné
-# (une dégradation sur 5 tickets ne mérite pas la même place qu'une dégradation sur 80).
-def construire_candidats_categorie(categories_s2, categories_s1):
-    candidats = []
-    for categorie, tickets_cat_s2 in categories_s2.items():
-        tickets_cat_s1 = categories_s1.get(categorie, [])
-        if len(tickets_cat_s1) == 0:
-            continue
-
-        csat_cat_s1 = moyenne(tickets_cat_s1, "csat")
-        csat_cat_s2 = moyenne(tickets_cat_s2, "csat")
-        frt_cat_s1 = moyenne(tickets_cat_s1, "first_reply_time_min")
-        frt_cat_s2 = moyenne(tickets_cat_s2, "first_reply_time_min")
-
-        if csat_cat_s1 is None or csat_cat_s2 is None or frt_cat_s1 is None or frt_cat_s2 is None:
-            continue
-
-        delta_csat = csat_cat_s2 - csat_cat_s1
-        delta_frt = frt_cat_s2 - frt_cat_s1
-        if delta_csat >= 0 or delta_frt <= 0:
-            continue
-
-        volume = len(tickets_cat_s2)
-        candidats.append({
-            "quoi": (
-                categorie + " — CSAT " + formater_csat(csat_cat_s1) + " → " + formater_csat(csat_cat_s2)
-                + ", 1re réponse " + formater_duree(frt_cat_s1) + " → " + formater_duree(frt_cat_s2)
-            ),
-            "pourquoi": (
-                "CSAT et délai de 1re réponse se dégradent ensemble sur " + str(volume) + " tickets — "
-                "signal plus fiable qu'une seule métrique isolée."
-            ),
-            "cause": "à confirmer avec les événements de la période (onglet Vue d'ensemble).",
-            "action": "Ouvrir Vue d'ensemble pour isoler quels sujets de " + categorie + " tirent la dégradation.",
-            "score": volume * (abs(delta_csat) + delta_frt / 60),
-        })
-    return candidats
-
-
-def construire_candidats_macro(suggestions_creation, suggestions_amelioration):
-    candidats = []
-    for ligne in suggestions_creation:
-        candidats.append({
-            "quoi": (
-                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, CSAT " + ligne["CSAT"]
-                + ", quasi aucune macro utilisée"
-            ),
-            "pourquoi": (
-                "Volume suffisant et satisfaction insuffisante, sans réponse-type en place — le traitement "
-                "repose sur chaque agent individuellement."
-            ),
-            "cause": "Aucune macro n'existe encore pour ce sujet.",
-            "action": "Créer une macro pour « " + ligne["Sujet"] + " ».",
-            "score": ligne["Tickets"] * 3,
-        })
-    for ligne in suggestions_amelioration:
-        candidats.append({
-            "quoi": (
-                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, CSAT " + ligne["CSAT"]
-                + ", macro déjà bien utilisée"
-            ),
-            "pourquoi": (
-                "La macro est utilisée mais la satisfaction reste insuffisante — le contenu ou le process, "
-                "pas l'adoption, semble en cause."
-            ),
-            "cause": "à investiguer : contenu de la macro ou nature du problème sous-jacent.",
-            "action": "Relire la macro de « " + ligne["Sujet"] + " » et vérifier si le problème dépasse ce "
-            "qu'une réponse-type peut résoudre.",
-            "score": ligne["Tickets"] * 3.5,
-        })
-    return candidats
-
-
-def construire_candidats_faq(suggestions_faq):
-    candidats = []
-    for ligne in suggestions_faq:
-        candidats.append({
-            "quoi": (
-                "« " + ligne["Sujet"] + " » — " + str(ligne["Tickets"]) + " tickets, " + ligne["Échanges moyens"]
-                + " échanges en moyenne"
-            ),
-            "pourquoi": (
-                "La résolution demande plusieurs allers-retours — signe qu'une information manque au client "
-                "dès le premier contact."
-            ),
-            "cause": "Pas de FAQ/page d'aide dédiée à ce sujet actuellement.",
-            "action": "Créer une FAQ pour « " + ligne["Sujet"] + " ».",
-            "score": ligne["Tickets"] * float(ligne["Échanges moyens"]),
-        })
-    return candidats
-
-
-def construire_candidats_verbatims(sujets_verbatims_tries):
-    candidats = []
-    for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
-        candidats.append({
-            "quoi": (
-                "« " + sujet + " » — " + str(len(tickets_sujet_verbatims)) + " commentaires clients à CSAT très bas"
-            ),
-            "pourquoi": "Volume de retours négatifs assez important pour être un irritant récurrent, pas un client isolé.",
-            "cause": "voir le détail qualitatif des commentaires plus bas.",
-            "action": "Lire les verbatims de « " + sujet + " » pour qualifier l'irritant exact.",
-            "score": len(tickets_sujet_verbatims) * 2,
-        })
-    return candidats
+# Étape 6E, section 24 : évite le "top arbitraire" identifié comme problème UX en 5D.1 (une
+# famille peut compter 14-17 pistes) sans jamais supprimer une piste -- aperçu des premières
+# (déjà triées par volume décroissant), le reste reste accessible dans un expander, jamais caché
+# sans accès.
+def afficher_cartes_avec_apercu(cartes_html, nombre_apercu, libelle_restantes):
+    cartes_apercu = cartes_html[:nombre_apercu]
+    cartes_restantes = cartes_html[nombre_apercu:]
+    for carte_html in cartes_apercu:
+        st.markdown(carte_html, unsafe_allow_html=True)
+    if len(cartes_restantes) > 0:
+        with st.expander("Voir les " + str(len(cartes_restantes)) + " autres " + libelle_restantes):
+            for carte_html in cartes_restantes:
+                st.markdown(carte_html, unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------
-# Onglet 4 : Alertes & suggestions
+# Onglet 4 : Actions & améliorations (ex "Alertes & suggestions", refondu Étape 5D.1)
 # ------------------------------------------------------------------
 
 with onglet_alertes:
+    st.subheader("Actions & améliorations")
+    st.caption(
+        "À partir des irritants et opportunités observés, quelles améliorations concrètes peut-on "
+        "explorer, qu'a-t-on déjà essayé, et qu'est-ce que cela semble avoir changé ?"
+    )
+
+    NOMBRE_PISTES_APERCU_ACTIONS = 5
+
+    suivi_suggestions = charger_suivi_suggestions(FICHIER_SUIVI_SUGGESTIONS)
+
     # ------------------------------------------------------------------
-    # Données — chaque générateur reste inchangé (mêmes seuils, mêmes calculs), simplement
-    # regroupé ici avant tout affichage pour pouvoir prioriser sur l'ensemble des candidats
-    # avant de décider ce qui mérite la place principale de la page.
+    # A. Pistes d'amélioration -- 3 familles indépendantes (Standardisation / Self-service /
+    # Retours clients), jamais comparées entre elles par un score : chacune a son propre critère
+    # de tri explicable (volume décroissant), affiché dans l'accordéon méthodologique ci-dessous.
     # ------------------------------------------------------------------
 
-    candidats_categorie = []
-    if comparaison_disponible:
-        candidats_categorie = construire_candidats_categorie(categories_s2, categories_s1)
+    pistes_standardisation = identifier_pistes_standardisation(
+        tickets_s2, suivi_suggestions, SEUIL_MINIMUM_SUJET, SEUIL_CSAT_INSATISFAISANT
+    )
+    pistes_self_service = identifier_pistes_self_service(
+        tickets_s2, suivi_suggestions, SEUIL_MINIMUM_SUJET, SEUIL_REPLIES_FAQ_ACTIONS
+    )
+    retours_clients_a_explorer = identifier_retours_clients_a_explorer(
+        tickets_s2, SEUIL_CSAT_VERBATIM_ACTIONS, SEUIL_VERBATIMS_GROUPE_ACTIONS
+    )
 
-    categories_resolution = {}
-    for ticket in tickets_s2:
-        if ticket["full_resolution_time_hours"] is None:
-            continue
-        categorie_ticket = categoriser(ticket)
-        if categorie_ticket in categories_resolution:
-            categories_resolution[categorie_ticket].append(ticket)
-        else:
-            categories_resolution[categorie_ticket] = [ticket]
+    st.markdown(titre_section_principale("Pistes d'amélioration"), unsafe_allow_html=True)
 
-    lignes_resolution_categorie = []
-    for categorie, tickets_categorie in categories_resolution.items():
-        resolution_moyenne = moyenne(tickets_categorie, "full_resolution_time_hours")
-        macro_categorie = taux_rempli(tickets_categorie, "macro_applied")
+    with st.expander("Comment les pistes sont identifiées"):
+        st.markdown(
+            "- **Standardisation** : sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets sur la "
+            "période, une satisfaction moyenne insuffisante, et une macro absente ou peu utilisée.\n"
+            "- **Self-service** : sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets et "
+            + str(SEUIL_REPLIES_FAQ_ACTIONS) + " échanges en moyenne ou plus pour être résolu.\n"
+            "- **Retours clients à explorer** : au moins " + str(SEUIL_VERBATIMS_GROUPE_ACTIONS) + " "
+            "commentaires clients à note très basse (" + str(SEUIL_CSAT_VERBATIM_ACTIONS) + "/5 ou moins) "
+            "portant sur le même sujet.\n"
+            "- Un sujet déjà marqué « Fait » dans le suivi des actions n'est pas reproposé comme "
+            "nouvelle piste de standardisation ou de self-service.\n"
+            "- Chaque famille est triée par volume décroissant, jamais comparée aux autres familles."
+        )
 
-        resolutions_types = grouper_par(tickets_categorie, "resolution_type")
-        resolution_principale = "—"
-        plus_grand_compte = 0
-        for type_resolution, tickets_type_resolution in resolutions_types.items():
-            if len(tickets_type_resolution) > plus_grand_compte:
-                plus_grand_compte = len(tickets_type_resolution)
-                resolution_principale = type_resolution
+    # Étape 6E, section 23-25 : les 3 familles restent distinguables par leur libellé (typo/label),
+    # pas par 3 couleurs -- toutes en carte neutre (construire_carte_piste_actions / carte_signal
+    # statut None), jamais Signal card "attention". Aperçu + expander (afficher_cartes_avec_apercu,
+    # section 24) évite qu'une famille à fort volume (ex. 14-17 pistes en janvier) écrase la page,
+    # sans jamais supprimer une piste.
+    total_pistes = len(pistes_standardisation) + len(pistes_self_service) + len(retours_clients_a_explorer)
+    if total_pistes == 0:
+        st.caption("Aucune nouvelle piste d'amélioration ne ressort sur cette observation.")
+    else:
+        if len(pistes_standardisation) > 0:
+            st.markdown("**Standardisation** — " + str(len(pistes_standardisation)) + " piste(s)")
+            cartes_standardisation = []
+            for piste in pistes_standardisation:
+                quoi = piste["sujet"] + " — " + str(piste["volume"]) + " tickets"
+                pourquoi = (
+                    "CSAT " + formater_csat(piste["csat"]) + ", usage macro "
+                    + formater_pourcentage(piste["usage_macro_pct"])
+                )
+                cartes_standardisation.append(construire_carte_piste_actions(piste, quoi, pourquoi))
+            afficher_cartes_avec_apercu(cartes_standardisation, NOMBRE_PISTES_APERCU_ACTIONS, "piste(s) de standardisation")
 
-        if macro_categorie < SEUIL_MACRO_BASSE:
-            commentaire_macro = "Peu/pas de macro utilisée"
-        else:
-            commentaire_macro = "Macro bien utilisée"
+        if len(pistes_self_service) > 0:
+            st.markdown("**Self-service** — " + str(len(pistes_self_service)) + " piste(s)")
+            cartes_self_service = []
+            for piste in pistes_self_service:
+                quoi = piste["sujet"] + " — " + str(piste["volume"]) + " tickets"
+                pourquoi = str(round(piste["echanges_moyens"], 1)) + " échanges en moyenne"
+                if piste["csat"] is not None:
+                    pourquoi = pourquoi + ", CSAT " + formater_csat(piste["csat"])
+                cartes_self_service.append(construire_carte_piste_actions(piste, quoi, pourquoi))
+            afficher_cartes_avec_apercu(cartes_self_service, NOMBRE_PISTES_APERCU_ACTIONS, "piste(s) de self-service")
 
-        lignes_resolution_categorie.append({
-            "resolution_tri": resolution_moyenne,
-            "Catégorie": categorie,
-            "Tickets": len(tickets_categorie),
-            "Résolution moyenne": formater_duree(resolution_moyenne * 60),
-            "Résolution la plus fréquente": resolution_principale,
-            "Macro": commentaire_macro,
-        })
+        if len(retours_clients_a_explorer) > 0:
+            st.markdown("**Retours clients à explorer** — " + str(len(retours_clients_a_explorer)) + " sujet(s)")
+            st.caption("Voix client à investiguer, pas une conclusion causale — détail dans l'accordéon plus bas.")
+            cartes_retours_clients = []
+            for groupe in retours_clients_a_explorer:
+                titre_retour = groupe["sujet"] + " — " + str(groupe["volume"]) + " commentaire(s)"
+                corps_retour = "CSAT moyen sur ces retours : " + formater_csat(groupe["csat"])
+                cartes_retours_clients.append(construire_carte_signal(titre_retour, None, corps_retour))
+            afficher_cartes_avec_apercu(cartes_retours_clients, NOMBRE_PISTES_APERCU_ACTIONS, "sujet(s) de retours clients")
 
-    def obtenir_resolution_tri(ligne):
-        return ligne["resolution_tri"]
+    # ------------------------------------------------------------------
+    # B. Actions déjà menées -- suivi_suggestions.xlsx. "Fait" = action réalisée, pas succès garanti :
+    # aucun badge de couleur, l'écart avant/après (quand disponible) reste au conditionnel.
+    # ------------------------------------------------------------------
 
-    lignes_resolution_categorie_triees = sorted(lignes_resolution_categorie, key=obtenir_resolution_tri, reverse=True)
-    for ligne in lignes_resolution_categorie_triees:
-        del ligne["resolution_tri"]
+    # Étape 6E, section 30 : divider retiré -- titre_section_principale (liseré + marge) sépare déjà
+    # suffisamment les sections, cohérent avec Vue d'ensemble/Tendances/Agents (0 divider).
+    st.markdown(titre_section_principale("Actions déjà menées"), unsafe_allow_html=True)
+    st.caption(
+        "À partir du suivi manuel des actions. « Fait » signifie que l'action a été réalisée — pas que "
+        "le problème est résolu."
+    )
+
+    actions_menees = construire_actions_menees_actions(suivi_suggestions, tickets_historique_business, date_a_fin)
+
+    if len(actions_menees) == 0:
+        st.caption("Aucune action déjà menée n'est visible sur cette période.")
+    else:
+        # Étape 6E, section 26-28 : statut "positive" en accent léger (jamais "vert triomphant" --
+        # pas de grande surface colorée, juste un liseré) signale que l'action a été RÉALISÉE, pas
+        # qu'elle a réussi -- le texte d'impact reste neutre (aucune flèche colorée), donc aucune
+        # contradiction possible avec un résultat neutre ou non amélioré.
+        for action in actions_menees:
+            corps_action_html = ""
+            if action["notes"]:
+                corps_action_html = action["notes"]
+
+            impact = action["impact"]
+            if action["mesure_avant_disponible"] and action["mesure_apres_disponible"]:
+                texte_impact_action = (
+                    "Après la mise en place, le CSAT observé passe de " + formater_csat(impact["csat_avant"])
+                    + " à " + formater_csat(impact["csat_apres"]) + " (" + str(impact["volume_avant"])
+                    + " tickets avant, " + str(impact["volume_apres"]) + " après)."
+                )
+                texte_secondaire_action = TEXTE_PRUDENCE_AVANT_APRES_ACTIONS
+            else:
+                texte_impact_action = None
+                texte_secondaire_action = (
+                    "Pas assez de données avant et/ou après cette action, sur cette période, pour "
+                    "donner une lecture chiffrée."
+                )
+
+            if texte_impact_action is not None:
+                if corps_action_html != "":
+                    corps_action_html = corps_action_html + "<br>" + texte_impact_action
+                else:
+                    corps_action_html = texte_impact_action
+
+            if corps_action_html != "":
+                corps_action_html = corps_action_html + "<br>"
+            corps_action_html = corps_action_html + (
+                '<span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + texte_secondaire_action + "</span>"
+            )
+
+            badge_action = action["statut"] + " · " + action["date_action"].strftime("%d/%m/%Y")
+            st.markdown(
+                construire_carte_signal(action["sujet"], "positive", corps_action_html, badge=badge_action),
+                unsafe_allow_html=True,
+            )
+
+    # ------------------------------------------------------------------
+    # C/D. Détail et éléments d'investigation -- verbatims complets par sujet, tickets les plus longs
+    # à résoudre, macros/FAQ associées aux actions déjà menées. Rien de prescriptif, tout en retrait.
+    # ------------------------------------------------------------------
+
+    def obtenir_date_ticket(ticket):
+        return ticket["created_at"]
 
     def obtenir_resolution(ticket):
         return ticket["full_resolution_time_hours"]
@@ -2528,128 +2758,17 @@ with onglet_alertes:
 
     lignes_longs = []
     for ticket in tickets_tries_par_resolution[:10]:
-        lignes_longs.append(
-            {
-                "Ticket": ticket["ticket_id"],
-                "Agent": ticket["assignee"],
-                "Catégorie": categoriser(ticket),
-                "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
-                "Résolu par": ticket["resolution_type"],
-            }
-        )
-
-    sujets_s2 = grouper_par(tickets_s2, "subject_cluster")
-
-    suivi_suggestions = charger_suivi_suggestions(FICHIER_SUIVI_SUGGESTIONS)
-
-    suggestions_creation = []
-    suggestions_partielle = []
-    suggestions_amelioration = []
-
-    for sujet, tickets_sujet in sujets_s2.items():
-        volume = len(tickets_sujet)
-        if volume < SEUIL_MINIMUM_SUJET:
-            continue
-
-        csat_sujet = moyenne(tickets_sujet, "csat")
-        if csat_sujet is None or csat_sujet >= SEUIL_CSAT_INSATISFAISANT:
-            continue
-
-        entree_suivi = suivi_suggestions.get(sujet)
-        if entree_suivi is not None and entree_suivi["statut"] == "Fait" and entree_suivi["date_action"] is not None:
-            continue
-
-        macro_sujet = taux_rempli(tickets_sujet, "macro_applied")
-
-        ligne = {
-            "Sujet": sujet,
-            "Tickets": volume,
-            "CSAT": formater_csat(csat_sujet),
-            "Utilisation macro (%)": formater_pourcentage(macro_sujet),
-        }
-
-        if macro_sujet < SEUIL_MACRO_BASSE:
-            suggestions_creation.append(ligne)
-        elif macro_sujet >= SEUIL_MACRO_HAUTE:
-            suggestions_amelioration.append(ligne)
-        else:
-            suggestions_partielle.append(ligne)
-
-    suggestions_faq = []
-    for sujet, tickets_sujet in sujets_s2.items():
-        volume = len(tickets_sujet)
-        if volume < SEUIL_MINIMUM_SUJET:
-            continue
-
-        entree_suivi = suivi_suggestions.get(sujet)
-        if entree_suivi is not None and entree_suivi["statut"] == "Fait" and entree_suivi["date_action"] is not None:
-            continue
-
-        replies_moyen = moyenne(tickets_sujet, "replies")
-        if replies_moyen is None or replies_moyen < SEUIL_REPLIES_FAQ:
-            continue
-
-        suggestions_faq.append({
-            "Sujet": sujet,
-            "Tickets": volume,
-            "Échanges moyens": str(round(replies_moyen, 1)),
+        lignes_longs.append({
+            "Ticket": ticket["ticket_id"],
+            "Agent": ticket["assignee"],
+            "Catégorie": categoriser(ticket),
+            "Résolution": formater_duree(ticket["full_resolution_time_hours"] * 60),
+            "Résolu par": ticket["resolution_type"],
         })
 
-    tickets_verbatims = []
-    for ticket in tickets_s2:
-        csat_ticket = ticket["csat"]
-        commentaire = ticket["csat_comment"]
-        if csat_ticket is not None and csat_ticket <= SEUIL_CSAT_VERBATIM and commentaire:
-            tickets_verbatims.append(ticket)
-
-    sujets_verbatims = grouper_par(tickets_verbatims, "subject_cluster")
-
-    sujets_verbatims_significatifs = []
-    for sujet, tickets_sujet_verbatims in sujets_verbatims.items():
-        if len(tickets_sujet_verbatims) >= SEUIL_VERBATIMS_GROUPE:
-            sujets_verbatims_significatifs.append((sujet, tickets_sujet_verbatims))
-
-    def obtenir_compte_verbatims(item):
-        sujet, tickets_sujet = item
-        return len(tickets_sujet)
-
-    sujets_verbatims_tries = sorted(sujets_verbatims_significatifs, key=obtenir_compte_verbatims, reverse=True)
-
-    def obtenir_date_ticket(ticket):
-        return ticket["created_at"]
-
-    sujets_traites = []
-    for sujet, entree in suivi_suggestions.items():
-        if entree["statut"] == "Fait" and entree["date_action"] is not None:
-            sujets_traites.append((sujet, entree))
-
-    lignes_suivi = []
-    if len(sujets_traites) > 0:
-        sujets_historique = grouper_par(tickets_historique_business, "subject_cluster")
-
-        for sujet, entree in sujets_traites:
-            tickets_sujet_historique = sujets_historique.get(sujet, [])
-            impact = impact_avant_apres(tickets_sujet_historique, entree["date_action"])
-
-            notes = entree["notes"]
-            if notes is None:
-                notes = ""
-
-            lignes_suivi.append({
-                "Sujet": sujet,
-                "Date action": entree["date_action"].strftime("%d/%m/%Y"),
-                "Tickets avant": impact["volume_avant"],
-                "Tickets après": impact["volume_apres"],
-                "CSAT avant": formater_csat(impact["csat_avant"]),
-                "CSAT après": formater_csat(impact["csat_apres"]),
-                "Utilisation macro avant (%)": formater_pourcentage(impact["macro_avant"]),
-                "Utilisation macro après (%)": formater_pourcentage(impact["macro_apres"]),
-                "Notes": notes,
-            })
-
     lignes_macros_associees = []
-    for sujet, entree in sujets_traites:
-        code_macro = extraire_code_macro(entree["notes"])
+    for action in actions_menees:
+        code_macro = extraire_code_macro(action["notes"])
         texte_macro = charger_texte_macro(code_macro, DOSSIER_MACROS)
         if texte_macro is not None:
             nom_fichier_faq = extraire_nom_fichier_faq(texte_macro)
@@ -2660,154 +2779,48 @@ with onglet_alertes:
                     faq_associee = nom_fichier_faq
 
             lignes_macros_associees.append({
-                "Sujet": sujet,
+                "Sujet": action["sujet"],
                 "Macro": code_macro,
                 "FAQ associée": faq_associee,
             })
 
-    # ------------------------------------------------------------------
-    # Alertes prioritaires — jusqu'à SEUIL_TOP_ALERTES, classées par sévérité × impact,
-    # à partir de tous les générateurs ci-dessus. Le reste (toujours calculé, jamais perdu)
-    # est accessible dans "Voir plus" plus bas, pas supprimé.
-    # ------------------------------------------------------------------
-
-    candidats_alertes = (
-        candidats_categorie
-        + construire_candidats_macro(suggestions_creation, suggestions_amelioration)
-        + construire_candidats_faq(suggestions_faq)
-        + construire_candidats_verbatims(sujets_verbatims_tries)
-    )
-    candidats_alertes_tries = sorted(candidats_alertes, key=obtenir_score_insight, reverse=True)
-    alertes_prioritaires = candidats_alertes_tries[:SEUIL_TOP_ALERTES]
-
-    st.markdown(titre_section_principale("Alertes prioritaires"), unsafe_allow_html=True)
-    st.caption(
-        "Classées par sévérité et volume concerné, tous générateurs confondus (dégradation catégorie, "
-        "macro/FAQ manquante, verbatims négatifs). Pas de liste exhaustive — le reste est dans "
-        "\"Voir plus\" plus bas."
-    )
-    if len(alertes_prioritaires) > 0:
-        for alerte in alertes_prioritaires:
-            st.markdown(construire_carte_alerte(alerte), unsafe_allow_html=True)
-    else:
-        st.caption("Aucune alerte prioritaire sur cette période.")
-
-    if len(candidats_alertes_tries) > SEUIL_TOP_ALERTES:
-        st.caption(
-            str(len(candidats_alertes_tries) - SEUIL_TOP_ALERTES) + " alerte(s) supplémentaire(s) de "
-            "moindre priorité — voir \"Voir plus\" plus bas."
-        )
-
-    st.divider()
-    st.markdown(titre_section_principale("Temps de résolution par catégorie"), unsafe_allow_html=True)
-    st.caption(
-        "Trié par temps de résolution moyen, du plus long au plus court — la vraie question n'est pas "
-        "\"quel ticket a traîné\" mais \"quelle catégorie prend le plus de temps à l'équipe\"."
-    )
-    with st.container(border=True):
-        st.dataframe(lignes_resolution_categorie_triees, hide_index=True, width="stretch")
-
-    with st.expander("Voir plus d'alertes et de détails"):
-        st.caption(
-            "Détail complet de chaque générateur d'alerte, y compris ce qui n'a pas été jugé prioritaire "
-            "ci-dessus — rien n'est supprimé, seulement démoté."
-        )
-
-        st.markdown("**Les 10 tickets les plus longs**")
-        st.dataframe(lignes_longs, hide_index=True, width="stretch")
-
-        st.markdown("**Dégradation par catégorie**")
-        if not comparaison_disponible:
-            st.caption("Active « Comparer à une autre période » dans la barre latérale pour voir ce signal.")
-        elif len(candidats_categorie) == 0:
-            st.caption("Aucune catégorie ne dégrade simultanément CSAT et temps de réponse sur cette période.")
+    with st.expander("Détail et éléments d'investigation"):
+        st.markdown("**Retours clients — commentaires détaillés**")
+        if len(retours_clients_a_explorer) == 0:
+            st.write("Aucun retour client à détailler sur cette période.")
         else:
-            candidats_categorie_tries = sorted(candidats_categorie, key=obtenir_score_insight, reverse=True)
-            for candidat in candidats_categorie_tries:
-                st.write("- " + candidat["quoi"])
-
-        st.markdown("**Suggestions - macro à créer**")
-        st.caption(
-            "Sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets, CSAT < "
-            + str(SEUIL_CSAT_INSATISFAISANT) + ", quasi aucune macro utilisée"
-        )
-        afficher_tableau_colore(suggestions_creation)
-
-        st.markdown("**Suggestions - macro à renforcer (adoption partielle)**")
-        st.caption(
-            "Utilisation macro entre " + str(SEUIL_MACRO_BASSE) + " % et " + str(SEUIL_MACRO_HAUTE) + " % "
-            "et CSAT insatisfaisant — la macro existe mais n'est pas assez systématiquement utilisée."
-        )
-        afficher_tableau_colore(suggestions_partielle)
-
-        st.markdown("**Suggestions - macro / process à améliorer**")
-        st.caption("Macro déjà bien utilisée mais CSAT insatisfaisant quand même.")
-        afficher_tableau_colore(suggestions_amelioration)
-
-        st.markdown("**Suggestions - FAQ à créer**")
-        st.caption(
-            "Sujet avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets et " + str(SEUIL_REPLIES_FAQ)
-            + " échanges en moyenne ou plus."
-        )
-        afficher_tableau_colore(suggestions_faq)
-
-        st.markdown("**Verbatims clients (CSAT bas)**")
-        st.caption(
-            "CSAT ≤ " + str(SEUIL_CSAT_VERBATIM) + ", un sujet n'est affiché qu'à partir de "
-            + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires. Les 3 commentaires les plus "
-            "récents sont affichés par sujet."
-        )
-        if len(sujets_verbatims_tries) == 0:
-            st.write(
-                "Aucun sujet avec au moins " + str(SEUIL_VERBATIMS_GROUPE) + " commentaires similaires sur "
-                "cette période."
-            )
-        else:
-            for sujet, tickets_sujet_verbatims in sujets_verbatims_tries:
-                tickets_recents = sorted(tickets_sujet_verbatims, key=obtenir_date_ticket, reverse=True)[:3]
-
-                titre_expander = sujet + " (" + str(len(tickets_sujet_verbatims)) + " commentaire(s))"
+            for groupe in retours_clients_a_explorer:
+                tickets_recents = sorted(groupe["tickets"], key=obtenir_date_ticket, reverse=True)[:3]
+                titre_expander = groupe["sujet"] + " (" + str(groupe["volume"]) + " commentaire(s))"
                 with st.expander(titre_expander):
                     lignes_verbatims_sujet = []
                     for ticket in tickets_recents:
                         lignes_verbatims_sujet.append({
-                            "CSAT": ticket["csat"],
+                            # Étape 6J, section 12 : dette connue -- affichait la valeur numérique
+                            # brute au lieu de passer par formater_csat (convention "4,05" partout
+                            # ailleurs). Purement présentationnel, aucune donnée changée.
+                            "CSAT": formater_csat(ticket["csat"]) if ticket["csat"] is not None else "N/A",
                             "Commentaire": ticket["csat_comment"],
                         })
                     st.dataframe(lignes_verbatims_sujet, hide_index=True, width="stretch")
 
-        st.markdown("**Mots fréquents (sujets à faible CSAT)**")
-        if len(suggestions_creation) == 0:
-            st.write("Aucun sujet signalé à faible CSAT sur cette période.")
-        else:
-            for ligne_suggestion in suggestions_creation:
-                sujet_signale = ligne_suggestion["Sujet"]
-                tickets_sujet_signale = sujets_s2.get(sujet_signale, [])
-                mots_top = mots_frequents(tickets_sujet_signale, "first_message", 5)
-
-                if len(mots_top) == 0:
-                    continue
-
-                texte_mots = ""
-                for i in range(len(mots_top)):
-                    mot, compte = mots_top[i]
-                    if i > 0:
-                        texte_mots = texte_mots + ", "
-                    texte_mots = texte_mots + mot + " (" + str(compte) + ")"
-
-                st.write("**" + sujet_signale + "** : " + texte_mots)
-
-        st.markdown("**Suivi des suggestions**")
-        st.caption(
-            "Sujets marqués « Fait » dans le fichier de suivi — impact mesuré avant/après la date "
-            "d'action, sur tout l'historique disponible (pas seulement la période affichée)."
-        )
-        afficher_tableau_colore(lignes_suivi)
+        st.markdown("**Les 10 tickets les plus longs à résoudre**")
+        st.dataframe(lignes_longs, hide_index=True, width="stretch")
 
         if len(lignes_macros_associees) > 0:
-            st.markdown("**Macros/FAQ associées**")
+            st.markdown("**Macros/FAQ créées lors d'actions déjà menées**")
             st.caption("Texte complet dans le CRM, pas dupliqué ici.")
             st.dataframe(lignes_macros_associees, hide_index=True, width="stretch")
+
+
+# La référence historique (Étape 5E.1) recharge et reconstruit une grille de pression pour
+# CHAQUE export antérieur disponible (jusqu'à 13 pour la période la plus récente) -- environ 15s
+# sans cache, systématiquement payé à CHAQUE rerun Streamlit (tous les onglets s'exécutent, visible
+# ou non). Mise en cache par (exports_disponibles, date_limite) : les fichiers ne changent pas
+# pendant l'exécution, donc un même couple ne peut produire qu'un seul résultat valide.
+@st.cache_data
+def _reference_historique_couverture_cache(exports_disponibles, date_limite):
+    return construire_reference_historique_couverture(exports_disponibles, date_limite)
 
 
 # ------------------------------------------------------------------
@@ -2815,7 +2828,9 @@ with onglet_alertes:
 # ------------------------------------------------------------------
 
 with onglet_creneaux:
-    st.markdown(titre_section_principale("Couverture & réactivité"), unsafe_allow_html=True)
+    st.subheader("Couverture")
+    # Étape 6G, section 4 : intro déjà existante et équivalente, reprise telle quelle -- pas de
+    # nouveau wording métier.
     st.caption("Sommes-nous disponibles aux bons moments et répondons-nous suffisamment vite ?")
     st.caption(DEFINITION_EN_CRENEAU)
 
@@ -2834,60 +2849,54 @@ with onglet_creneaux:
             part_hors_couverture_s1 = len(tickets_hors_tout_s1) / len(tickets_s1) * 100
 
     # ------------------------------------------------------------------
-    # Données de couverture partagées par plusieurs sections plus bas (grille heure x jour,
-    # taux SLA, répartition par canal, volume hors couverture) — calculées une seule fois ici.
+    # Données de couverture partagées -- grille de PRESSION (jour x heure), corrigée
+    # multi-semaines (Étape 5E.1 : la capacité est désormais sommée semaine par semaine, jamais
+    # la capacité de la seule dernière semaine appliquée à un volume cumulé), enrichie de la
+    # classification pression/tension relative à l'historique STRICTEMENT ANTÉRIEUR (no future
+    # leakage, même discipline que Tendances 4B). Step 1 (agents_en_poste, activite_observee,
+    # renfort_non_planifie) reste inchangé, appelé depuis outils.py.
     # ------------------------------------------------------------------
 
-    agents_grille = construire_agents_grille(tickets_s2, planning_s2_dernier)
+    agents_grille = construire_agents_grille_couverture(tickets_s2, planning_s2)
     horaires_standard = planning_s2_dernier.get(NOM_AGENT_DEFAUT, {})
-    grille_creneaux = construire_grille_creneaux(tickets_s2, planning_s2_dernier, agents_grille, horaires_standard)
+    grille_pression = construire_grille_pression_couverture(tickets_s2, planning_s2, agents_grille, horaires_standard)
 
-    totaux_jour = {}
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        totaux_jour[nom_jour] = 0
-    for entree in grille_creneaux:
-        totaux_jour[entree["jour"]] = totaux_jour[entree["jour"]] + entree["demandes"]
+    ratios_reference, frt_medians_reference = _reference_historique_couverture_cache(
+        exports_disponibles, date_a_debut
+    )
+    grille_enrichie = enrichir_grille_pression_tension_couverture(
+        grille_pression, en_creneau, ratios_reference, frt_medians_reference
+    )
 
-    jour_le_plus_charge = None
-    volume_max_jour = -1
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        if totaux_jour[nom_jour] > volume_max_jour:
-            volume_max_jour = totaux_jour[nom_jour]
-            jour_le_plus_charge = nom_jour
+    tensions = []
+    pressions_marquees_absorbees = []
+    activite_hors_capacite_materielle = []
+    for entree in grille_enrichie:
+        if entree["est_tension"]:
+            tensions.append(entree)
+        elif entree["niveau_pression"] in (NIVEAU_PRESSION_MARQUEE, NIVEAU_PRESSION_FORTE):
+            pressions_marquees_absorbees.append(entree)
+        if entree["niveau_pression"] == NIVEAU_ACTIVITE_HORS_CAPACITE_MATERIELLE:
+            activite_hors_capacite_materielle.append(entree)
 
-    creneau_le_plus_charge = None
-    ratio_max = -1
-    for entree in grille_creneaux:
-        if entree["ratio"] is not None and entree["ratio"] > ratio_max:
-            ratio_max = entree["ratio"]
-            creneau_le_plus_charge = entree
+    def obtenir_rang_pression_tri(entree):
+        rang = entree["rang_pression"]
+        if rang is None:
+            return -1
+        return rang
 
-    situations_tension = []
-    for entree in grille_creneaux:
-        if entree["niveau"] == "HOTSPOT":
-            situations_tension.append(entree)
-
-    def obtenir_ratio_tri_situation(entree):
-        if entree["ratio"] is None:
-            return float("inf")
-        return entree["ratio"]
-
-    situations_tension_triees = sorted(situations_tension, key=obtenir_ratio_tri_situation, reverse=True)
+    tensions_triees = sorted(tensions, key=obtenir_rang_pression_tri, reverse=True)
+    pressions_marquees_absorbees_triees = sorted(pressions_marquees_absorbees, key=obtenir_rang_pression_tri, reverse=True)
 
     taux_sla_global = taux_sla(tickets_s2, planning_s2)
     taux_sla_s1 = None
-    nb_tensions_s1 = None
     if comparaison_disponible:
         taux_sla_s1 = taux_sla(tickets_s1, planning_s1)
-        agents_grille_s1 = construire_agents_grille(tickets_s1, planning_s1_dernier)
-        horaires_standard_s1 = planning_s1_dernier.get(NOM_AGENT_DEFAUT, {})
-        grille_creneaux_s1 = construire_grille_creneaux(
-            tickets_s1, planning_s1_dernier, agents_grille_s1, horaires_standard_s1
-        )
-        nb_tensions_s1 = 0
-        for entree in grille_creneaux_s1:
-            if entree["niveau"] == "HOTSPOT":
-                nb_tensions_s1 = nb_tensions_s1 + 1
+
+    capacite_planifiee_heures = 0
+    for date_debut_semaine, date_fin_semaine, planning_semaine in planning_s2:
+        for agent in agents_grille:
+            capacite_planifiee_heures = capacite_planifiee_heures + heures_planifiees_agent(planning_semaine, agent)
 
     par_canal_en = grouper_par(en_creneau, "via_channel")
     par_canal_en_s1 = grouper_par(en_creneau_s1, "via_channel")
@@ -2954,10 +2963,24 @@ with onglet_creneaux:
     )
 
     # ------------------------------------------------------------------
-    # Synthèse de la période — 4 chiffres, la question directrice de tout l'onglet.
+    # A. Lecture de couverture -- 2-4 phrases data-driven, aucun nouveau calcul (Étape 5E.1).
     # ------------------------------------------------------------------
 
-    st.markdown(titre_section_principale("Synthèse de la période"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Lecture de couverture"), unsafe_allow_html=True)
+    st.markdown(
+        construire_bandeau_info(
+            construire_lecture_couverture(
+                len(tensions), len(pressions_marquees_absorbees), taux_sla_global, SLA_OBJECTIF_PCT,
+                hors_couverture_significatif,
+            )
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ------------------------------------------------------------------
+    # B. KPI compacts -- Demandes / Capacité planifiée / FRT en couverture / SLA. Étape 6G, section
+    # 36 : divider retiré, le bandeau ci-dessus sépare déjà suffisamment.
+    # ------------------------------------------------------------------
 
     colonne_s1, colonne_s2, colonne_s3, colonne_s4 = st.columns(4)
 
@@ -2975,9 +2998,38 @@ with onglet_creneaux:
             unsafe_allow_html=True,
         )
 
+    colonne_s2.markdown(
+        construire_carte_kpi("Capacité planifiée", formater_nombre_espace(round(capacite_planifiee_heures)) + " h"),
+        unsafe_allow_html=True,
+    )
+
+    frt_en_creneau_global = moyenne(en_creneau, "first_reply_time_min")
+    frt_en_creneau_global_s1 = None
+    if comparaison_disponible:
+        frt_en_creneau_global_s1 = moyenne(en_creneau_s1, "first_reply_time_min")
+
+    if frt_en_creneau_global is not None:
+        delta_frt_couverture = None
+        if frt_en_creneau_global_s1 is not None:
+            delta_frt_couverture = round(frt_en_creneau_global - frt_en_creneau_global_s1)
+
+        if delta_frt_couverture is not None:
+            colonne_s3.markdown(
+                construire_carte_kpi(
+                    "1re réponse (en créneau)", formater_duree(frt_en_creneau_global),
+                    delta=str(delta_frt_couverture) + " min", delta_couleur="inverse",
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            colonne_s3.markdown(
+                construire_carte_kpi("1re réponse (en créneau)", formater_duree(frt_en_creneau_global)),
+                unsafe_allow_html=True,
+            )
+
     if taux_sla_global is not None:
         if comparaison_disponible and taux_sla_s1 is not None:
-            colonne_s2.markdown(
+            colonne_s4.markdown(
                 construire_carte_kpi(
                     "SLA respecté", formater_pourcentage(taux_sla_global),
                     delta=round(taux_sla_global - taux_sla_s1, 1),
@@ -2985,64 +3037,159 @@ with onglet_creneaux:
                 unsafe_allow_html=True,
             )
         else:
-            colonne_s2.markdown(
+            colonne_s4.markdown(
                 construire_carte_kpi("SLA respecté", formater_pourcentage(taux_sla_global)),
                 unsafe_allow_html=True,
             )
 
-    if jour_le_plus_charge is not None:
-        if len(fichiers_actuels) > 1:
-            volume_jour_affiche = round(volume_max_jour / len(fichiers_actuels))
-            suffixe_jour = " demandes en moyenne"
-        else:
-            volume_jour_affiche = volume_max_jour
-            suffixe_jour = " demandes"
-        colonne_s3.markdown(
-            construire_carte_kpi(
-                "Jour le plus chargé", jour_le_plus_charge,
-                sous_texte=formater_nombre_espace(volume_jour_affiche) + suffixe_jour,
-            ),
-            unsafe_allow_html=True,
-        )
+    # ------------------------------------------------------------------
+    # C. Heatmap -- PRESSION demande / capacité (Étape 5E.1 : couleur = pression relative à
+    # l'historique, jamais une qualité de service jugée dans l'absolu).
+    # ------------------------------------------------------------------
 
-    if creneau_le_plus_charge is not None:
-        texte_creneau_max = (
-            creneau_le_plus_charge["jour"] + " " + str(creneau_le_plus_charge["heure"]) + "h-"
-            + str(creneau_le_plus_charge["heure"] + 1) + "h"
-        )
-        if len(fichiers_actuels) > 1:
-            ratio_affiche = ratio_max / len(fichiers_actuels)
-            suffixe_ratio = " demandes/agent en moyenne"
-        else:
-            ratio_affiche = ratio_max
-            suffixe_ratio = " demandes/agent"
-        colonne_s4.markdown(
-            construire_carte_kpi(
-                "Créneau habituellement le plus chargé", texte_creneau_max,
-                sous_texte=str(round(ratio_affiche, 1)) + suffixe_ratio,
-            ),
-            unsafe_allow_html=True,
-        )
+    st.markdown(titre_section_principale("Pression de charge (demande / capacité planifiée)"), unsafe_allow_html=True)
+    st.caption(
+        "Cette heatmap représente une PRESSION DE CHARGE relative à l'historique disponible — pas "
+        "une mesure de qualité de service : un créneau très sollicité peut rester bien absorbé (voir "
+        "« Créneaux à examiner » ci-dessous pour la distinction, légende détaillée sous la grille). "
+        "Les créneaux fermés (horaire standard, pause, week-end) sont grisés — ce volume est suivi à "
+        "part, agrégé sur la période, dans la section « Demande hors couverture » plus bas."
+    )
 
-    pic_exceptionnel = None
-    if creneau_le_plus_charge is not None:
-        pic_exceptionnel = detecter_pic_exceptionnel(
-            fichiers_actuels, agents_grille, creneau_le_plus_charge["ratio"],
-            creneau_le_plus_charge["jour"], creneau_le_plus_charge["heure"],
+    # Étape 6G, section 9 : typographie fonctionnelle relevée à 10px minimum (9px identifié en 6B) --
+    # tailles/couleurs seules changent, aucune donnée/logique de cellule touchée. hm-muted référençait
+    # encore un hex pré-6C (#B7AFA3, ancienne valeur de COULEUR_TEXTE_MUTED avant son assombrissement
+    # en 6C) au lieu du token courant -- corrigé (Étape 6G, section 33/36).
+    html_heatmap = (
+        "<style>"
+        ".hm-grid { display: grid; grid-template-columns: 40px repeat(7, 1fr); gap: 3px; margin-bottom: 8px; }"
+        ".hm-day-header, .hm-hour-label, .hm-corner { font-size: 10px; font-weight: 600; color: " + COULEUR_TEXTE_LABEL + "; "
+        "display: flex; align-items: center; justify-content: center; padding: 2px; }"
+        ".hm-cell { border-radius: 5px; padding: 3px 4px; text-align: center; line-height: 1.25; "
+        "min-height: 40px; display: flex; flex-direction: column; justify-content: center; }"
+        ".hm-cell-bande { min-height: 22px; }"
+        ".hm-line-agents { font-weight: 600; font-size: 10px; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-line-demandes { font-size: 10px; color: " + COULEUR_TEXTE_LABEL + "; }"
+        ".hm-line-ratio { font-size: 10px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
+        ".hm-line-tension { font-size: 10px; font-weight: 700; color: " + COULEUR_ACCENT_SURVEILLER + "; margin-top: 1px; }"
+        ".hm-muted { font-size: 10px; color: " + COULEUR_TEXTE_MUTED + "; }"
+        "</style>"
+    )
+
+    html_heatmap = html_heatmap + '<div class="hm-grid">' + '<div class="hm-corner"></div>'
+    for nom_jour, numero_jour in JOURS_ORDRE:
+        html_heatmap = html_heatmap + '<div class="hm-day-header">' + nom_jour[:3] + "</div>"
+
+    grille_par_jour_heure = {}
+    for entree in grille_enrichie:
+        grille_par_jour_heure[(entree["jour"], entree["heure"])] = entree
+
+    premiere_ouverture, derniere_fermeture = determiner_bornes_ouverture(horaires_standard)
+    bandes_heatmap = construire_bandes_heatmap(premiere_ouverture, derniere_fermeture)
+
+    for type_bande, heure_debut_bande, heure_fin_bande in bandes_heatmap:
+        if type_bande == "HEURE":
+            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + str(heure_debut_bande) + "h</div>"
+            for nom_jour, numero_jour in JOURS_ORDRE:
+                entree = grille_par_jour_heure[(nom_jour, heure_debut_bande)]
+                html_heatmap = html_heatmap + construire_cellule_pression_couverture(entree)
+        else:
+            if type_bande == "AVANT_OUVERTURE":
+                label_bande = "<" + str(heure_fin_bande) + "h"
+            else:
+                label_bande = str(heure_debut_bande) + "h+"
+            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + label_bande + "</div>"
+            for nom_jour, numero_jour in JOURS_ORDRE:
+                demandes_bande = 0
+                for heure_b in range(heure_debut_bande, heure_fin_bande):
+                    demandes_bande = demandes_bande + grille_par_jour_heure[(nom_jour, heure_b)]["demandes"]
+                html_heatmap = html_heatmap + construire_cellule_heatmap_bande(demandes_bande)
+
+    html_heatmap = html_heatmap + "</div>"
+
+    with st.container(border=True):
+        st.markdown(html_heatmap, unsafe_allow_html=True)
+
+    # Étape 6G, section 15 : légende explicite, PRESSION et TENSION documentées séparément -- le
+    # lecteur ne doit jamais lire la couleur de fond comme une performance d'agent (section 16 :
+    # aucune couleur individuelle par agent non plus, les prénoms restent du texte simple partout).
+    html_legende_pression = (
+        '<div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:12px; '
+        "color:" + COULEUR_TEXTE_LABEL + '; margin:8px 0 4px;">'
+        '<span style="font-weight:600;">Fond = pression :</span>'
+    )
+    # Étape 6J, section 32 : "libelle_niveau" évitée comme nom de boucle -- collision avec la
+    # fonction globale libelle_niveau() (outils.py), qui écrasait la référence pour tout le reste
+    # du script et faisait planter afficher_tableau_colore() plus loin ("'str' object is not
+    # callable"). P0 visuel trouvé et corrigé pendant cette étape.
+    for libelle_niveau_legende, couleur_niveau_legende in (
+        (NIVEAU_PRESSION_HABITUELLE, COULEUR_HEATMAP_CONFORTABLE),
+        (NIVEAU_PRESSION_MARQUEE, COULEUR_HEATMAP_SURVEILLER),
+        (NIVEAU_PRESSION_FORTE, COULEUR_HEATMAP_PRESSION_FORTE),
+        (NIVEAU_ACTIVITE_HORS_CAPACITE_MATERIELLE, COULEUR_HEATMAP_HOTSPOT),
+        ("Fermé / hors couverture", COULEUR_HEATMAP_HORS_COUVERTURE),
+    ):
+        html_legende_pression = html_legende_pression + (
+            '<span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; '
+            "background-color:" + couleur_niveau_legende + "; margin-right:5px; vertical-align:middle; "
+            'border:1px solid ' + COULEUR_BORDURE_CARTE + ';"></span>' + libelle_niveau_legende + "</span>"
         )
-    if pic_exceptionnel is not None:
+    html_legende_pression = html_legende_pression + (
+        '<span style="color:' + COULEUR_ACCENT_SURVEILLER + '; font-weight:700;">⚠ Tension : réactivité '
+        "locale dégradée — indépendant de la couleur de fond, voir « Tensions à examiner » ci-dessous.</span>"
+        "</div>"
+    )
+    st.markdown(html_legende_pression, unsafe_allow_html=True)
+
+    st.caption(
+        "Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau. Les "
+        "heures avant l'ouverture et après la fermeture sont regroupées en un seul bloc — volume "
+        "cumulé sur la plage, sans détail heure par heure."
+    )
+
+    # ------------------------------------------------------------------
+    # D. Créneaux à examiner -- séparation explicite pression-seule (absorbée) / tension réelle
+    # (pression + réactivité locale dégradée). Jamais un plafond forcé (Étape 5E.1, section 28) :
+    # 0 tension reste un résultat valide, pas un vide à combler.
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Créneaux à examiner"), unsafe_allow_html=True)
+    st.markdown("**Tensions à examiner**")
+    st.caption("Pression de charge marquée ET réactivité locale dégradée — jamais la pression seule.")
+    if len(tensions_triees) > 0:
+        cartes_tensions = []
+        for entree in tensions_triees:
+            cartes_tensions.append(construire_carte_tension_couverture(entree))
+        afficher_cartes_avec_apercu(cartes_tensions, 5, "tension(s)")
+    else:
+        st.caption("Aucune tension à examiner sur cette observation.")
+
+    if len(pressions_marquees_absorbees_triees) > 0:
+        morceaux_pression = []
+        for entree in pressions_marquees_absorbees_triees:
+            morceaux_pression.append(entree["jour"] + " " + str(entree["heure"]) + "h")
         st.caption(
-            "Pic exceptionnel observé : " + pic_exceptionnel["jour"] + " " + str(pic_exceptionnel["heure"])
-            + "h-" + str(pic_exceptionnel["heure"] + 1) + "h, " + str(round(pic_exceptionnel["ratio"], 1))
-            + " demandes/agent — nettement au-dessus du rythme habituel."
+            str(len(pressions_marquees_absorbees_triees)) + " créneau(x) à pression marquée, absorbés "
+            "(réactivité locale non dégradée, ou non mesurable localement) : "
+            + " · ".join(morceaux_pression) + "."
+        )
+
+    if len(activite_hors_capacite_materielle) > 0:
+        morceaux_hc = []
+        for entree in activite_hors_capacite_materielle:
+            morceaux_hc.append(
+                entree["jour"] + " " + str(entree["heure"]) + "h (" + str(entree["demandes"]) + " demandes)"
+            )
+        st.caption(
+            "Activité observée sans capacité planifiée, hors renfort identifié : "
+            + " · ".join(morceaux_hc) + "."
         )
 
     # ------------------------------------------------------------------
-    # Réactivité & SLA
+    # E. Réactivité par canal -- explique la réactivité globale, ne déclenche jamais la pression.
     # ------------------------------------------------------------------
 
-    st.divider()
-    st.markdown(titre_section_principale("Réactivité & SLA"), unsafe_allow_html=True)
+    st.markdown(titre_section_principale("Réactivité par canal"), unsafe_allow_html=True)
     st.caption(
         "SLA : en créneau ouvert, 1re réponse sous 1h. Hors créneau, réponse attendue au plus tard à la "
         "fin de la 1re plage horaire du prochain jour disponible — ex : message reçu vendredi 19h, "
@@ -3050,33 +3197,18 @@ with onglet_creneaux:
         "avant la fin du jour même)."
     )
 
-    if taux_sla_global is not None:
-        delta_sla = None
-        if comparaison_disponible and taux_sla_s1 is not None:
-            delta_sla = round(taux_sla_global - taux_sla_s1, 1)
-        st.markdown(construire_carte_sla(taux_sla_global, SLA_OBJECTIF_PCT, delta=delta_sla), unsafe_allow_html=True)
-
-        insight_sla = construire_insight_sla(taux_sla_global, SLA_OBJECTIF_PCT, pire_canal)
-        if insight_sla is not None:
-            st.caption(insight_sla)
-
     st.markdown("**Répartition des temps de réponse, tickets reçus en créneau**")
-
     compte_niveaux = {"OK": 0, "A SURVEILLER": 0, "CRITIQUE": 0, "DEBORDEMENT": 0}
     for ticket in en_creneau:
         frt_ticket = ticket["first_reply_time_min"]
         if frt_ticket is not None:
             niveau = niveau_reponse_ouvree(frt_ticket)
             compte_niveaux[niveau] = compte_niveaux[niveau] + 1
-
     st.markdown(construire_barre_empilee_reponse(compte_niveaux, len(en_creneau)), unsafe_allow_html=True)
 
-    # ------------------------------------------------------------------
-    # Performance par canal
-    # ------------------------------------------------------------------
-
-    st.divider()
-    st.markdown(titre_section_principale("Performance par canal"), unsafe_allow_html=True)
+    insight_sla = construire_insight_sla(taux_sla_global, SLA_OBJECTIF_PCT, pire_canal)
+    if insight_sla is not None:
+        st.caption(insight_sla)
 
     with st.container(border=True):
         afficher_tableau_colore(
@@ -3089,19 +3221,13 @@ with onglet_creneaux:
         st.caption(insight_canal)
 
     # ------------------------------------------------------------------
-    # Demande hors couverture
+    # F. Demande hors couverture
     # ------------------------------------------------------------------
 
-    st.divider()
     st.markdown(titre_section_principale("Demande hors couverture"), unsafe_allow_html=True)
     st.caption("La demande reçue hors couverture justifie-t-elle une adaptation des horaires ?")
 
-    frt_en_creneau_global = moyenne(en_creneau, "first_reply_time_min")
-    frt_en_creneau_global_s1 = None
-    if comparaison_disponible:
-        frt_en_creneau_global_s1 = moyenne(en_creneau_s1, "first_reply_time_min")
-
-    colonne_h1, colonne_h2, colonne_h3 = st.columns(3)
+    colonne_h1, colonne_h2 = st.columns(2)
     colonne_h1.markdown(
         construire_carte_kpi(
             "Reçus pendant la couverture", formater_nombre_espace(len(en_creneau)),
@@ -3126,22 +3252,6 @@ with onglet_creneaux:
             sous_texte=formater_pourcentage(part_hors_couverture) + " du volume",
         )
     colonne_h2.markdown(html_carte_hors_couv, unsafe_allow_html=True)
-
-    if frt_en_creneau_global is not None:
-        delta_frt_couverture = None
-        if frt_en_creneau_global_s1 is not None:
-            delta_frt_couverture = round(frt_en_creneau_global - frt_en_creneau_global_s1)
-
-        if delta_frt_couverture is not None:
-            html_carte_frt_couverture = construire_carte_kpi(
-                "Délai moyen de 1re réponse en couverture", formater_duree(frt_en_creneau_global),
-                delta=str(delta_frt_couverture) + " min", delta_couleur="inverse",
-            )
-        else:
-            html_carte_frt_couverture = construire_carte_kpi(
-                "Délai moyen de 1re réponse en couverture", formater_duree(frt_en_creneau_global),
-            )
-        colonne_h3.markdown(html_carte_frt_couverture, unsafe_allow_html=True)
 
     lignes_hors_couverture = construire_lignes_hors_couverture(tickets_hors_tout, planning_s2, volume_total_creneaux)
     with st.container(border=True):
@@ -3221,96 +3331,28 @@ with onglet_creneaux:
         lignes_type_canal_triees = sorted(lignes_type_canal, key=obtenir_tickets, reverse=True)
         st.dataframe(lignes_type_canal_triees, hide_index=True, width="stretch")
 
-    st.divider()
-    st.markdown(titre_section_principale("Couverture horaire"), unsafe_allow_html=True)
-    st.caption(
-        "Où la couverture est-elle sous tension par rapport au volume reçu, pendant les horaires "
-        "ouverts ? 🟢 Confortable · 🟡 À surveiller · 🔴 Hotspot. Les créneaux fermés (horaire "
-        "standard, pause, week-end) sont grisés — ce volume peut attendre la réouverture ; il est "
-        "suivi à part, agrégé sur la période, dans la section \"Demande hors couverture\" plus haut."
-    )
+    # ------------------------------------------------------------------
+    # G. Renforts non planifiés -- Step 1 (renfort_non_planifie), inchangé.
+    # ------------------------------------------------------------------
 
-    html_heatmap = (
-        "<style>"
-        ".hm-grid { display: grid; grid-template-columns: 40px repeat(7, 1fr); gap: 3px; margin-bottom: 8px; }"
-        ".hm-day-header, .hm-hour-label, .hm-corner { font-size: 10px; font-weight: 600; color: " + COULEUR_TEXTE_LABEL + "; "
-        "display: flex; align-items: center; justify-content: center; padding: 2px; }"
-        ".hm-cell { border-radius: 5px; padding: 3px 4px; text-align: center; line-height: 1.25; "
-        "min-height: 40px; display: flex; flex-direction: column; justify-content: center; }"
-        ".hm-cell-bande { min-height: 22px; }"
-        ".hm-line-agents { font-weight: 600; font-size: 10px; color: " + COULEUR_TEXTE_VALEUR + "; }"
-        ".hm-line-demandes { font-size: 9px; color: " + COULEUR_TEXTE_LABEL + "; }"
-        ".hm-line-ratio { font-size: 10px; font-weight: 700; color: " + COULEUR_TEXTE_VALEUR + "; }"
-        ".hm-muted { font-size: 9px; color: #B7AFA3; }"
-        "</style>"
-    )
-
-    html_heatmap = html_heatmap + '<div class="hm-grid">' + '<div class="hm-corner"></div>'
-    for nom_jour, numero_jour in JOURS_ORDRE:
-        html_heatmap = html_heatmap + '<div class="hm-day-header">' + nom_jour[:3] + "</div>"
-
-    grille_par_jour_heure = {}
-    for entree in grille_creneaux:
-        grille_par_jour_heure[(entree["jour"], entree["heure"])] = entree
-
-    premiere_ouverture, derniere_fermeture = determiner_bornes_ouverture(horaires_standard)
-    bandes_heatmap = construire_bandes_heatmap(premiere_ouverture, derniere_fermeture)
-
-    for type_bande, heure_debut_bande, heure_fin_bande in bandes_heatmap:
-        if type_bande == "HEURE":
-            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + str(heure_debut_bande) + "h</div>"
-            for nom_jour, numero_jour in JOURS_ORDRE:
-                entree = grille_par_jour_heure[(nom_jour, heure_debut_bande)]
-                html_heatmap = html_heatmap + construire_cellule_heatmap(entree)
-        else:
-            if type_bande == "AVANT_OUVERTURE":
-                label_bande = "<" + str(heure_fin_bande) + "h"
-            else:
-                label_bande = str(heure_debut_bande) + "h+"
-            html_heatmap = html_heatmap + '<div class="hm-hour-label">' + label_bande + "</div>"
-            for nom_jour, numero_jour in JOURS_ORDRE:
-                demandes_bande = 0
-                for heure_b in range(heure_debut_bande, heure_fin_bande):
-                    demandes_bande = demandes_bande + grille_par_jour_heure[(nom_jour, heure_b)]["demandes"]
-                html_heatmap = html_heatmap + construire_cellule_heatmap_bande(demandes_bande)
-
-    html_heatmap = html_heatmap + "</div>"
-
-    with st.container(border=True):
-        st.markdown(html_heatmap, unsafe_allow_html=True)
-
-    st.caption(
-        "Survolez une cellule pour voir la liste complète des agents en poste sur ce créneau. Les "
-        "heures avant l'ouverture et après la fermeture sont regroupées en un seul bloc — volume "
-        "cumulé sur la plage, sans détail heure par heure (détail disponible dans la section "
-        "\"Demande hors couverture\" plus haut)."
-    )
-
-    st.markdown("**Tensions de couverture**")
-    if len(situations_tension_triees) > 0:
-        for entree in situations_tension_triees[:5]:
-            est_pic_semaine = creneau_le_plus_charge is not None and (
-                entree["jour"] == creneau_le_plus_charge["jour"] and entree["heure"] == creneau_le_plus_charge["heure"]
+    st.markdown(titre_section_principale("Renforts non planifiés"), unsafe_allow_html=True)
+    synthese_renfort = construire_synthese_renfort(grille_enrichie)
+    if len(synthese_renfort) > 0:
+        morceaux_renfort = []
+        for agent, stats in synthese_renfort.items():
+            morceaux_renfort.append(
+                agent + " (" + str(stats["heures"]) + "h, " + str(stats["demandes"]) + " demandes)"
             )
-            st.markdown(construire_carte_situation(entree, est_pic_semaine), unsafe_allow_html=True)
-        if comparaison_disponible and nb_tensions_s1 is not None:
-            st.caption(
-                str(len(situations_tension_triees)) + " tension(s) détectée(s), contre " + str(nb_tensions_s1)
-                + " sur la période précédente."
-            )
+        st.caption(
+            "Activité observée sans capacité prévue correspondante, pendant les horaires standard — "
+            "à ne jamais confondre avec de la capacité planifiée : " + " · ".join(morceaux_renfort) + "."
+        )
     else:
-        if comparaison_disponible and nb_tensions_s1 is not None and nb_tensions_s1 > 0:
-            st.caption(
-                "Aucune tension de couverture significative sur cette période, contre " + str(nb_tensions_s1)
-                + " sur la période précédente."
-            )
-        elif comparaison_disponible:
-            st.caption(
-                "Aucune tension de couverture significative sur cette période. Situation stable par "
-                "rapport à la période précédente."
-            )
-        else:
-            st.caption("Aucune tension de couverture significative sur cette période.")
+        st.caption("Aucun renfort ponctuel non planifié détecté sur cette période.")
+
+    # ------------------------------------------------------------------
+    # H. Planning détaillé (accordéon)
+    # ------------------------------------------------------------------
 
     with st.expander("Voir le détail du planning"):
         lignes_planning = [
@@ -3338,72 +3380,14 @@ with onglet_creneaux:
             "dans la colonne evenement_semaine de l'onglet RAW_TICKETS."
         )
 
-    # ------------------------------------------------------------------
-    # Conclusion
-    # ------------------------------------------------------------------
 
-    observations_conclusion = construire_conclusion_onglet(
-        taux_sla_global, SLA_OBJECTIF_PCT, len(situations_tension_triees), pire_canal,
-        part_hors_couverture, hors_couverture_significatif,
-    )
-
-    if len(observations_conclusion) > 0:
-        st.divider()
-        st.markdown(titre_section_principale("Conclusion"), unsafe_allow_html=True)
-        for titre_observation, texte_observation in observations_conclusion:
-            st.markdown(
-                '<div style="margin-bottom:10px;"><span style="font-size:11px; font-weight:700; '
-                'text-transform:uppercase; letter-spacing:0.04em; color:' + COULEUR_PRIMAIRE + ';">'
-                + titre_observation + '</span><br><span style="font-size:14px; color:' + COULEUR_TEXTE_VALEUR + ';">'
-                + texte_observation + "</span></div>",
-                unsafe_allow_html=True,
-            )
-
-
-SEUIL_PART_COMPOSANT_DOMINANT = 35
-
-
-def construire_insight_composant(lignes_composant_triees):
-    if len(lignes_composant_triees) == 0:
-        return None
-
-    total = 0
-    for ligne in lignes_composant_triees:
-        total = total + ligne["Tickets"]
-    if total == 0:
-        return None
-
-    plus_gros = lignes_composant_triees[0]
-    part = plus_gros["Tickets"] / total * 100
-    if part >= SEUIL_PART_COMPOSANT_DOMINANT:
-        return (
-            plus_gros["Composant"] + " concentre " + str(round(part)) + " % des tickets SAV produit "
-            "de la période — la piste la plus probable pour un défaut structurel."
-        )
-    return None
-
-
-def construire_insight_resolution(lignes_resolution_triees, total_sav):
-    if len(lignes_resolution_triees) == 0 or total_sav == 0:
-        return None
-
-    plus_frequente = lignes_resolution_triees[0]
-    part = plus_frequente["Tickets"] / total_sav * 100
-    type_resolution = plus_frequente["Type de résolution"]
-
-    if type_resolution == "Conseil à distance" and part >= 40:
-        return (
-            "« Conseil à distance » domine (" + str(round(part)) + " %) — plutôt un souci de "
-            "compréhension d'usage qu'un vrai défaut matériel."
-        )
-    if "Remplacement" in str(type_resolution) and part >= 30:
-        return (
-            "« " + type_resolution + " » domine (" + str(round(part)) + " %) — signal de défaut "
-            "matériel réel à corriger."
-        )
-    return None
-
-
+# construire_insight_composant / construire_insight_resolution supprimées (Étape 5F.1, sections
+# 4-5) : recréaient une conclusion analytique locale ("défaut structurel"/"défaut matériel réel à
+# corriger") à partir du seul volume ou du seul type de résolution dominant, sans passer par 4A --
+# concurrentes de 4A, verdict plus fort que ce que 4A autoriserait sur les mêmes données. Les
+# tables descriptives (Contacts SAV par composant, Type de résolution) restent, sans conclusion
+# analytique attachée ; construire_texte_resolution_produit (outils.py) les remplace en version
+# strictement descriptive quand le texte apporte une vraie valeur de transmission.
 def construire_insight_garantie(lignes_garantie, total_sav):
     if total_sav == 0:
         return None
@@ -3425,6 +3409,9 @@ def construire_insight_garantie(lignes_garantie, total_sav):
 # ------------------------------------------------------------------
 
 with onglet_produit:
+    st.subheader("Produit")
+    st.caption("Signaux produit, composants concernés, dossiers associés.")
+
     st.caption(
         "Cadence trimestrielle recommandée — élargis la Période A dans la barre latérale pour une vraie "
         "tendance produit. Les exports disponibles sont des semaines représentatives espacées dans le "
@@ -3435,157 +3422,242 @@ with onglet_produit:
     tickets_sav_produit_s2 = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
     tickets_sav_produit_s1 = categories_s1.get(CATEGORIE_SAV_PRODUIT, [])
 
-    st.markdown(titre_section_principale("Composant en cause (SAV produit uniquement)"), unsafe_allow_html=True)
+    NOMBRE_MAX_SIGNAUX_VOIE_A = 5
+
+    historique_sav_produit_par_fichier = []
+    for date_export_historique, chemin_historique in exports_disponibles:
+        if date_export_historique < date_a_debut:
+            tickets_fichier_historique = charger_tickets(chemin_historique)
+            tickets_sav_produit_fichier = []
+            for ticket_historique in tickets_fichier_historique:
+                if categoriser(ticket_historique) == CATEGORIE_SAV_PRODUIT:
+                    tickets_sav_produit_fichier.append(ticket_historique)
+            historique_sav_produit_par_fichier.append(tickets_sav_produit_fichier)
+
+    resultats_voie_a = moteur_produit_voie_a(
+        tickets_sav_produit_s2, historique_sav_produit_par_fichier, commandes, couts_produits,
+        NOMBRE_MAX_SIGNAUX_VOIE_A,
+    )
+    signaux_prioritaires = resultats_voie_a["prioritaires"]
+    signaux_a_surveiller = resultats_voie_a["a_surveiller"]
+    signaux_voie_b = moteur_produit_voie_b(tickets_sav_produit_s2)
+
+    part_sav_pct = None
+    if len(tickets_s2) > 0:
+        part_sav_pct = len(tickets_sav_produit_s2) / len(tickets_s2) * 100
+
+    # ------------------------------------------------------------------
+    # A. Lecture Produit -- dérivée uniquement des sorties déjà produites par 4A (Étape 5F.1).
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Lecture Produit"), unsafe_allow_html=True)
+    st.markdown(
+        construire_bandeau_info(
+            construire_lecture_produit(
+                signaux_prioritaires, resultats_voie_a["nb_prioritaires_avant_plafond"],
+                signaux_a_surveiller, resultats_voie_a["nb_a_surveiller_avant_plafond"],
+                len(signaux_voie_b), part_sav_pct,
+            )
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ------------------------------------------------------------------
+    # B. Contexte SAV compact -- 4 informations, jamais un coût global (Étape 5F.1, section 11).
+    # Étape 6F, section 36 : divider retiré -- le bandeau ci-dessus sépare déjà suffisamment.
+    # ------------------------------------------------------------------
+
+    colonne_ctx1, colonne_ctx2, colonne_ctx3, colonne_ctx4 = st.columns(4)
+    colonne_ctx1.markdown(
+        construire_carte_kpi("Dossiers SAV Produit", formater_nombre_espace(len(tickets_sav_produit_s2))),
+        unsafe_allow_html=True,
+    )
+    if part_sav_pct is not None:
+        colonne_ctx2.markdown(
+            construire_carte_kpi("Part du total", formater_pourcentage(part_sav_pct)), unsafe_allow_html=True,
+        )
+    csat_sav_global = moyenne(tickets_sav_produit_s2, "csat")
+    n_csat_sav_global = 0
+    for ticket_sav_ctx in tickets_sav_produit_s2:
+        if ticket_sav_ctx["csat"] is not None:
+            n_csat_sav_global = n_csat_sav_global + 1
+    if csat_sav_global is not None:
+        colonne_ctx3.markdown(
+            construire_carte_kpi(
+                "CSAT SAV Produit", formater_csat(csat_sav_global), sous_texte="n=" + str(n_csat_sav_global),
+            ),
+            unsafe_allow_html=True,
+        )
+    resolution_sav_global = moyenne(tickets_sav_produit_s2, "full_resolution_time_hours")
+    if resolution_sav_global is not None:
+        colonne_ctx4.markdown(
+            construire_carte_kpi("Résolution moyenne", formater_duree(resolution_sav_global * 60)),
+            unsafe_allow_html=True,
+        )
+
+    # ------------------------------------------------------------------
+    # C. Priorités à investiguer -- 4A seul propriétaire, aucun recalcul (Étape 5F.1, section 12).
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Priorités à investiguer"), unsafe_allow_html=True)
+    st.caption(
+        "« Priorité principale »/« secondaire » décrit le niveau de convergence des preuves, pas une "
+        "gravité absolue. " + TEXTE_PRUDENCE_CAUSALE_PRODUIT
+    )
+
+    if len(signaux_prioritaires) == 0 and len(signaux_a_surveiller) == 0 and len(signaux_voie_b) == 0:
+        st.caption("Aucun signal Produit ne présente actuellement une convergence suffisante pour être investigué.")
+    else:
+        # Étape 6F, section 6-7-10 : même Signal card pour principal et secondaire -- seule la
+        # force de l'accent change (statut "attention" uniquement pour la priorité principale,
+        # jamais de rouge/critique ici). Le badge porte toujours le niveau ("Priorité principale"/
+        # "secondaire"), donc la distinction reste lisible même en traitement neutre. Le titre
+        # sépare visuellement le préfixe produit (plus discret) du composant/sujet (poids plein) --
+        # deux signaux sur le même produit restent distinguables sans nouvelle couleur.
+        for signal_produit in signaux_prioritaires:
+            prefixe_titre_produit, principal_titre_produit = titre_signal_produit_parties(signal_produit)
+            if prefixe_titre_produit is not None:
+                titre_html_produit = (
+                    '<span style="font-weight:400; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + prefixe_titre_produit + " — </span>" + principal_titre_produit
+                )
+            else:
+                titre_html_produit = principal_titre_produit
+
+            if signal_produit["niveau_priorite"] == "Priorité principale":
+                statut_signal_produit = "attention"
+            else:
+                statut_signal_produit = None
+
+            corps_produit_html = signal_produit["observation_principale"]
+            lignes_meta_produit = []
+
+            texte_volume = (
+                str(signal_produit["volume"]["n"]) + " tickets ("
+                + formater_pourcentage(signal_produit["volume"]["part_univers_pct"])
+                + " du SAV produit de la période, univers " + str(signal_produit["volume"]["univers"]) + ")"
+            )
+            lignes_meta_produit.append(texte_volume)
+            lignes_meta_produit.append("Temporalité : " + signal_produit["temporalite"])
+
+            if signal_produit["experience"]["csat"] is not None:
+                lignes_meta_produit.append(
+                    "CSAT : " + formater_csat(signal_produit["experience"]["csat"])
+                    + " (n=" + str(signal_produit["experience"]["n_csat"]) + ") vs "
+                    + formater_csat(signal_produit["experience"]["csat_reference"])
+                    + " pour le SAV Produit sur cette observation — " + signal_produit["experience"]["lecture"]
+                )
+
+            if signal_produit["cout"] is not None:
+                lignes_meta_produit.append(
+                    "Impact financier associé : " + formater_montant(signal_produit["cout"]["montant"])
+                    + " (méthodologie détaillée dans l'onglet Impact & confiance)"
+                )
+
+            if signal_produit["concentration"] is not None:
+                lignes_meta_produit.append(
+                    "Concentré sur " + str(signal_produit["concentration"]["produit_dominant"]) + " ("
+                    + formater_pourcentage(signal_produit["concentration"]["part"] * 100)
+                    + " des tickets de ce composant, n=" + str(signal_produit["concentration"]["n"]) + ")"
+                )
+
+            if len(signal_produit["elements_consolides"]) > 0:
+                texte_elements_consolides = signal_produit["elements_consolides"][0]
+                for element_consolide in signal_produit["elements_consolides"][1:]:
+                    texte_elements_consolides = texte_elements_consolides + " · " + element_consolide
+                lignes_meta_produit.append("Concerne notamment : " + texte_elements_consolides)
+
+            if signal_produit["regroupement_produit"] is not None:
+                lignes_meta_produit.append(
+                    "Voir aussi sur " + signal_produit["regroupement_produit"]["produit"] + " — autre(s) sujet(s) "
+                    "distinct(s) cette période : " + " · ".join(signal_produit["regroupement_produit"]["autres_sujets"])
+                )
+
+            for ligne_meta_produit in lignes_meta_produit:
+                corps_produit_html = corps_produit_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + ligne_meta_produit + "</span>"
+                )
+
+            st.markdown(
+                construire_carte_signal(
+                    titre_html_produit, statut_signal_produit, corps_produit_html,
+                    badge=signal_produit["niveau_priorite"],
+                ),
+                unsafe_allow_html=True,
+            )
+
+            # ---- F (au niveau carte) : dossiers associés, matchés structurellement (5F.1, section 28-30) ----
+            dossiers_associes = construire_dossiers_associes_produit(signal_produit, tickets_sav_produit_s2)
+            with st.expander("Dossiers associés (" + str(len(dossiers_associes)) + ")"):
+                lignes_dossiers = []
+                for ticket_dossier in dossiers_associes:
+                    cout_dossier = None
+                    type_perte_dossier = type_perte_financiere(ticket_dossier)
+                    if type_perte_dossier is not None:
+                        cout_dossier = montant_perte_estime(ticket_dossier, commandes, type_perte_dossier, couts_produits)
+                    ligne_dossier = {
+                        "Ticket": ticket_dossier["ticket_id"],
+                        "Produit": ticket_dossier["product_name"],
+                        "Composant": ticket_dossier["component"],
+                        "Nature du problème": ticket_dossier["issue_type"],
+                        "CSAT": formater_csat(ticket_dossier["csat"]) if ticket_dossier["csat"] is not None else "N/A",
+                        "Résolution": ticket_dossier["resolution_type"],
+                        "Réouvertures": str(ticket_dossier["reopens"]) if ticket_dossier["reopens"] is not None else "N/A",
+                        "Coût associé": formater_montant(cout_dossier) if cout_dossier is not None else "Non disponible",
+                    }
+                    lignes_dossiers.append(ligne_dossier)
+                st.dataframe(lignes_dossiers, hide_index=True, width="stretch")
+
+        # Étape 6F, section 8 : Watch déjà en compact row (texte joint, pas de carte) -- ne rivalise
+        # pas visuellement avec les priorités ci-dessus. Aucune migration structurelle nécessaire.
+        if len(signaux_a_surveiller) > 0:
+            texte_a_surveiller = []
+            for signal_surveillance in signaux_a_surveiller:
+                texte_a_surveiller.append(
+                    titre_signal_produit(signal_surveillance) + " (" + str(signal_surveillance["volume"]["n"])
+                    + " tickets — " + signal_surveillance["observation_principale"].rstrip(".") + ")"
+                )
+            st.markdown("**À surveiller**")
+            st.caption(
+                "Convergence encore partielle : ces sujets ne remplissent pas les critères d'une priorité "
+                "Produit. " + " · ".join(texte_a_surveiller)
+            )
+
+    # ------------------------------------------------------------------
+    # E. Dossiers individuels à examiner -- Voie B, toujours séparée de la Voie A (Étape 5F.1,
+    # section 27 : même si son produit×composant est aussi une priorité analytique, TKT-109042 reste
+    # sa propre carte, jamais fusionné).
+    # ------------------------------------------------------------------
+
+    if len(signaux_voie_b) > 0:
+        st.markdown(titre_section_principale("Dossiers individuels à examiner"), unsafe_allow_html=True)
+        # Étape 6F, section 14 : statut "critique" (liseré, jamais un fond rouge) -- réservé aux cas
+        # individuels réellement sensibles, jamais une priorité analytique ordinaire. Le badge
+        # "Dossier individuel" rend explicite que ceci n'est PAS un pattern agrégé comme ci-dessus.
+        for signal_grave in signaux_voie_b:
+            corps_grave_html = str(signal_grave["sujet"]) + " (" + str(signal_grave["produit"]) + ")"
+            corps_grave_html = corps_grave_html + (
+                '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                "Résolution : " + str(signal_grave["resolution_type"]) + " — CSAT "
+                + formater_csat(signal_grave["csat"]) + " — " + signal_grave["raison"] + "</span>"
+                '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                + signal_grave["avertissement"] + "</span>"
+            )
+            st.markdown(
+                construire_carte_signal(
+                    "Ticket " + str(signal_grave["ticket_id"]), "critique", corps_grave_html,
+                    badge="Dossier individuel",
+                ),
+                unsafe_allow_html=True,
+            )
+
+    # ------------------------------------------------------------------
+    # Données descriptives partagées par F et G ci-dessous.
+    # ------------------------------------------------------------------
 
     par_composant_s2 = grouper_par(tickets_sav_produit_s2, "component")
     par_composant_s1 = grouper_par(tickets_sav_produit_s1, "component")
-
-    schema_svg = construire_schema_composants(par_composant_s2, COULEUR_PRIMAIRE)
-    if schema_svg is not None:
-        st.caption(
-            "Vue éclatée illustrative (produit générique, pas le vrai Emyria) — la taille et "
-            "l'opacité des points suivent le nombre de tickets sur ce composant. Survole un point "
-            "pour voir le détail."
-        )
-        st.markdown(schema_svg, unsafe_allow_html=True)
-
-        if "Packaging / accessoire" in par_composant_s2:
-            st.caption(
-                str(len(par_composant_s2["Packaging / accessoire"]))
-                + " tickets concernent le packaging/accessoires — hors schéma, pas un composant du produit lui-même."
-            )
-
-    lignes_composant = []
-
-    if comparaison_disponible:
-        composants_a_afficher = cles_combinees(par_composant_s2, par_composant_s1)
-    else:
-        composants_a_afficher = list(par_composant_s2.keys())
-
-    for composant in composants_a_afficher:
-        tickets_composant = par_composant_s2.get(composant, [])
-        csat_composant = moyenne(tickets_composant, "csat")
-        pct_composant = len(tickets_composant) / len(tickets_s2) * 100
-
-        ligne = {
-            "Composant": composant,
-            "Tickets": len(tickets_composant),
-            "% du volume global": formater_pourcentage(pct_composant),
-            "CSAT": "N/A",
-        }
-
-        if csat_composant is not None:
-            ligne["CSAT"] = formater_csat(csat_composant)
-
-        if comparaison_disponible:
-            tickets_composant_s1 = par_composant_s1.get(composant, [])
-            volume_s1 = len(tickets_composant_s1)
-            delta = len(tickets_composant) - volume_s1
-            if delta >= 0:
-                ligne["Évolution"] = "+" + str(delta)
-            else:
-                ligne["Évolution"] = str(delta)
-
-            csat_composant_s1 = moyenne(tickets_composant_s1, "csat")
-            if csat_composant is not None and csat_composant_s1 is not None:
-                delta_csat = round(csat_composant - csat_composant_s1, 2)
-                if delta_csat >= 0:
-                    ligne["Évolution CSAT"] = "+" + str(delta_csat)
-                else:
-                    ligne["Évolution CSAT"] = str(delta_csat)
-
-        lignes_composant.append(ligne)
-
-    lignes_composant_triees = sorted(lignes_composant, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_composant_triees)
-
-    insight_composant = construire_insight_composant(lignes_composant_triees)
-    if insight_composant is not None:
-        st.caption(insight_composant)
-
-    st.markdown(titre_section_principale("Par produit"), unsafe_allow_html=True)
-    st.caption("Diffuseur (appareil) et Recharge sont distingués même pour un même parfum — un souci sur le matériel n'a pas la même gravité qu'un souci sur un consommable.")
-
-    par_produit_s2 = {}
-    for ticket in tickets_s2:
-        cle_produit = (ticket["product_category"], ticket["product_name"])
-        if cle_produit in par_produit_s2:
-            par_produit_s2[cle_produit].append(ticket)
-        else:
-            par_produit_s2[cle_produit] = [ticket]
-
-    par_produit_s1 = {}
-    for ticket in tickets_s1:
-        cle_produit = (ticket["product_category"], ticket["product_name"])
-        if cle_produit in par_produit_s1:
-            par_produit_s1[cle_produit].append(ticket)
-        else:
-            par_produit_s1[cle_produit] = [ticket]
-
-    lignes_produit = []
-
-    if comparaison_disponible:
-        produits_a_afficher = cles_combinees(par_produit_s2, par_produit_s1)
-    else:
-        produits_a_afficher = list(par_produit_s2.keys())
-
-    for produit in produits_a_afficher:
-        tickets_produit = par_produit_s2.get(produit, [])
-        csat_produit = moyenne(tickets_produit, "csat")
-        pct_produit = len(tickets_produit) / len(tickets_s2) * 100
-
-        ligne = {
-            "Catégorie": produit[0],
-            "Produit": produit[1],
-            "Tickets": len(tickets_produit),
-            "% du volume global": formater_pourcentage(pct_produit),
-            "CSAT": "N/A",
-        }
-
-        if csat_produit is not None:
-            ligne["CSAT"] = formater_csat(csat_produit)
-
-        if comparaison_disponible:
-            tickets_produit_s1 = par_produit_s1.get(produit, [])
-            volume_s1 = len(tickets_produit_s1)
-            delta = len(tickets_produit) - volume_s1
-            if delta >= 0:
-                ligne["Évolution"] = "+" + str(delta)
-            else:
-                ligne["Évolution"] = str(delta)
-
-            csat_produit_s1 = moyenne(tickets_produit_s1, "csat")
-            if csat_produit is not None and csat_produit_s1 is not None:
-                delta_csat = round(csat_produit - csat_produit_s1, 2)
-                if delta_csat >= 0:
-                    ligne["Évolution CSAT"] = "+" + str(delta_csat)
-                else:
-                    ligne["Évolution CSAT"] = str(delta_csat)
-
-        lignes_produit.append(ligne)
-
-    lignes_produit_triees = sorted(lignes_produit, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        afficher_tableau_colore(lignes_produit_triees)
-
-    st.markdown(titre_section_principale("Type de résolution des SAV produit"), unsafe_allow_html=True)
-
-    par_resolution = grouper_par(tickets_sav_produit_s2, "resolution_type")
-    lignes_resolution = []
-    for resolution, tickets_resolution in par_resolution.items():
-        lignes_resolution.append({"Type de résolution": resolution, "Tickets": len(tickets_resolution)})
-
-    lignes_resolution_triees = sorted(lignes_resolution, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        st.dataframe(lignes_resolution_triees, hide_index=True, width="stretch")
-
-    insight_resolution = construire_insight_resolution(lignes_resolution_triees, len(tickets_sav_produit_s2))
-    if insight_resolution is not None:
-        st.caption(insight_resolution)
-
-    st.markdown(titre_section_principale("Nature du problème"), unsafe_allow_html=True)
-    st.caption("component dit où le défaut se situe, issue_type dit ce qui est réellement cassé — les deux ensemble orientent vers le vrai correctif.")
 
     par_issue = grouper_par(tickets_sav_produit_s2, "issue_type")
     lignes_issue = []
@@ -3593,10 +3665,7 @@ with onglet_produit:
         if issue is None:
             continue
         lignes_issue.append({"Nature du problème": issue, "Tickets": len(tickets_issue)})
-
     lignes_issue_triees = sorted(lignes_issue, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        st.dataframe(lignes_issue_triees, hide_index=True, width="stretch")
 
     par_composant_issue = {}
     for ticket in tickets_sav_produit_s2:
@@ -3613,7 +3682,6 @@ with onglet_produit:
     lignes_composant_issue = []
     for cle, nombre in par_composant_issue.items():
         lignes_composant_issue.append({"Composant": cle[0], "Nature du problème": cle[1], "Tickets": nombre})
-
     lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
 
     lignes_composant_issue_significatives = []
@@ -3621,7 +3689,18 @@ with onglet_produit:
         if ligne["Tickets"] >= SEUIL_MINIMUM_SUJET:
             lignes_composant_issue_significatives.append(ligne)
 
-    st.markdown(titre_section_principale("Combinaisons composant × problème à investiguer"), unsafe_allow_html=True)
+    # ------------------------------------------------------------------
+    # F. Explorer les preuves -- nature du problème + combinaisons composant×problème (Étape 5F.1,
+    # section 39 : remonté hors du descriptif générique, ce sont des outils d'investigation).
+    # ------------------------------------------------------------------
+
+    st.markdown(titre_section_principale("Explorer les preuves"), unsafe_allow_html=True)
+    st.caption("component dit où le défaut se situe, issue_type dit ce qui est réellement cassé — les deux ensemble orientent vers le vrai correctif.")
+
+    with st.container(border=True):
+        st.dataframe(lignes_issue_triees, hide_index=True, width="stretch")
+
+    st.markdown("**Combinaisons composant × problème à investiguer**")
     st.caption(
         "Seules les combinaisons avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets sont montrées "
         "ici — le croisement complet reste disponible ci-dessous."
@@ -3634,21 +3713,157 @@ with onglet_produit:
     with st.expander("Voir le croisement complet composant × nature du problème"):
         st.dataframe(lignes_composant_issue_triees, hide_index=True, width="stretch")
 
-    st.markdown(titre_section_principale("Garantie"), unsafe_allow_html=True)
+    # ------------------------------------------------------------------
+    # G. Vue descriptive Produit -- niveau secondaire, accordéons (Étape 5F.1, section 33).
+    # ------------------------------------------------------------------
 
-    par_garantie = grouper_par(tickets_sav_produit_s2, "warranty_status")
-    lignes_garantie = []
-    for garantie, tickets_garantie in par_garantie.items():
-        lignes_garantie.append({"Statut garantie": garantie, "Tickets": len(tickets_garantie)})
+    st.markdown(titre_section_principale("Vue descriptive Produit"), unsafe_allow_html=True)
+    st.caption("Informations descriptives — ne remplacent pas les priorités ci-dessus.")
 
-    with st.container(border=True):
+    with st.expander("Contacts SAV par composant"):
+        schema_svg = construire_schema_composants(par_composant_s2, COULEUR_PRIMAIRE)
+        if schema_svg is not None:
+            st.caption(
+                "Vue éclatée illustrative (produit générique, pas le vrai Emyria) — la taille et "
+                "l'opacité des points suivent le nombre de tickets sur ce composant. Survole un point "
+                "pour voir le détail."
+            )
+            st.markdown(schema_svg, unsafe_allow_html=True)
+
+            if "Packaging / accessoire" in par_composant_s2:
+                st.caption(
+                    str(len(par_composant_s2["Packaging / accessoire"]))
+                    + " tickets concernent le packaging/accessoires — hors schéma, pas un composant du produit lui-même."
+                )
+
+        lignes_composant = []
+        if comparaison_disponible:
+            composants_a_afficher = cles_combinees(par_composant_s2, par_composant_s1)
+        else:
+            composants_a_afficher = list(par_composant_s2.keys())
+
+        for composant in composants_a_afficher:
+            tickets_composant = par_composant_s2.get(composant, [])
+            csat_composant = moyenne(tickets_composant, "csat")
+            pct_composant = len(tickets_composant) / len(tickets_s2) * 100
+
+            ligne = {
+                "Composant": composant,
+                "Tickets": len(tickets_composant),
+                "% du volume global": formater_pourcentage(pct_composant),
+                "CSAT": "N/A",
+            }
+            if csat_composant is not None:
+                ligne["CSAT"] = formater_csat(csat_composant)
+
+            if comparaison_disponible:
+                tickets_composant_s1 = par_composant_s1.get(composant, [])
+                volume_s1 = len(tickets_composant_s1)
+                delta = len(tickets_composant) - volume_s1
+                if delta >= 0:
+                    ligne["Évolution"] = "+" + str(delta)
+                else:
+                    ligne["Évolution"] = str(delta)
+
+                csat_composant_s1 = moyenne(tickets_composant_s1, "csat")
+                if csat_composant is not None and csat_composant_s1 is not None:
+                    delta_csat = round(csat_composant - csat_composant_s1, 2)
+                    if delta_csat >= 0:
+                        ligne["Évolution CSAT"] = "+" + str(delta_csat)
+                    else:
+                        ligne["Évolution CSAT"] = str(delta_csat)
+
+            lignes_composant.append(ligne)
+
+        lignes_composant_triees = sorted(lignes_composant, key=obtenir_tickets, reverse=True)
+        afficher_tableau_colore(lignes_composant_triees)
+
+    with st.expander("Contacts SAV par produit"):
+        st.caption("Diffuseur (appareil) et Recharge sont distingués même pour un même parfum — un souci sur le matériel n'a pas la même gravité qu'un souci sur un consommable.")
+
+        par_produit_s2 = {}
+        for ticket in tickets_s2:
+            cle_produit = (ticket["product_category"], ticket["product_name"])
+            if cle_produit in par_produit_s2:
+                par_produit_s2[cle_produit].append(ticket)
+            else:
+                par_produit_s2[cle_produit] = [ticket]
+
+        par_produit_s1 = {}
+        for ticket in tickets_s1:
+            cle_produit = (ticket["product_category"], ticket["product_name"])
+            if cle_produit in par_produit_s1:
+                par_produit_s1[cle_produit].append(ticket)
+            else:
+                par_produit_s1[cle_produit] = [ticket]
+
+        lignes_produit = []
+        if comparaison_disponible:
+            produits_a_afficher = cles_combinees(par_produit_s2, par_produit_s1)
+        else:
+            produits_a_afficher = list(par_produit_s2.keys())
+
+        for produit in produits_a_afficher:
+            tickets_produit = par_produit_s2.get(produit, [])
+            csat_produit = moyenne(tickets_produit, "csat")
+            pct_produit = len(tickets_produit) / len(tickets_s2) * 100
+
+            ligne = {
+                "Catégorie": produit[0],
+                "Produit": produit[1],
+                "Tickets": len(tickets_produit),
+                "% du volume global": formater_pourcentage(pct_produit),
+                "CSAT": "N/A",
+            }
+            if csat_produit is not None:
+                ligne["CSAT"] = formater_csat(csat_produit)
+
+            if comparaison_disponible:
+                tickets_produit_s1 = par_produit_s1.get(produit, [])
+                volume_s1 = len(tickets_produit_s1)
+                delta = len(tickets_produit) - volume_s1
+                if delta >= 0:
+                    ligne["Évolution"] = "+" + str(delta)
+                else:
+                    ligne["Évolution"] = str(delta)
+
+                csat_produit_s1 = moyenne(tickets_produit_s1, "csat")
+                if csat_produit is not None and csat_produit_s1 is not None:
+                    delta_csat = round(csat_produit - csat_produit_s1, 2)
+                    if delta_csat >= 0:
+                        ligne["Évolution CSAT"] = "+" + str(delta_csat)
+                    else:
+                        ligne["Évolution CSAT"] = str(delta_csat)
+
+            lignes_produit.append(ligne)
+
+        lignes_produit_triees = sorted(lignes_produit, key=obtenir_tickets, reverse=True)
+        afficher_tableau_colore(lignes_produit_triees)
+
+    with st.expander("Type de résolution des SAV produit"):
+        par_resolution = grouper_par(tickets_sav_produit_s2, "resolution_type")
+        lignes_resolution = []
+        for resolution, tickets_resolution in par_resolution.items():
+            lignes_resolution.append({"Type de résolution": resolution, "Tickets": len(tickets_resolution)})
+        lignes_resolution_triees = sorted(lignes_resolution, key=obtenir_tickets, reverse=True)
+        st.dataframe(lignes_resolution_triees, hide_index=True, width="stretch")
+
+        texte_resolution = construire_texte_resolution_produit(lignes_resolution_triees, len(tickets_sav_produit_s2))
+        if texte_resolution is not None:
+            st.caption(texte_resolution)
+
+    with st.expander("Garantie"):
+        par_garantie = grouper_par(tickets_sav_produit_s2, "warranty_status")
+        lignes_garantie = []
+        for garantie, tickets_garantie in par_garantie.items():
+            lignes_garantie.append({"Statut garantie": garantie, "Tickets": len(tickets_garantie)})
         st.dataframe(lignes_garantie, hide_index=True, width="stretch")
 
-    insight_garantie = construire_insight_garantie(lignes_garantie, len(tickets_sav_produit_s2))
-    if insight_garantie is not None:
-        st.caption(insight_garantie)
+        insight_garantie = construire_insight_garantie(lignes_garantie, len(tickets_sav_produit_s2))
+        if insight_garantie is not None:
+            st.caption(insight_garantie)
 
-    with st.expander("Délai entre achat et signalement SAV"):
+        st.markdown("**Délai entre achat et signalement SAV**")
         st.caption("Un défaut précoce (moins de 30 jours après achat) évoque plutôt un défaut de fabrication ; un défaut tardif évoque plutôt de l'usure normale.")
 
         compte_anciennete = {}
@@ -3665,131 +3880,85 @@ with onglet_produit:
         lignes_anciennete = []
         for niveau, compte in compte_anciennete.items():
             lignes_anciennete.append({"Ancienneté du défaut": niveau, "Tickets": compte})
-
         st.dataframe(lignes_anciennete, hide_index=True, width="stretch")
 
-    st.markdown(titre_section_principale("Clients avec SAV récurrents"), unsafe_allow_html=True)
+    with st.expander("Clients avec SAV récurrents"):
+        tickets_recurrents = []
+        for ticket in tickets_sav_produit_s2:
+            if ticket["prior_sav_count"] is not None and ticket["prior_sav_count"] >= 1:
+                tickets_recurrents.append(ticket)
 
-    tickets_recurrents = []
-    for ticket in tickets_sav_produit_s2:
-        if ticket["prior_sav_count"] is not None and ticket["prior_sav_count"] >= 1:
-            tickets_recurrents.append(ticket)
+        if len(tickets_recurrents) == 0:
+            st.caption("Aucun SAV récurrent sur cette période.")
+        else:
+            part_recurrents = len(tickets_recurrents) / len(tickets_sav_produit_s2) * 100
 
-    if len(tickets_recurrents) == 0:
-        st.caption("Aucun SAV récurrent sur cette période.")
-    else:
-        part_recurrents = len(tickets_recurrents) / len(tickets_sav_produit_s2) * 100
+            par_produit_recurrent = grouper_par(tickets_recurrents, "product_name")
+            lignes_produit_recurrent_triees = []
+            for produit, tickets_produit_r in par_produit_recurrent.items():
+                lignes_produit_recurrent_triees.append({"Produit": produit, "SAV récurrents": len(tickets_produit_r)})
+            lignes_produit_recurrent_triees = sorted(lignes_produit_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
 
-        par_produit_recurrent = grouper_par(tickets_recurrents, "product_name")
-        lignes_produit_recurrent_triees = []
-        for produit, tickets_produit_r in par_produit_recurrent.items():
-            lignes_produit_recurrent_triees.append({"Produit": produit, "SAV récurrents": len(tickets_produit_r)})
-        lignes_produit_recurrent_triees = sorted(lignes_produit_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
+            par_composant_recurrent = grouper_par(tickets_recurrents, "component")
+            lignes_composant_recurrent_triees = []
+            for composant, tickets_composant_r in par_composant_recurrent.items():
+                lignes_composant_recurrent_triees.append({"Composant": composant, "SAV récurrents": len(tickets_composant_r)})
+            lignes_composant_recurrent_triees = sorted(lignes_composant_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
 
-        par_composant_recurrent = grouper_par(tickets_recurrents, "component")
-        lignes_composant_recurrent_triees = []
-        for composant, tickets_composant_r in par_composant_recurrent.items():
-            lignes_composant_recurrent_triees.append({"Composant": composant, "SAV récurrents": len(tickets_composant_r)})
-        lignes_composant_recurrent_triees = sorted(lignes_composant_recurrent_triees, key=obtenir_sav_recurrents, reverse=True)
+            produit_principal = lignes_produit_recurrent_triees[0]
+            composant_principal = lignes_composant_recurrent_triees[0]
 
-        produit_principal = lignes_produit_recurrent_triees[0]
-        composant_principal = lignes_composant_recurrent_triees[0]
+            st.write(
+                construire_texte_sav_recurrents_produit(
+                    len(tickets_recurrents), part_recurrents, produit_principal, composant_principal,
+                )
+            )
 
-        st.write(
-            str(len(tickets_recurrents)) + " tickets (" + str(round(part_recurrents)) + " % du SAV produit) "
-            "concernent un client ayant déjà eu au moins un SAV avant celui-ci — signal de défaut structurel "
-            "plutôt qu'un cas isolé. Concentré sur **" + produit_principal["Produit"] + "** ("
-            + str(produit_principal["SAV récurrents"]) + " cas) et le composant **"
-            + composant_principal["Composant"] + "** (" + str(composant_principal["SAV récurrents"]) + " cas)."
-        )
-
-        with st.expander("Détail par produit et composant"):
             colonne_rec_a, colonne_rec_b = st.columns(2)
             with colonne_rec_a:
                 st.dataframe(lignes_produit_recurrent_triees, hide_index=True, width="stretch")
             with colonne_rec_b:
                 st.dataframe(lignes_composant_recurrent_triees, hide_index=True, width="stretch")
 
-    st.divider()
-    st.markdown(titre_section_principale("Opportunités produit — demandes hors catalogue"), unsafe_allow_html=True)
-
-    opportunites = detecter_opportunites_hors_catalogue(tickets_s2, SEUIL_MINIMUM_SUJET)
-
-    if len(opportunites) == 0:
+    with st.expander("Opportunités produit — demandes hors catalogue"):
         st.caption(
-            "Aucune demande hors catalogue récurrente (au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets) "
-            "sur cette période."
+            "Demande non satisfaite / opportunité de gamme — pas un défaut SAV, à traiter séparément des "
+            "problèmes Produit ci-dessus."
         )
-    else:
-        st.caption(
-            "Demandes récurrentes pour quelque chose qu'on ne vend pas (accessoire, personnalisation...), "
-            "au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets — à remonter à l'équipe produit."
-        )
-        lignes_opportunites = []
-        for sujet, tickets_sujet in opportunites:
-            csat_opportunite = moyenne(tickets_sujet, "csat")
-            ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
-            if csat_opportunite is not None:
-                ligne["CSAT"] = formater_csat(csat_opportunite)
-            lignes_opportunites.append(ligne)
+        opportunites = detecter_opportunites_hors_catalogue(tickets_s2, SEUIL_MINIMUM_SUJET)
 
-        lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)[:10]
-        with st.container(border=True):
+        if len(opportunites) == 0:
+            st.caption(
+                "Aucune demande hors catalogue récurrente (au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets) "
+                "sur cette période."
+            )
+        else:
+            lignes_opportunites = []
+            for sujet, tickets_sujet in opportunites:
+                csat_opportunite = moyenne(tickets_sujet, "csat")
+                ligne = {"Demande": sujet, "Tickets": len(tickets_sujet), "CSAT": "N/A"}
+                if csat_opportunite is not None:
+                    ligne["CSAT"] = formater_csat(csat_opportunite)
+                lignes_opportunites.append(ligne)
+
+            lignes_opportunites_triees = sorted(lignes_opportunites, key=obtenir_tickets, reverse=True)[:10]
             afficher_tableau_colore(lignes_opportunites_triees)
-
-
-SEUIL_PART_SUJET_LIVRAISON_SIGNAL = 15
-SEUIL_ECART_CSAT_LIVRAISON = 0.3
-SEUIL_ECART_RESOLUTION_LIVRAISON_H = 4
-
-
-# Un sujet ne mérite d'être mis en avant que s'il pèse assez dans le volume Livraison ET s'écarte
-# vraiment de la moyenne de la catégorie (CSAT ou résolution) — pas juste parce qu'il existe.
-def construire_signal_sujet_livraison(sujet, volume_s2, pct_sujet_livraison, csat_sujet, resolution_sujet, csat_moyen, resolution_moyenne):
-    if pct_sujet_livraison < SEUIL_PART_SUJET_LIVRAISON_SIGNAL:
-        return None
-
-    ecart_csat = None
-    if csat_sujet is not None and csat_moyen is not None:
-        ecart_csat = csat_moyen - csat_sujet
-
-    ecart_resolution = None
-    if resolution_sujet is not None and resolution_moyenne is not None:
-        ecart_resolution = resolution_sujet - resolution_moyenne
-
-    csat_signal = ecart_csat is not None and ecart_csat >= SEUIL_ECART_CSAT_LIVRAISON
-    resolution_signal = ecart_resolution is not None and ecart_resolution >= SEUIL_ECART_RESOLUTION_LIVRAISON_H
-    if not csat_signal and not resolution_signal:
-        return None
-
-    morceaux = []
-    if csat_signal:
-        morceaux.append("CSAT " + formater_csat(csat_sujet) + " (moyenne Livraison " + formater_csat(csat_moyen) + ")")
-    if resolution_signal:
-        morceaux.append(
-            "résolution " + formater_duree(resolution_sujet * 60) + " (moyenne Livraison "
-            + formater_duree(resolution_moyenne * 60) + ")"
-        )
-
-    return {
-        "sujet": sujet,
-        "volume": volume_s2,
-        "texte": (
-            "« " + sujet + " » représente " + str(round(pct_sujet_livraison)) + " % du volume Livraison, "
-            + " et ".join(morceaux) + " — nettement en retrait du reste de la catégorie."
-        ),
-    }
-
-
-def obtenir_volume_signal(candidat):
-    return candidat["volume"]
 
 
 # ------------------------------------------------------------------
 # Onglet 7 : Livraison
 # ------------------------------------------------------------------
+# Étape 5G.1 : 4C (moteur_livraison_voie_a) est l'unique propriétaire de la priorisation
+# analytique Livraison. Les anciens mécanismes locaux concurrents (construire_signal_sujet_
+# livraison au grain motif, anomalies_pays au grain pays -- trouvés en audit 5G, section 4 et 6,
+# tous deux sur des seuils non alignés avec la convergence 4C) ont été supprimés : les tables
+# "Sujets livraison" et "Par pays" ci-dessous restent purement descriptives, elles ne produisent
+# plus de caption "signal"/"anomalie"/"à investiguer".
 
 with onglet_livraison:
+    st.subheader("Livraison")
+    st.caption("Motifs logistiques, conséquences observées, dossiers associés.")
+
     st.caption(
         "Miroir mensuel de la catégorie Livraison, pensé pour un point avec le transporteur — voir "
         "l'onglet Vue d'ensemble pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
@@ -3800,6 +3969,51 @@ with onglet_livraison:
     tickets_livraison_s2 = categories_s2.get("Livraison", [])
     tickets_livraison_s1 = categories_s1.get("Livraison", [])
 
+    # ---- Moteur Livraison (Étape 4C) : convergence de familles de preuve (demande, expérience,
+    # effort, relances, issues, concentration transporteur, persistance) -- jamais le volume seul.
+    # Historique = exports STRICTEMENT antérieurs à la Période A, jamais de fuite du futur (même
+    # principe que le moteur Produit ci-dessous).
+    NOMBRE_MAX_SIGNAUX_LIVRAISON = 5
+
+    historique_livraison_par_fichier = []
+    for date_export_historique_liv, chemin_historique_liv in exports_disponibles:
+        if date_export_historique_liv < date_a_debut:
+            tickets_fichier_historique_liv = charger_tickets(chemin_historique_liv)
+            tickets_livraison_fichier_historique = []
+            for ticket_historique_liv in tickets_fichier_historique_liv:
+                if categoriser(ticket_historique_liv) == "Livraison":
+                    tickets_livraison_fichier_historique.append(ticket_historique_liv)
+            historique_livraison_par_fichier.append(tickets_livraison_fichier_historique)
+
+    contexte_livraison_periode = contexte_periode(evenements_calendrier, date_a_debut, date_a_fin)
+    lecture_activite_livraison = construire_lecture_activite_livraison(
+        tickets_livraison_s2, tickets_s2, contexte_livraison_periode
+    )
+
+    resultats_livraison = moteur_livraison_voie_a(
+        tickets_livraison_s2, historique_livraison_par_fichier, NOMBRE_MAX_SIGNAUX_LIVRAISON
+    )
+    signaux_prioritaires_livraison = resultats_livraison["prioritaires"]
+    signaux_a_surveiller_livraison = resultats_livraison["a_surveiller"]
+
+    # ---- A. Lecture Livraison : juxtapose ACTIVITÉ (poids de Livraison sur la période) et SIGNAL
+    # (compteurs 4C), sans jamais fusionner les deux en une seule affirmation causale. ----
+    st.markdown(titre_section_principale("Lecture Livraison"), unsafe_allow_html=True)
+    texte_lecture_livraison = construire_lecture_livraison(
+        lecture_activite_livraison["observation"],
+        resultats_livraison["nb_prioritaires_avant_plafond"],
+        resultats_livraison["nb_a_surveiller_avant_plafond"],
+    )
+    if lecture_activite_livraison["contexte"] is not None:
+        texte_lecture_livraison_html = texte_lecture_livraison + (
+            '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+            + lecture_activite_livraison["contexte"] + "</span>"
+        )
+    else:
+        texte_lecture_livraison_html = texte_lecture_livraison
+    st.markdown(construire_bandeau_info(texte_lecture_livraison_html), unsafe_allow_html=True)
+
+    # ---- B. Contexte Livraison compact ----
     volume_livraison_s2 = len(tickets_livraison_s2)
     csat_livraison_s2 = moyenne(tickets_livraison_s2, "csat")
     resolution_livraison_s2 = moyenne(tickets_livraison_s2, "full_resolution_time_hours")
@@ -3823,8 +4037,185 @@ with onglet_livraison:
                 construire_carte_kpi("Résolution moyenne", formater_duree(resolution_livraison_s2 * 60)),
                 unsafe_allow_html=True,
             )
+    st.caption(TEXTE_COUT_INDISPONIBLE_LIVRAISON)
 
-    st.markdown(titre_section_principale("Sujets livraison"), unsafe_allow_html=True)
+    # ---- C. Motifs à investiguer (4C, réutilisé sans recalcul) ----
+    st.markdown(titre_section_principale("Motifs à investiguer"), unsafe_allow_html=True)
+    if len(signaux_prioritaires_livraison) == 0:
+        st.caption("Aucun motif ne présente actuellement une convergence suffisante pour être investigué.")
+    else:
+        # Étape 6F, section 17-18 : même fondation que Produit -- statut "attention" uniquement pour
+        # la priorité principale, badge = niveau. Les relances restent en corps principal (taille
+        # normale, jamais reléguées en petite légende muted) : c'est la métrique distinctive de
+        # Livraison, elle doit rester très lisible. "Piste transporteur" reste secondaire (meta
+        # muted), jamais un badge d'alerte -- le badge est réservé au niveau de priorité.
+        for signal_livraison in signaux_prioritaires_livraison:
+            if signal_livraison["niveau_priorite"] == "Priorité principale":
+                statut_signal_livraison = "attention"
+            else:
+                statut_signal_livraison = None
+
+            corps_livraison_html = signal_livraison["observation_principale"]
+
+            if signal_livraison["relances"]["moyen"] is not None:
+                corps_livraison_html = corps_livraison_html + (
+                    '<br><span style="font-weight:600;">Relances moyennes : '
+                    + str(round(signal_livraison["relances"]["moyen"], 2))
+                    + " (référence Livraison " + str(round(signal_livraison["relances"]["reference"], 2)) + ")</span>"
+                )
+
+            lignes_meta_livraison = []
+
+            texte_volume_livraison = (
+                str(signal_livraison["volume"]["n"]) + " tickets ("
+                + formater_pourcentage(signal_livraison["volume"]["part_univers_pct"])
+                + " de Livraison sur la période, univers " + str(signal_livraison["volume"]["univers"]) + ")"
+            )
+            lignes_meta_livraison.append(texte_volume_livraison)
+            lignes_meta_livraison.append("Temporalité : " + signal_livraison["temporalite"])
+
+            if signal_livraison["experience"]["csat"] is not None:
+                lignes_meta_livraison.append(
+                    "CSAT : " + formater_csat(signal_livraison["experience"]["csat"])
+                    + " (n=" + str(signal_livraison["experience"]["n_csat"]) + ") — "
+                    + signal_livraison["experience"]["lecture"]
+                )
+
+            if signal_livraison["effort"]["resolution_h_moyenne"] is not None:
+                lignes_meta_livraison.append(
+                    "Résolution moyenne : " + formater_duree(signal_livraison["effort"]["resolution_h_moyenne"] * 60)
+                    + " (référence " + formater_duree(signal_livraison["effort"]["resolution_h_reference"] * 60) + ")"
+                )
+
+            distribution_livraison = signal_livraison["issues"]["distribution"]
+            if len(distribution_livraison) > 0:
+                texte_issues = []
+                for item_issue in distribution_livraison:
+                    texte_issues.append(
+                        item_issue["issue"] + " " + formater_pourcentage(item_issue["part_pct"])
+                        + " (n=" + str(item_issue["n"]) + ")"
+                    )
+                lignes_meta_livraison.append("Issues finales : " + " · ".join(texte_issues))
+
+            if signal_livraison["concentration_transporteur"] is not None:
+                lignes_meta_livraison.append(
+                    "Piste transporteur : "
+                    + texte_piste_transporteur_livraison(signal_livraison["concentration_transporteur"])
+                )
+                lignes_meta_livraison.append(signal_livraison["concentration_transporteur"]["prudence_echantillon"])
+
+            lignes_meta_livraison.append(signal_livraison["action_investigation"])
+            lignes_meta_livraison.append(signal_livraison["prudence"])
+
+            for ligne_meta_livraison in lignes_meta_livraison:
+                corps_livraison_html = corps_livraison_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + ligne_meta_livraison + "</span>"
+                )
+
+            st.markdown(
+                construire_carte_signal(
+                    signal_livraison["sujet"], statut_signal_livraison, corps_livraison_html,
+                    badge=signal_livraison["niveau_priorite"],
+                ),
+                unsafe_allow_html=True,
+            )
+
+            # ---- Dossiers associés : matching structurel exact sur le grain motif (subject_cluster) ----
+            dossiers_associes_livraison = construire_dossiers_associes_livraison(signal_livraison, tickets_livraison_s2)
+            with st.expander("Dossiers associés (" + str(len(dossiers_associes_livraison)) + ")"):
+                lignes_dossiers_livraison = []
+                for ticket_dossier_livraison in dossiers_associes_livraison:
+                    resolution_dossier_livraison = ticket_dossier_livraison["full_resolution_time_hours"]
+                    ligne_dossier_livraison = {
+                        "Ticket": ticket_dossier_livraison["ticket_id"],
+                        "Transporteur": (
+                            ticket_dossier_livraison["transporteur"]
+                            if ticket_dossier_livraison["transporteur"] else "N/A"
+                        ),
+                        "Pays": ticket_dossier_livraison["country"],
+                        "Relances": (
+                            str(ticket_dossier_livraison["nombre_relances"])
+                            if ticket_dossier_livraison["nombre_relances"] is not None else "N/A"
+                        ),
+                        "CSAT": (
+                            formater_csat(ticket_dossier_livraison["csat"])
+                            if ticket_dossier_livraison["csat"] is not None else "N/A"
+                        ),
+                        "Résolution": (
+                            formater_duree(resolution_dossier_livraison * 60)
+                            if resolution_dossier_livraison is not None else "N/A"
+                        ),
+                        "Issue finale": (
+                            ticket_dossier_livraison["issue_livraison_finale"]
+                            if ticket_dossier_livraison["issue_livraison_finale"] else "N/A"
+                        ),
+                    }
+                    lignes_dossiers_livraison.append(ligne_dossier_livraison)
+                st.dataframe(lignes_dossiers_livraison, hide_index=True, width="stretch")
+
+    # ---- D. À surveiller (compact, indépendant du nombre de priorités) ----
+    if len(signaux_a_surveiller_livraison) > 0:
+        texte_a_surveiller_livraison = []
+        for signal_surveillance_livraison in signaux_a_surveiller_livraison:
+            texte_a_surveiller_livraison.append(
+                signal_surveillance_livraison["sujet"] + " (" + str(signal_surveillance_livraison["volume"]["n"])
+                + " tickets — " + signal_surveillance_livraison["observation_principale"].rstrip(".") + ")"
+            )
+        st.caption("À surveiller (preuve encore partielle) : " + " · ".join(texte_a_surveiller_livraison))
+
+    # ---- E. Sujets sans signal particulier ----
+    if len(resultats_livraison["sujets_silencieux"]) > 0:
+        st.caption(
+            "Sujets sans signal particulier cette période : " + " · ".join(resultats_livraison["sujets_silencieux"])
+        )
+
+    anomalies_qualite_livraison = controler_qualite_donnees_livraison(tickets_livraison_s2)
+    if len(anomalies_qualite_livraison) > 0:
+        with st.expander("Anomalies de qualité de données détectées"):
+            for anomalie in anomalies_qualite_livraison:
+                st.caption(anomalie)
+
+    # ---- F. Explorer les conséquences : distribution globale des issues + croisement motif x issue
+    # (relances incluses) -- réutilise distribution_issues_livraison (verrouillé 4C) et une simple
+    # agrégation par motif, jamais un nouveau moteur, jamais utilisé pour trancher une priorité. ----
+    st.markdown(titre_section_principale("Explorer les conséquences"), unsafe_allow_html=True)
+
+    distribution_globale_livraison = distribution_issues_livraison(tickets_livraison_s2)
+    if len(distribution_globale_livraison) > 0:
+        texte_issues_globales = []
+        for item_issue_globale in distribution_globale_livraison:
+            texte_issues_globales.append(
+                item_issue_globale["issue"] + " " + formater_pourcentage(item_issue_globale["part_pct"])
+                + " (n=" + str(item_issue_globale["n"]) + ")"
+            )
+        st.caption("Issues finales sur l'ensemble de Livraison : " + " · ".join(texte_issues_globales))
+
+    croisement_motif_issue_livraison = construire_croisement_motif_issue_livraison(tickets_livraison_s2)
+    lignes_croisement_livraison = []
+    for ligne_croisement in croisement_motif_issue_livraison:
+        ligne_croisement_affichee = {
+            "Sujet": ligne_croisement["sujet"],
+            "Tickets": ligne_croisement["n"],
+            "Relances moyennes": "N/A",
+            "Issue principale": "N/A",
+        }
+        if ligne_croisement["relances_moyennes"] is not None:
+            ligne_croisement_affichee["Relances moyennes"] = str(round(ligne_croisement["relances_moyennes"], 2))
+        if ligne_croisement["issue_principale"] is not None:
+            ligne_croisement_affichee["Issue principale"] = (
+                ligne_croisement["issue_principale"]
+                + " (" + formater_pourcentage(ligne_croisement["part_issue_principale_pct"]) + ")"
+            )
+        lignes_croisement_livraison.append(ligne_croisement_affichee)
+
+    lignes_croisement_livraison_triees = sorted(lignes_croisement_livraison, key=obtenir_tickets, reverse=True)
+    with st.expander("Détail par motif : relances et issue principale", expanded=False):
+        afficher_tableau_colore(lignes_croisement_livraison_triees)
+
+    # ---- G. Vue descriptive secondaire : tables purement descriptives, jamais de caption
+    # "signal"/"anomalie" (mécanismes locaux concurrents supprimés en 5G.1, voir audit 5G section 4/6) ----
+    st.markdown(titre_section_principale("Vue descriptive secondaire"), unsafe_allow_html=True)
 
     sujets_livraison_s2 = grouper_par(tickets_livraison_s2, "subject_cluster")
     sujets_livraison_s1 = grouper_par(tickets_livraison_s1, "subject_cluster")
@@ -3835,16 +4226,12 @@ with onglet_livraison:
         sujets_livraison_a_afficher = list(sujets_livraison_s2.keys())
 
     lignes_livraison = []
-    signaux_sujets_livraison = []
     for sujet in sujets_livraison_a_afficher:
         tickets_sujet_s2 = sujets_livraison_s2.get(sujet, [])
         volume_s2 = len(tickets_sujet_s2)
         csat_sujet = moyenne(tickets_sujet_s2, "csat")
         resolution_sujet = moyenne(tickets_sujet_s2, "full_resolution_time_hours")
         pct_sujet_global = volume_s2 / len(tickets_s2) * 100
-        pct_sujet_livraison = 0
-        if volume_livraison_s2 > 0:
-            pct_sujet_livraison = volume_s2 / volume_livraison_s2 * 100
 
         ligne = {
             "Sujet": sujet,
@@ -3870,27 +4257,12 @@ with onglet_livraison:
 
         lignes_livraison.append(ligne)
 
-        signal = construire_signal_sujet_livraison(
-            sujet, volume_s2, pct_sujet_livraison, csat_sujet, resolution_sujet,
-            csat_livraison_s2, resolution_livraison_s2,
-        )
-        if signal is not None:
-            signaux_sujets_livraison.append(signal)
-
-    signaux_sujets_livraison_tries = sorted(signaux_sujets_livraison, key=obtenir_volume_signal, reverse=True)
-    for signal in signaux_sujets_livraison_tries[:2]:
-        st.caption(signal["texte"])
-
     lignes_livraison_triees = sorted(lignes_livraison, key=obtenir_tickets, reverse=True)
-    with st.expander("Détail par sujet", expanded=(len(signaux_sujets_livraison_tries) == 0)):
+    with st.expander("Sujets livraison — détail", expanded=False):
         afficher_tableau_colore(lignes_livraison_triees)
-
-    st.markdown(titre_section_principale("Par pays"), unsafe_allow_html=True)
-    st.caption("Le transporteur est unique sur toute la zone de livraison — un écart marqué sur un pays isole un problème logistique local plutôt qu'un souci transporteur global.")
 
     par_pays_livraison = grouper_par(tickets_livraison_s2, "country")
     lignes_pays_livraison = []
-    anomalies_pays = []
     for pays, tickets_pays in par_pays_livraison.items():
         csat_pays = moyenne(tickets_pays, "csat")
         resolution_pays = moyenne(tickets_pays, "full_resolution_time_hours")
@@ -3908,63 +4280,13 @@ with onglet_livraison:
 
         lignes_pays_livraison.append(ligne)
 
-        if len(tickets_pays) >= SEUIL_MINIMUM_SUJET:
-            ecart_csat_pays = None
-            if csat_pays is not None and csat_livraison_s2 is not None:
-                ecart_csat_pays = csat_livraison_s2 - csat_pays
-            if ecart_csat_pays is not None and ecart_csat_pays >= SEUIL_ECART_CSAT_LIVRAISON:
-                anomalies_pays.append(
-                    pays + " : CSAT " + formater_csat(csat_pays) + " (moyenne Livraison "
-                    + formater_csat(csat_livraison_s2) + ")"
-                )
-
-    if len(anomalies_pays) > 0:
-        st.caption("Anomalie locale détectée : " + " · ".join(anomalies_pays))
-    else:
-        st.caption("Aucun pays ne s'écarte significativement de la moyenne Livraison sur cette période.")
-
     lignes_pays_livraison_triees = sorted(lignes_pays_livraison, key=obtenir_tickets, reverse=True)
-    with st.expander("Détail par pays", expanded=(len(anomalies_pays) > 0)):
+    with st.expander("Par pays — détail", expanded=False):
+        st.caption(
+            "Le transporteur est unique sur toute la zone de livraison — un écart marqué sur un pays isole un "
+            "problème logistique local plutôt qu'un souci transporteur global."
+        )
         afficher_tableau_colore(lignes_pays_livraison_triees)
-
-
-SEUIL_ECART_CONVERSION_PCT = 15
-
-
-# Écart d'un agent par rapport à la moyenne DE SON PAYS (pas un classement inter-agents) — un
-# signal à comprendre (répartition des dossiers, typologie, formation), jamais un jugement de
-# performance commerciale. Nécessite au moins 2 agents sur le pays pour qu'une moyenne ait un sens.
-def construire_insight_agent_pays(lignes_agent_pays_triees):
-    sommes_pays = {}
-    comptes_pays = {}
-    for ligne in lignes_agent_pays_triees:
-        pays = ligne["pays"]
-        sommes_pays[pays] = sommes_pays.get(pays, 0) + ligne["taux"]
-        comptes_pays[pays] = comptes_pays.get(pays, 0) + 1
-
-    moyennes_pays = {}
-    for pays, somme in sommes_pays.items():
-        moyennes_pays[pays] = somme / comptes_pays[pays]
-
-    plus_gros_ecart_ligne = None
-    plus_gros_ecart_valeur = 0
-    for ligne in lignes_agent_pays_triees:
-        if comptes_pays[ligne["pays"]] < 2:
-            continue
-        ecart = ligne["taux"] - moyennes_pays[ligne["pays"]]
-        if abs(ecart) > abs(plus_gros_ecart_valeur):
-            plus_gros_ecart_valeur = ecart
-            plus_gros_ecart_ligne = ligne
-
-    if plus_gros_ecart_ligne is None or abs(plus_gros_ecart_valeur) < SEUIL_ECART_CONVERSION_PCT:
-        return None
-
-    return (
-        plus_gros_ecart_ligne["agent"] + " sur " + plus_gros_ecart_ligne["pays"] + " : taux de conversion "
-        + str(round(plus_gros_ecart_ligne["taux"])) + " %, contre " + str(round(moyennes_pays[plus_gros_ecart_ligne["pays"]]))
-        + " % en moyenne pour ce pays — écart à comprendre (répartition des dossiers, typologie de "
-        "demandes, ou besoin de formation), pas un jugement de performance."
-    )
 
 
 # ------------------------------------------------------------------
@@ -3972,129 +4294,325 @@ def construire_insight_agent_pays(lignes_agent_pays_triees):
 # ------------------------------------------------------------------
 
 with onglet_conversion:
-    st.markdown(titre_section_principale("Conversion après contact avant-vente"), unsafe_allow_html=True)
-    st.caption(
-        "Fenêtre de " + str(FENETRE_CONVERSION_JOURS) + " jours glissants après le ticket. Rapproché par "
-        "e-mail avec la commande la plus proche dans cette fenêtre (fichier Shopify fictif) — méthode "
-        "réaliste, mais qui peut compter par coïncidence une commande sans lien réel avec le contact "
-        "(client avec plusieurs tickets rapprochés dans le temps). À garder en tête en lisant les chiffres."
-    )
+    st.subheader("Avant-vente")
+    # Étape 6F, section 3 : "parcours d'achat observés", jamais le vocabulaire causal de conversion
+    # (déjà tranché en 5H.1 -- le renommage d'onglet et ce libellé restent cohérents).
+    st.caption("Parcours de contact, opportunités à investiguer, achats observés après contact.")
 
     tickets_avant_vente = categories_s2.get("Avant-vente / conseil", [])
     index_commandes_email = commandes_par_email(commandes)
 
-    resultats_conversion = []
-    for ticket in tickets_avant_vente:
-        commande = premiere_commande_apres(ticket, index_commandes_email, FENETRE_CONVERSION_JOURS)
-        resultats_conversion.append((ticket, commande))
+    # ---- Moteur Avant-vente (Étape 4D) : parcours de contact, opportunités par motif, achats
+    # observés. Historique = exports STRICTEMENT antérieurs à la Période A, jamais de fuite du futur
+    # (même principe que Produit/Livraison ci-dessus). Achats résolus une seule fois par commande
+    # réelle (resoudre_achats_observes_avant_vente) -- jamais la même commande recréditée à plusieurs
+    # contacts rapprochés du même client. Étape 5H.1 : 4D devient l'unique propriétaire de
+    # l'attribution -- l'ancienne logique locale non déduplicuée (premiere_commande_apres) a été
+    # retirée de cet onglet (audit 5H, section 4 et 34 : elle alimentait un KPI "Taux de conversion"
+    # et une table "Conversion par agent et par pays" tous deux fondés sur une base non robuste).
+    historique_avant_vente_par_fichier = []
+    for date_export_historique_av, chemin_historique_av in exports_disponibles:
+        if date_export_historique_av < date_a_debut:
+            tickets_fichier_historique_av = charger_tickets(chemin_historique_av)
+            tickets_av_fichier_historique = []
+            for ticket_historique_av in tickets_fichier_historique_av:
+                if categoriser(ticket_historique_av) == "Avant-vente / conseil":
+                    tickets_av_fichier_historique.append(ticket_historique_av)
+            historique_avant_vente_par_fichier.append(tickets_av_fichier_historique)
 
-    nombre_convertis = 0
-    delais = []
-    for ticket, commande in resultats_conversion:
-        if commande is not None:
-            nombre_convertis = nombre_convertis + 1
-            delais.append((commande["order_date"] - ticket["created_at"]).days)
-
-    if len(tickets_avant_vente) > 0:
-        taux_conversion = nombre_convertis / len(tickets_avant_vente) * 100
-
-        with st.container(border=True):
-            colonne_cv_a, colonne_cv_b = st.columns(2)
-            colonne_cv_a.markdown(
-                construire_carte_kpi(
-                    "Taux de conversion (" + str(FENETRE_CONVERSION_JOURS) + "j)",
-                    formater_pourcentage(taux_conversion),
-                    sous_texte=formater_nombre_espace(len(tickets_avant_vente)) + " tickets avant-vente sur la période",
-                ),
-                unsafe_allow_html=True,
-            )
-            if len(delais) > 0:
-                colonne_cv_b.markdown(
-                    construire_carte_kpi(
-                        "Délai moyen avant achat", str(round(sum(delais) / len(delais), 1)) + " j"
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-    st.divider()
-    st.markdown(titre_section_principale("Conversion par agent et par pays"), unsafe_allow_html=True)
-    st.caption(
-        "Pas un classement commercial : sert à repérer des écarts utiles pour la répartition des "
-        "dossiers, la compréhension d'un marché ou un besoin de formation. Limité aux combinaisons "
-        "agent/pays avec au moins " + str(SEUIL_MINIMUM_SUJET) + " tickets avant-vente."
+    contexte_avant_vente_periode = contexte_periode(evenements_calendrier, date_a_debut, date_a_fin)
+    lecture_activite_av = construire_lecture_activite_avant_vente(
+        tickets_avant_vente, tickets_s2, contexte_avant_vente_periode
     )
 
-    par_agent_pays = {}
-    for ticket, commande in resultats_conversion:
-        cle = (ticket["assignee"], ticket["country"])
-        if cle not in par_agent_pays:
-            par_agent_pays[cle] = {"total": 0, "convertis": 0, "montants": [], "quantites": []}
-        par_agent_pays[cle]["total"] = par_agent_pays[cle]["total"] + 1
-        if commande is not None:
-            par_agent_pays[cle]["convertis"] = par_agent_pays[cle]["convertis"] + 1
-            par_agent_pays[cle]["montants"].append(commande["montant_total"])
-            par_agent_pays[cle]["quantites"].append(commande["quantite"])
+    resultats_achats_av = resoudre_achats_observes_avant_vente(
+        tickets_avant_vente, index_commandes_email, FENETRE_CONVERSION_JOURS
+    )
+    parcours_av = analyser_parcours_rdv(tickets_avant_vente, resultats_achats_av)
 
-    lignes_agent_pays = []
-    for cle, stats in par_agent_pays.items():
-        agent, pays = cle
-        if stats["total"] < SEUIL_MINIMUM_SUJET:
-            continue
+    NOMBRE_MAX_SIGNAUX_AVANT_VENTE = 5
+    resultats_motifs_av = moteur_avant_vente_motifs(
+        tickets_avant_vente, resultats_achats_av, historique_avant_vente_par_fichier,
+        contexte_avant_vente_periode, NOMBRE_MAX_SIGNAUX_AVANT_VENTE,
+    )
 
-        montant_moyen = None
-        if len(stats["montants"]) > 0:
-            montant_moyen = sum(stats["montants"]) / len(stats["montants"])
+    # ---- A. Lecture Avant-vente : juxtapose ACTIVITÉ et SIGNAL, sans les fusionner. ----
+    st.markdown(titre_section_principale("Lecture Avant-vente"), unsafe_allow_html=True)
+    texte_lecture_av = construire_lecture_avant_vente(
+        lecture_activite_av["observation"],
+        resultats_motifs_av["nb_opportunites_avant_plafond"],
+        resultats_motifs_av["nb_a_surveiller_avant_plafond"],
+    )
+    if lecture_activite_av["contexte"] is not None:
+        texte_lecture_av_html = texte_lecture_av + (
+            '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+            + lecture_activite_av["contexte"] + "</span>"
+        )
+    else:
+        texte_lecture_av_html = texte_lecture_av
+    st.markdown(construire_bandeau_info(texte_lecture_av_html), unsafe_allow_html=True)
 
-        quantite_moyenne = None
-        if len(stats["quantites"]) > 0:
-            quantite_moyenne = sum(stats["quantites"]) / len(stats["quantites"])
-
-        lignes_agent_pays.append({
-            "agent": agent,
-            "pays": pays,
-            "tickets": stats["total"],
-            "convertis": stats["convertis"],
-            "taux": stats["convertis"] / stats["total"] * 100,
-            "montant_moyen": montant_moyen,
-            "quantite_moyenne": quantite_moyenne,
-        })
-
-    def obtenir_tri_agent_pays(ligne):
-        return ligne["tickets"]
-
-    lignes_agent_pays_triees = sorted(lignes_agent_pays, key=obtenir_tri_agent_pays, reverse=True)
-
-    insight_agent_pays = construire_insight_agent_pays(lignes_agent_pays_triees)
-    if insight_agent_pays is not None:
-        st.caption(insight_agent_pays)
-
-    lignes_agent_pays_affichage = []
-    for ligne in lignes_agent_pays_triees:
-        montant_texte = "N/A"
-        if ligne["montant_moyen"] is not None:
-            montant_texte = formater_montant(ligne["montant_moyen"])
-
-        quantite_texte = "N/A"
-        if ligne["quantite_moyenne"] is not None:
-            quantite_texte = str(round(ligne["quantite_moyenne"], 1))
-
-        lignes_agent_pays_affichage.append({
-            "Agent": ligne["agent"],
-            "Pays": ligne["pays"],
-            "Tickets avant-vente": ligne["tickets"],
-            "Convertis": ligne["convertis"],
-            "Taux de conversion": formater_pourcentage(ligne["taux"]),
-            "Panier moyen": montant_texte,
-            "Qté article moyenne": quantite_texte,
-        })
+    # ---- B. Contexte compact (2 KPI -- volume brut, jamais "conversion") ----
+    volume_av_total = len(tickets_avant_vente)
+    pct_av_global = 0
+    if len(tickets_s2) > 0:
+        pct_av_global = volume_av_total / len(tickets_s2) * 100
 
     with st.container(border=True):
-        st.dataframe(lignes_agent_pays_affichage, hide_index=True, width="stretch")
+        colonne_ctx_a, colonne_ctx_b = st.columns(2)
+        colonne_ctx_a.markdown(
+            construire_carte_kpi(
+                "Contacts Avant-vente", formater_nombre_espace(volume_av_total),
+                sous_texte=formater_pourcentage(pct_av_global) + " du volume global",
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_ctx_b.markdown(
+            construire_carte_kpi(
+                "RDV conseil", formater_nombre_espace(parcours_av["rdv_demandes"]),
+                sous_texte=(
+                    formater_pourcentage(parcours_av["rdv_demandes"] / volume_av_total * 100) + " de l'Avant-vente"
+                    if volume_av_total > 0 else None
+                ),
+            ),
+            unsafe_allow_html=True,
+        )
+
+    # ---- C. Parcours observés (RDV honoré / annulé-no-show / spontané) ----
+    # Étape 6F, section 23-24 : présentation comparative neutre -- 3 mini metric cards (même
+    # construire_carte_kpi que partout ailleurs, jamais d'accent), pas des Signal cards. Aucune
+    # couleur gagnant/perdant : "RDV annulé / no-show" à 31,9 % ne doit pas paraître plus "gagnant"
+    # que "RDV honoré" à 28,7 % -- les 3 cartes partagent rigoureusement le même traitement visuel.
+    st.markdown(titre_section_principale("Parcours observés"), unsafe_allow_html=True)
+    with st.container(border=True):
+        colonnes_parcours_av = st.columns(3)
+        index_colonne_parcours_av = 0
+        for nom_parcours_av, stats_parcours_av in (
+            ("RDV honoré", parcours_av["stats_rdv_honore"]),
+            ("RDV annulé / no-show", parcours_av["stats_rdv_non_honore"]),
+            ("Contact spontané", parcours_av["stats_spontane"]),
+        ):
+            if stats_parcours_av["n_contacts"] > 0:
+                if stats_parcours_av["taux_pct"] is not None:
+                    valeur_parcours_av = formater_pourcentage(stats_parcours_av["taux_pct"])
+                    sous_texte_parcours_av = "achat observé, n=" + str(stats_parcours_av["n_contacts"]) + " contacts"
+                else:
+                    valeur_parcours_av = str(stats_parcours_av["n_contacts"])
+                    sous_texte_parcours_av = "contact(s)"
+
+                if stats_parcours_av["panier_moyen"] is not None:
+                    sous_texte_parcours_av = sous_texte_parcours_av + (
+                        " · panier " + formater_montant(stats_parcours_av["panier_moyen"])
+                        + " (n=" + str(stats_parcours_av["n_panier"]) + ") · délai "
+                        + str(round(stats_parcours_av["delai_moyen"], 1)) + " j"
+                    )
+
+                colonnes_parcours_av[index_colonne_parcours_av].markdown(
+                    construire_carte_kpi(nom_parcours_av, valeur_parcours_av, sous_texte=sous_texte_parcours_av),
+                    unsafe_allow_html=True,
+                )
+            index_colonne_parcours_av = index_colonne_parcours_av + 1
+
+        st.caption(parcours_av["conclusion"])
+        st.caption("Association observée sur les données disponibles, pas une cause démontrée.")
+
+        contacts_avant_achat_av = parcours_av["contacts_avant_achat"]
+        if contacts_avant_achat_av is not None:
+            st.caption(
+                "Contacts Avant-vente avant l'achat (mêmes " + str(FENETRE_CONVERSION_JOURS) + " jours que "
+                "l'attribution) : en moyenne " + str(round(contacts_avant_achat_av["nombre_moyen_contacts_avant_achat"], 2))
+                + " (médiane " + str(round(contacts_avant_achat_av["nombre_median_contacts_avant_achat"], 1)) + "), "
+                + formater_pourcentage(contacts_avant_achat_av["part_plusieurs_contacts_pct"])
+                + " des achats observés avaient plusieurs contacts avant l'achat (n="
+                + str(contacts_avant_achat_av["n_achats_credites"]) + " achats observés)."
+            )
+
+    # ---- D. Opportunités à investiguer (4C, réutilisé sans recalcul) + Contacts/Achats associés ----
+    st.markdown(titre_section_principale("Opportunités à investiguer"), unsafe_allow_html=True)
+    if len(resultats_motifs_av["opportunites"]) == 0:
+        st.caption("Aucune opportunité ne se détache sur cette période avec les critères actuels.")
+    else:
+        # Étape 6F, section 6-25 : même fondation Signal card. Un seul niveau existe ici ("Opportunité
+        # à investiguer", tier unique -- pas de principal/secondaire comme Produit/Livraison), donc
+        # statut "attention" uniforme et badge = signal_av["niveau"] tel quel.
+        for signal_av in resultats_motifs_av["opportunites"]:
+            corps_av_html = signal_av["observation_principale"]
+            lignes_meta_av = []
+
+            lignes_meta_av.append(
+                str(signal_av["volume"]["n"]) + " tickets ("
+                + formater_pourcentage(signal_av["volume"]["part_univers_pct"])
+                + " d'Avant-vente sur la période, univers " + str(signal_av["volume"]["univers"]) + ")"
+            )
+            lignes_meta_av.append("Temporalité : " + signal_av["temporalite"])
+            lignes_meta_av.append(
+                "Achat observé : " + formater_pourcentage(signal_av["achat_observe"]["taux_pct"])
+                + " des contacts (n=" + str(signal_av["achat_observe"]["n_contacts"]) + "), contre "
+                + formater_pourcentage(signal_av["achat_observe_reference_pct"]) + " en référence Avant-vente"
+            )
+            if signal_av["achat_observe"]["panier_moyen"] is not None:
+                lignes_meta_av.append(
+                    "Panier observé moyen : " + formater_montant(signal_av["achat_observe"]["panier_moyen"])
+                    + " (n=" + str(signal_av["achat_observe"]["n_panier"]) + ")"
+                )
+            if signal_av["experience"]["csat"] is not None:
+                lignes_meta_av.append(
+                    "CSAT : " + formater_csat(signal_av["experience"]["csat"])
+                    + " (n=" + str(signal_av["experience"]["n_csat"]) + ")"
+                )
+            if signal_av["contexte"] is not None:
+                lignes_meta_av.append(signal_av["contexte"])
+            lignes_meta_av.append(signal_av["piste_investigation"])
+            lignes_meta_av.append(signal_av["prudence"])
+
+            for ligne_meta_av in lignes_meta_av:
+                corps_av_html = corps_av_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + ligne_meta_av + "</span>"
+                )
+
+            st.markdown(
+                construire_carte_signal(signal_av["sujet"], "attention", corps_av_html, badge=signal_av["niveau"]),
+                unsafe_allow_html=True,
+            )
+
+            # ---- G (au niveau carte) : contacts associés + achats associés, matchés
+            # structurellement (grain subject_cluster), source unique = resultats_achats_av ----
+            contacts_associes_av = construire_contacts_associes_avant_vente(signal_av, resultats_achats_av)
+            achats_associes_av = construire_achats_associes_avant_vente(contacts_associes_av)
+
+            with st.expander("Contacts associés (" + str(len(contacts_associes_av)) + ")"):
+                lignes_contacts_av = []
+                for ticket_contact_av, commande_contact_av, plusieurs_contact_av in contacts_associes_av:
+                    parcours_ticket_av = "Contact spontané"
+                    if ticket_contact_av["type_contact_avant_vente"] == "RDV conseil":
+                        parcours_ticket_av = "RDV " + str(ticket_contact_av["rdv_statut"]).lower()
+                    achat_observe_texte = "Non"
+                    delai_texte_av = "N/A"
+                    if commande_contact_av is not None:
+                        achat_observe_texte = "Oui"
+                        delai_texte_av = str(
+                            (commande_contact_av["order_date"] - ticket_contact_av["created_at"]).days
+                        ) + " j"
+                    lignes_contacts_av.append({
+                        "Ticket": ticket_contact_av["ticket_id"],
+                        "Date contact": ticket_contact_av["created_at"],
+                        "Parcours": parcours_ticket_av,
+                        "Canal": ticket_contact_av["via_channel"],
+                        "Achat observé": achat_observe_texte,
+                        "Délai commande": delai_texte_av,
+                    })
+                st.dataframe(lignes_contacts_av, hide_index=True, width="stretch")
+
+            # Étape 6F, section 27 : "Commandes attribuées (n)" si disponible -- même logique
+            # visuelle que Produit/Livraison, contenu différent. Montant reste descriptif (aucune
+            # couleur suggérant une vente "réussie", section 28).
+            if len(achats_associes_av) > 0:
+                with st.expander("Commandes attribuées (" + str(len(achats_associes_av)) + ")"):
+                    lignes_achats_av = []
+                    for ticket_achat_av, commande_achat_av in achats_associes_av:
+                        lignes_achats_av.append({
+                            "Commande": commande_achat_av["order_id"],
+                            "Date": commande_achat_av["order_date"],
+                            "Contact attribué": ticket_achat_av["ticket_id"],
+                            "Produit": commande_achat_av["product_name"],
+                            "Montant": formater_montant(commande_achat_av["montant_total"]),
+                            "Délai depuis contact": str(
+                                (commande_achat_av["order_date"] - ticket_achat_av["created_at"]).days
+                            ) + " j",
+                        })
+                    st.dataframe(lignes_achats_av, hide_index=True, width="stretch")
+
+    # ---- E. À surveiller (compact, indépendant du nombre d'opportunités) ----
+    if len(resultats_motifs_av["a_surveiller"]) > 0:
+        texte_a_surveiller_av = []
+        for signal_surveillance_av in resultats_motifs_av["a_surveiller"]:
+            texte_a_surveiller_av.append(
+                signal_surveillance_av["sujet"] + " (" + str(signal_surveillance_av["volume"]["n"]) + " tickets — "
+                + signal_surveillance_av["observation_principale"].rstrip(".") + ")"
+            )
+        st.caption("À surveiller (preuve encore partielle) : " + " · ".join(texte_a_surveiller_av))
+
+    # ---- F. Sujets sans signal particulier ----
+    if len(resultats_motifs_av["sujets_silencieux"]) > 0:
+        st.caption(
+            "Motifs sans signal particulier cette période : " + " · ".join(resultats_motifs_av["sujets_silencieux"])
+        )
+
+    anomalies_qualite_av = controler_qualite_donnees_avant_vente(
+        tickets_avant_vente, [t for t in tickets_s2 if categoriser(t) != "Avant-vente / conseil"]
+    )
+    if len(anomalies_qualite_av) > 0:
+        with st.expander("Anomalies de qualité de données détectées"):
+            for anomalie_av in anomalies_qualite_av:
+                st.caption(anomalie_av)
+
+    st.caption(
+        "Les achats sont attribués uniquement lorsqu'ils surviennent dans les " + str(FENETRE_CONVERSION_JOURS)
+        + " jours après un contact Avant-vente éligible — un achat en dehors de cette fenêtre reste hors "
+        "périmètre d'attribution, sans être compté comme un contact sans achat."
+    )
+
+    # ---- H. Vue descriptive secondaire : canaux (descriptif uniquement -- jamais de comparaison
+    # d'achat observé par canal, le téléphone étant confondu avec le parcours RDV), sujets, pays.
+    # Jamais de croisement agent x pays (retiré en 5H.1, voir audit 5H section 34). ----
+    st.markdown(titre_section_principale("Vue descriptive secondaire"), unsafe_allow_html=True)
+
+    distribution_canal_av = distribution_canal_avant_vente(tickets_avant_vente)
+    with st.expander("Par canal", expanded=False):
+        lignes_canal_av = []
+        for item_canal_av in distribution_canal_av:
+            lignes_canal_av.append({
+                "Canal": item_canal_av["canal"],
+                "Tickets": item_canal_av["n"],
+                "% de l'Avant-vente": formater_pourcentage(item_canal_av["part_pct"]),
+            })
+        afficher_tableau_colore(lignes_canal_av)
+
+    table_sujets_av = construire_table_sujets_avant_vente(tickets_avant_vente, resultats_achats_av)
+    lignes_sujets_av = []
+    for ligne_sujet_av in table_sujets_av:
+        achat_texte_sujet = "N/A"
+        if ligne_sujet_av["achat_observe_pct"] is not None:
+            achat_texte_sujet = formater_pourcentage(ligne_sujet_av["achat_observe_pct"])
+        panier_texte_sujet = "N/A"
+        if ligne_sujet_av["panier_moyen"] is not None:
+            panier_texte_sujet = formater_montant(ligne_sujet_av["panier_moyen"])
+        lignes_sujets_av.append({
+            "Sujet": ligne_sujet_av["sujet"],
+            "Tickets": ligne_sujet_av["n"],
+            "Achat observé": achat_texte_sujet,
+            "Panier moyen observé": panier_texte_sujet,
+        })
+    lignes_sujets_av_triees = sorted(lignes_sujets_av, key=obtenir_tickets, reverse=True)
+    with st.expander("Par sujet", expanded=False):
+        afficher_tableau_colore(lignes_sujets_av_triees)
+
+    table_pays_av = construire_table_pays_avant_vente(tickets_avant_vente, resultats_achats_av)
+    lignes_pays_av = []
+    for ligne_pays_av in table_pays_av:
+        achat_texte_pays = "N/A"
+        if ligne_pays_av["achat_observe_pct"] is not None:
+            achat_texte_pays = formater_pourcentage(ligne_pays_av["achat_observe_pct"])
+        lignes_pays_av.append({
+            "Pays": ligne_pays_av["pays"],
+            "Tickets": ligne_pays_av["n"],
+            "Achat observé": achat_texte_pays,
+        })
+    lignes_pays_av_triees = sorted(lignes_pays_av, key=obtenir_tickets, reverse=True)
+    with st.expander("Par pays", expanded=False):
+        afficher_tableau_colore(lignes_pays_av_triees)
 
 
-FENETRE_NPS_EXPERIENCE_JOURS = 60
-SEUIL_RESOLUTION_RAPIDE_H = 24
-SEUIL_MIN_REPONSES_NPS = 15
+# FENETRE_NPS_EXPERIENCE_JOURS / SEUIL_RESOLUTION_RAPIDE_H / SEUIL_PRUDENCE_ECHANTILLON_NPS vivent
+# désormais dans outils.py (source unique, Étape 4E) -- importées ci-dessus.
+
+
+def _texte_composition_nps(composition):
+    return (
+        "n=" + str(composition["n"]) + " · Promoteurs " + str(round(composition["part_promoteurs_pct"]))
+        + "% / Passifs " + str(round(composition["part_passifs_pct"])) + "% / Détracteurs "
+        + str(round(composition["part_detracteurs_pct"])) + "%"
+    )
 
 
 # Un ticket récurrent (le client a déjà eu au moins un SAV avant) pointe vers un défaut
@@ -4106,50 +4624,15 @@ def est_cout_potentiellement_evitable(ticket):
     return ticket.get("prior_sav_count") is not None and ticket["prior_sav_count"] >= 1
 
 
-# Rapproche une réponse NPS du dernier contact support plausible (fenêtre glissante avant la
-# réponse) pour catégoriser par type d'expérience — approche associative, pas causale (aucun ID
-# ticket n'est stocké dans les réponses NPS elles-mêmes, donc aucun lien démontré).
-def obtenir_type_experience(reponse, index_tickets_email):
-    ticket = dernier_ticket_avant(reponse, index_tickets_email, FENETRE_NPS_EXPERIENCE_JOURS)
-    if ticket is None:
-        return "Aucun contact"
-
-    categorie = categoriser(ticket)
-    if categorie == CATEGORIE_SAV_PRODUIT:
-        if ticket["prior_sav_count"] is not None and ticket["prior_sav_count"] >= 1:
-            return "SAV récurrent"
-        return "SAV"
-    if categorie == "Livraison":
-        return "Problème livraison"
-
-    resolution = ticket["resolution_type"]
-    if resolution is not None and "Remplacement" in resolution:
-        return "Remplacement"
-
-    resolution_heures = ticket["full_resolution_time_hours"]
-    if resolution_heures is not None:
-        if resolution_heures < SEUIL_RESOLUTION_RAPIDE_H:
-            return "Résolution rapide"
-        return "Résolution longue"
-
-    return "Autre contact"
-
-
 # ------------------------------------------------------------------
 # Onglet 9 : Impact & confiance
 # ------------------------------------------------------------------
 
 with onglet_impact:
-    st.markdown(titre_section_principale("Coût direct estimé des incidents clients"), unsafe_allow_html=True)
-    st.caption(
-        "Remboursement = montant réellement remboursé. Remplacement et garantie = coût de revient "
-        "produit + logistique associée (product_costs_fictif.xlsx), pas le prix de vente payé par le "
-        "client. Geste commercial reste une fraction estimée du prix de vente : aucun montant "
-        "réellement accordé n'est enregistré par ticket — seule ligne encore une estimation, "
-        "marquée comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois même si "
-        "plusieurs tickets s'y rattachent."
-    )
+    st.subheader("Impact & confiance")
+    st.caption("Ce que disent réellement les données disponibles sur la confiance client et l'impact financier -- avec quel niveau de prudence.")
 
+    # ---- Calculs : coût direct (moteur de coût inchangé, Étape 5I : sain) ----
     groupes_perte = {}
     for ticket in tickets_s2:
         type_perte = type_perte_financiere(ticket)
@@ -4211,54 +4694,20 @@ with onglet_impact:
         lignes_perte.append(ligne)
 
     lignes_perte_triees = sorted(lignes_perte, key=obtenir_tickets, reverse=True)
-    with st.container(border=True):
-        st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
 
-    if montant_total_pertes > 0:
-        colonne_cout_a, colonne_cout_b = st.columns(2)
-        colonne_cout_a.markdown(
-            construire_carte_kpi(
-                "Coût direct estimé des incidents clients", formater_montant(montant_total_pertes)
-            ),
-            unsafe_allow_html=True,
-        )
-        colonne_cout_b.markdown(
-            construire_carte_kpi(
-                "Dont potentiellement évitable", formater_montant(montant_evitable),
-                sous_texte=formater_pourcentage(montant_evitable / montant_total_pertes * 100) + " du coût — SAV récurrents",
-            ),
-            unsafe_allow_html=True,
-        )
-
-        if len(montants_par_composant) > 0:
-            composant_principal = None
-            montant_principal = 0
-            for composant, montant in montants_par_composant.items():
-                if montant > montant_principal:
-                    montant_principal = montant
-                    composant_principal = composant
-
-            st.caption(
-                "Principale cause du coût : " + composant_principal + " (" + formater_montant(montant_principal)
-                + ", " + formater_pourcentage(montant_principal / montant_total_pertes * 100) + " du coût total)."
-            )
-
-    st.markdown(titre_section_principale("SAV sous garantie"), unsafe_allow_html=True)
-    st.caption(
-        "Impact économique du SAV pris en charge par l'entreprise — le détail produit/composant est "
-        "dans l'onglet Produit, pas répété ici."
-    )
-
+    # ---- Calculs : SAV sous garantie ----
     tickets_sav_produit_business = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
     tickets_garantie = []
     for ticket in tickets_sav_produit_business:
         if ticket["warranty_status"] == "Sous garantie":
             tickets_garantie.append(ticket)
 
+    pct_garantie_volume_sav = None
+    montants_garantie = []
+    montant_garantie_total = 0
     if len(tickets_sav_produit_business) > 0 and len(tickets_garantie) > 0:
         pct_garantie_volume_sav = len(tickets_garantie) / len(tickets_sav_produit_business) * 100
 
-        montants_garantie = []
         commandes_garantie_deja_comptees = set()
         for ticket in tickets_garantie:
             order_id = ticket["order_id"]
@@ -4272,176 +4721,362 @@ with onglet_impact:
         if len(montants_garantie) > 0:
             montant_garantie_total = sum(montants_garantie)
 
-            colonne_gar_a, colonne_gar_b = st.columns(2)
-            colonne_gar_a.markdown(
-                construire_carte_kpi(
-                    "Coût garantie estimé", formater_montant(montant_garantie_total),
-                    sous_texte=str(len(tickets_garantie)) + " tickets sous garantie",
-                ),
-                unsafe_allow_html=True,
-            )
-            colonne_gar_b.markdown(
-                construire_carte_kpi("Part du SAV produit concernée", formater_pourcentage(pct_garantie_volume_sav)),
-                unsafe_allow_html=True,
-            )
+    # ---- Calculs : NPS calé sur la PÉRIODE SÉLECTIONNÉE (Étape 5I.1 -- corrige le bug identifié en
+    # 5I : l'ancienne "Lecture de confiance" utilisait toujours index_dernier_mois = len(historique)-1,
+    # indépendamment de la période choisie dans la barre latérale. Même principe de calage que Vue
+    # d'ensemble (5A, verrouillé, non modifié ici) : identifier_observation_nps_periode ne renvoie
+    # jamais un mois approximatif -- absent si aucune correspondance exacte, jamais de repli. ----
+    reponses_nps = charger_nps(FICHIER_NPS)
+    index_tickets_email = tickets_par_email(tickets_historique_business)
+    composition_globale_nps = calculer_composition_nps(reponses_nps)
 
-            # Comparaison en coût MOYEN par ticket, jamais en part d'un total combiné : une garantie
-            # peut concerner un ticket déjà compté dans "Coût direct" (ex. Remplacement produit) —
-            # additionner les deux totaux compterait ce ticket deux fois. Le coût moyen par ticket,
-            # lui, reste valide même si les deux ensembles se recoupent partiellement.
-            cout_moyen_garantie = None
-            if len(tickets_garantie) > 0:
-                cout_moyen_garantie = montant_garantie_total / len(tickets_garantie)
+    item_nps = None
+    texte_alignement_periode = None
+    texte_prudence_periode = None
+    texte_sensibilite_periode = None
+    historique_nps_mensuel = []
+    historique_nps_borne = []
 
-            cout_moyen_global = None
-            if len(commandes_deja_comptees) > 0:
-                cout_moyen_global = montant_total_pertes / len(commandes_deja_comptees)
+    if composition_globale_nps is not None:
+        historique_nps_mensuel = construire_historique_nps_par_mois(reponses_nps)
 
-            if cout_moyen_garantie is not None and cout_moyen_global is not None and cout_moyen_global > 0:
-                ecart_cout_moyen_pct = (cout_moyen_garantie - cout_moyen_global) / cout_moyen_global * 100
-                if ecart_cout_moyen_pct >= 50:
-                    st.caption(
-                        "Coût moyen par ticket sous garantie : " + formater_montant(cout_moyen_garantie)
-                        + ", contre " + formater_montant(cout_moyen_global) + " en moyenne sur l'ensemble des "
-                        "incidents chiffrés — un ticket garantie coûte structurellement plus cher (remplacement "
-                        "complet à la charge de l'entreprise, pas de part payée par le client)."
-                    )
+        tickets_par_mois_care = {}
+        for ticket in tickets_historique_business:
+            cle_mois_ticket = ticket["created_at"].strftime("%Y-%m")
+            if cle_mois_ticket in tickets_par_mois_care:
+                tickets_par_mois_care[cle_mois_ticket].append(ticket)
+            else:
+                tickets_par_mois_care[cle_mois_ticket] = [ticket]
 
-            st.caption(
-                "« Coût direct » et « Coût garantie » sont calculés indépendamment et peuvent se recouper "
-                "partiellement (un remplacement sous garantie compte dans les deux) — ne pas additionner "
-                "ces deux montants."
+        historique_care_mensuel = []
+        for item_mois in historique_nps_mensuel:
+            historique_care_mensuel.append(
+                construire_profil_care_mensuel(tickets_par_mois_care.get(item_mois["cle_mois"], []))
             )
 
-    st.divider()
-    st.markdown(titre_section_principale("Confiance mesurée (NPS)"), unsafe_allow_html=True)
-    st.caption(
-        "Fichier NPS FICTIF (nps_fictif.xlsx) — un score par client (0 à 10), pas filtré par période. "
-        "NPS = % de promoteurs (9-10) moins % de détracteurs (0-6)."
+        historique_n_mensuel = []
+        for item_mois in historique_nps_mensuel:
+            historique_n_mensuel.append(item_mois["n"])
+
+        index_mois_nps = identifier_observation_nps_periode(historique_nps_mensuel, date_a_debut)
+
+        if index_mois_nps is not None:
+            item_nps = historique_nps_mensuel[index_mois_nps]
+            historique_nps_borne = historique_nps_mensuel[:index_mois_nps + 1]
+
+            alignement_periode = evaluer_alignement_care_nps(
+                historique_nps_mensuel, historique_care_mensuel, index_mois_nps
+            )
+            if alignement_periode is not None:
+                texte_alignement_periode = texte_alignement_care_nps(
+                    alignement_periode, historique_care_mensuel[index_mois_nps], "cette période",
+                )
+
+            etat_prudence_periode = evaluer_prudence_echantillon_nps(historique_n_mensuel, index_mois_nps)
+            texte_prudence_periode = texte_prudence_echantillon_nps(etat_prudence_periode, item_nps["n"])
+            texte_sensibilite_periode = texte_sensibilite_echantillon_nps(etat_prudence_periode)
+
+    # ---- A. Lecture Impact & confiance ----
+    # L'alignement n'est jamais passé ici : la section D ci-dessous en est l'unique affichage
+    # (Étape 5I.1, section 15/16 -- corrige la duplication identifiée en 5I entre "Lecture de
+    # confiance" et "Alignement avec les autres signaux Care", qui répétaient le même texte).
+    st.markdown(titre_section_principale("Lecture Impact & confiance"), unsafe_allow_html=True)
+    st.markdown(
+        construire_bandeau_info(
+            construire_lecture_impact_confiance(item_nps, None, montant_total_pertes, montant_evitable)
+        ),
+        unsafe_allow_html=True,
     )
 
-    reponses_nps = charger_nps(FICHIER_NPS)
-    reponses_contactees = []
-    reponses_non_contactees = []
-    for reponse in reponses_nps:
-        if reponse["a_contacte_support"] == "Oui":
-            reponses_contactees.append(reponse)
+    # ---- B. Contexte compact (max 3 KPI -- jamais un total combiné Coût direct + Garantie) ----
+    kpis_contexte_impact = []
+    if item_nps is not None:
+        kpis_contexte_impact.append((
+            "NPS de la période", formater_nps_entier(item_nps["nps"]), str(item_nps["n"]) + " réponse(s)",
+        ))
+    if montant_total_pertes > 0:
+        kpis_contexte_impact.append(("Coût direct observé / estimé", formater_montant(montant_total_pertes), None))
+    if montant_garantie_total > 0:
+        kpis_contexte_impact.append(("Coût garantie estimé", formater_montant(montant_garantie_total), None))
+
+    if len(kpis_contexte_impact) == 0:
+        st.caption("Aucune donnée exploitable pour cette période.")
+    else:
+        with st.container(border=True):
+            colonnes_contexte_impact = st.columns(len(kpis_contexte_impact))
+            for index_kpi_impact in range(len(kpis_contexte_impact)):
+                label_kpi_impact, valeur_kpi_impact, sous_texte_kpi_impact = kpis_contexte_impact[index_kpi_impact]
+                colonnes_contexte_impact[index_kpi_impact].markdown(
+                    construire_carte_kpi(label_kpi_impact, valeur_kpi_impact, sous_texte=sous_texte_kpi_impact),
+                    unsafe_allow_html=True,
+                )
+        if montant_total_pertes > 0 and montant_garantie_total > 0:
+            st.caption(TEXTE_CAVEAT_RECOUVREMENT_COUT)
+
+    # ---- C. Confiance client ----
+    st.markdown(titre_section_principale("Confiance client"), unsafe_allow_html=True)
+    if composition_globale_nps is None:
+        st.caption("Aucune réponse NPS disponible dans le fichier.")
+    elif item_nps is None:
+        st.caption("Aucune donnée NPS exploitable pour cette période.")
+    else:
+        # La prudence d'échantillon est toujours énoncée avant/avec le NPS lui-même (Étape 4E.1).
+        st.write(texte_prudence_periode)
+        if texte_sensibilite_periode is not None:
+            st.caption(texte_sensibilite_periode)
+        st.markdown(
+            construire_carte_kpi(
+                "NPS", formater_nps_entier(item_nps["nps"]), sous_texte=str(item_nps["n"]) + " réponse(s)",
+            ),
+            unsafe_allow_html=True,
+        )
+        st.write(
+            "Promoteurs " + str(item_nps["composition"]["n_promoteurs"]) + " / Passifs "
+            + str(item_nps["composition"]["n_passifs"]) + " / Détracteurs "
+            + str(item_nps["composition"]["n_detracteurs"])
+        )
+
+    # ---- D. Alignement / divergence 4E (affiché UNE SEULE FOIS -- Étape 5I.1, section 15) ----
+    if composition_globale_nps is not None and item_nps is not None:
+        st.markdown(titre_section_principale("Alignement avec les autres signaux Care"), unsafe_allow_html=True)
+        st.caption(
+            "Compare la position du NPS de la période dans l'historique disponible à celle du CSAT et des "
+            "indicateurs d'effort (relances, résolution) du même mois — une coïncidence temporelle "
+            "observée, jamais une explication démontrée."
+        )
+        if texte_alignement_periode is not None:
+            # Étape 6H, section 11-12 : statut selon le TYPE produit par 4E (jamais recalculé) --
+            # alignement négatif = "attention" (signal à investiguer), positif = "positive" (accent
+            # léger, jamais une grande carte verte), divergence = neutre (information analytique,
+            # pas une anomalie -- même traitement que "Contrastes" en Tendances, Étape 6E).
+            if alignement_periode["type"] == "alignement_negatif":
+                statut_alignement_periode = "attention"
+            elif alignement_periode["type"] == "alignement_positif":
+                statut_alignement_periode = "positive"
+            else:
+                statut_alignement_periode = None
+            st.markdown(
+                construire_carte_signal(None, statut_alignement_periode, texte_alignement_periode),
+                unsafe_allow_html=True,
+            )
         else:
-            reponses_non_contactees.append(reponse)
+            st.caption("Aucun signal d'alignement ou de divergence notable pour cette période.")
 
-    nps_global = calculer_nps(reponses_nps)
-    nps_contactes = calculer_nps(reponses_contactees)
-    nps_non_contactes = calculer_nps(reponses_non_contactees)
-
+    # ---- E. Impact financier ----
+    st.markdown(titre_section_principale("Impact financier"), unsafe_allow_html=True)
+    st.caption(
+        "Remboursement = montant réellement remboursé. Remplacement et garantie = coût de revient "
+        "produit + logistique associée (product_costs_fictif.xlsx), pas le prix de vente payé par le "
+        "client. Geste commercial reste une fraction estimée du prix de vente — seule ligne encore une "
+        "estimation, marquée comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois "
+        "même si plusieurs tickets s'y rattachent."
+    )
     with st.container(border=True):
-        colonne_nps_a, colonne_nps_b, colonne_nps_c = st.columns(3)
-        if nps_global is not None:
+        st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
+
+    if montant_total_pertes > 0 and montant_evitable > 0:
+        st.caption(
+            "Dont potentiellement évitable : " + formater_montant(montant_evitable) + " ("
+            + formater_pourcentage(montant_evitable / montant_total_pertes * 100) + " du coût — SAV récurrents)."
+        )
+
+    if len(montants_par_composant) > 0:
+        composant_principal = None
+        montant_principal = 0
+        for composant, montant in montants_par_composant.items():
+            if montant > montant_principal:
+                montant_principal = montant
+                composant_principal = composant
+
+        st.caption(
+            "Principale cause du coût : " + composant_principal + " (" + formater_montant(montant_principal)
+            + ", " + formater_pourcentage(montant_principal / montant_total_pertes * 100) + " du coût total)."
+        )
+
+    if len(montants_garantie) > 0:
+        st.markdown("**SAV sous garantie**")
+        st.caption(
+            "Impact économique du SAV pris en charge par l'entreprise — le détail produit/composant est "
+            "dans l'onglet Produit, pas répété ici."
+        )
+        colonne_gar_a, colonne_gar_b = st.columns(2)
+        colonne_gar_a.markdown(
+            construire_carte_kpi(
+                "Coût garantie estimé", formater_montant(montant_garantie_total),
+                sous_texte=str(len(tickets_garantie)) + " tickets sous garantie",
+            ),
+            unsafe_allow_html=True,
+        )
+        colonne_gar_b.markdown(
+            construire_carte_kpi("Part du SAV produit concernée", formater_pourcentage(pct_garantie_volume_sav)),
+            unsafe_allow_html=True,
+        )
+
+        # Comparaison en coût MOYEN par ticket, jamais en part d'un total combiné : une garantie
+        # peut concerner un ticket déjà compté dans "Coût direct" (ex. Remplacement produit) —
+        # additionner les deux totaux compterait ce ticket deux fois. Le coût moyen par ticket,
+        # lui, reste valide même si les deux ensembles se recoupent partiellement.
+        cout_moyen_garantie = montant_garantie_total / len(tickets_garantie)
+        cout_moyen_global = None
+        if len(commandes_deja_comptees) > 0:
+            cout_moyen_global = montant_total_pertes / len(commandes_deja_comptees)
+
+        if cout_moyen_global is not None and cout_moyen_global > 0:
+            ecart_cout_moyen_pct = (cout_moyen_garantie - cout_moyen_global) / cout_moyen_global * 100
+            if ecart_cout_moyen_pct >= 50:
+                st.caption(
+                    "Coût moyen par ticket sous garantie : " + formater_montant(cout_moyen_garantie)
+                    + ", contre " + formater_montant(cout_moyen_global) + " en moyenne sur l'ensemble des "
+                    "incidents chiffrés — un ticket garantie coûte structurellement plus cher (remplacement "
+                    "complet à la charge de l'entreprise, pas de part payée par le client)."
+                )
+
+        st.caption(TEXTE_CAVEAT_RECOUVREMENT_COUT)
+
+    # ---- F. Méthodologie / couverture ----
+    with st.expander("Comment lire ces données"):
+        st.markdown(
+            "- **NPS** : toujours accompagné du nombre de répondants (n) — un score sans n peut être "
+            "trompeur, surtout sur un petit échantillon.\n"
+            "- **Petit échantillon** : " + TEXTE_SENSIBILITE_PETIT_ECHANTILLON_NPS + "\n"
+            "- **Association ≠ causalité** : tout rapprochement entre NPS et expérience Care reste une "
+            "coïncidence temporelle observée, jamais une explication démontrée.\n"
+            "- **Réel vs estimé** : remboursement et remplacement/garantie sont des coûts réels (coût de "
+            "revient produit + logistique) ; le geste commercial reste une fraction estimée du prix de "
+            "vente, faute de montant réellement accordé enregistré par ticket.\n"
+            "- **« Potentiellement évitable »** : approximation basée sur l'existence d'un SAV antérieur "
+            "chez le même client (`prior_sav_count`) — une heuristique documentée, pas une preuve.\n"
+            "- **Commande manquante** : les montants nécessitant une commande ne sont calculés que "
+            "lorsqu'un identifiant commande exploitable est disponible — une commande manquante n'est "
+            "jamais comptée comme un coût nul, et n'est jamais comptée deux fois si plusieurs tickets "
+            "s'y rattachent.\n"
+            "- **" + TEXTE_CAVEAT_RECOUVREMENT_COUT + "**"
+        )
+
+    # ---- G. Vue descriptive secondaire (NPS toutes périodes disponibles, pas limité à la période
+    # sélectionnée -- contexte méthodologique, jamais la lecture principale de la page) ----
+    st.markdown(titre_section_principale("Vue descriptive secondaire"), unsafe_allow_html=True)
+
+    if composition_globale_nps is not None:
+        with st.expander("NPS par contact Care identifié", expanded=False):
+            st.caption(
+                "Toutes les réponses NPS disponibles (pas limité à la période sélectionnée). « Contact "
+                "Care identifié » = un ticket du même client a été retrouvé dans les "
+                + str(FENETRE_NPS_EXPERIENCE_JOURS) + " jours précédant la réponse NPS (rapprochement par "
+                "email et fenêtre temporelle, avec le ticket le plus récent avant la réponse)."
+            )
+            segmentation_care_nps = segmenter_nps_par_contact_care(
+                reponses_nps, index_tickets_email, FENETRE_NPS_EXPERIENCE_JOURS
+            )
+            composition_avec_contact = segmentation_care_nps["contact_identifie"]["composition"]
+            composition_sans_contact = segmentation_care_nps["aucun_contact_identifie"]["composition"]
+
+            colonne_nps_a, colonne_nps_b, colonne_nps_c = st.columns(3)
             colonne_nps_a.markdown(
                 construire_carte_kpi(
-                    "NPS global", round(nps_global, 1), sous_texte=str(len(reponses_nps)) + " répondants"
+                    "NPS global (toutes périodes)", formater_nps_entier(composition_globale_nps["nps"]),
+                    sous_texte=_texte_composition_nps(composition_globale_nps),
                 ),
                 unsafe_allow_html=True,
             )
-        if nps_contactes is not None:
-            colonne_nps_b.markdown(
-                construire_carte_kpi(
-                    "NPS - a contacté le support", round(nps_contactes, 1),
-                    sous_texte=str(len(reponses_contactees)) + " répondants",
-                ),
-                unsafe_allow_html=True,
+            if composition_avec_contact is not None:
+                colonne_nps_b.markdown(
+                    construire_carte_kpi(
+                        "NPS - contact Care identifié", formater_nps_entier(composition_avec_contact["nps"]),
+                        sous_texte=_texte_composition_nps(composition_avec_contact),
+                    ),
+                    unsafe_allow_html=True,
+                )
+            if composition_sans_contact is not None:
+                colonne_nps_c.markdown(
+                    construire_carte_kpi(
+                        "NPS - aucun contact Care identifié", formater_nps_entier(composition_sans_contact["nps"]),
+                        sous_texte=_texte_composition_nps(composition_sans_contact),
+                    ),
+                    unsafe_allow_html=True,
+                )
+            st.caption(TEXTE_PRUDENCE_BIAIS_SELECTION)
+
+        with st.expander("Confiance par type d'expérience", expanded=False):
+            st.caption("Toutes les réponses NPS disponibles (pas limité à la période sélectionnée).")
+            resultats_type_experience = analyser_nps_par_type_experience(
+                reponses_nps, index_tickets_email, FENETRE_NPS_EXPERIENCE_JOURS, SEUIL_PRUDENCE_ECHANTILLON_NPS
             )
-        if nps_non_contactes is not None:
-            colonne_nps_c.markdown(
-                construire_carte_kpi(
-                    "NPS - jamais contacté (référence)", round(nps_non_contactes, 1),
-                    sous_texte=str(len(reponses_non_contactees)) + " répondants",
-                ),
-                unsafe_allow_html=True,
+
+            def obtenir_repondants_type_experience(ligne):
+                return ligne["Répondants"]
+
+            lignes_experience = []
+            for resultat_type in resultats_type_experience:
+                lignes_experience.append({
+                    "Type d'expérience": resultat_type["type_experience"],
+                    "NPS": formater_nps_entier(resultat_type["composition"]["nps"]),
+                    "Répondants": resultat_type["composition"]["n"],
+                })
+
+            if len(lignes_experience) == 0:
+                st.caption(
+                    "Échantillon insuffisant par type d'expérience (seuil de prudence : "
+                    + str(SEUIL_PRUDENCE_ECHANTILLON_NPS) + " répondants) pour une comparaison robuste actuellement."
+                )
+            else:
+                lignes_experience_triees = sorted(lignes_experience, key=obtenir_repondants_type_experience, reverse=True)
+                st.dataframe(lignes_experience_triees, hide_index=True, width="stretch")
+                st.caption(
+                    "Lecture contextuelle uniquement — ces populations sont structurellement différentes "
+                    "(un client SAV n'a pas la même expérience de base qu'un client jamais recontacté) : "
+                    "pas un classement des catégories de contact."
+                )
+
+        with st.expander("Historique NPS", expanded=False):
+            if len(historique_nps_borne) == 0:
+                st.caption("Aucune observation NPS disponible jusqu'à cette période.")
+            else:
+                lignes_nps_mois = []
+                for item_mois in historique_nps_borne:
+                    lignes_nps_mois.append({
+                        "Mois": item_mois["cle_mois"], "NPS": round(item_mois["nps"]), "Réponses": item_mois["n"],
+                    })
+                tableau_nps_mois = pd.DataFrame(lignes_nps_mois)
+                ligne_zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+                    color=COULEUR_NEUTRE_TEXTE, strokeDash=[3, 3]
+                ).encode(y=alt.Y("y:Q", title=None))
+                graphique_nps = alt.Chart(tableau_nps_mois).mark_line(point=True, color=COULEUR_SECONDAIRE).encode(
+                    x=alt.X("Mois:O", title=None),
+                    y=alt.Y("NPS:Q", scale=alt.Scale(domain=[-100, 100])),
+                    tooltip=["Mois:N", "NPS:Q", "Réponses:Q"],
+                ).properties(height=260)
+                st.altair_chart(
+                    configurer_apparence_graphique(ligne_zero + graphique_nps), width="stretch"
+                )
+
+                # n rendu directement lisible (pas seulement au survol) -- Étape 5I.1, section 30.
+                textes_n_mois = []
+                for ligne_n_mois in lignes_nps_mois:
+                    textes_n_mois.append(str(ligne_n_mois["Mois"]) + " n=" + str(ligne_n_mois["Réponses"]))
+                st.caption("Réponses par mois : " + " · ".join(textes_n_mois))
+
+                historique_n_borne = []
+                for item_mois in historique_nps_borne:
+                    historique_n_borne.append(item_mois["n"])
+                mois_prudence = []
+                for index_mois in range(len(historique_nps_borne)):
+                    etat_mois = evaluer_prudence_echantillon_nps(historique_n_borne, index_mois)
+                    if etat_mois == ETAT_PRUDENCE_VOLUME_FAIBLE:
+                        mois_prudence.append(historique_nps_borne[index_mois]["cle_mois"])
+                if len(mois_prudence) > 0:
+                    st.caption(
+                        "Volume de réponses nettement inférieur aux observations environnantes (à l'époque) sur : "
+                        + ", ".join(mois_prudence) + " — à lire avec prudence avant toute lecture positive ou négative."
+                    )
+
+        with st.expander("Verbatims et limites des données NPS", expanded=False):
+            st.caption(
+                "Le fichier NPS ne contient aucun champ de texte libre (verbatim) — seulement un score, une "
+                "date, un email et l'indicateur déclaratif « a contacté le support ». Aucun verbatim n'est "
+                "donc affiché ici : limitation du dataset, pas un choix de présentation. Pour la même raison, "
+                "aucun comparatif NPS « avant/après contact » individuel n'est possible (le fichier ne "
+                "contient qu'une seule mesure par réponse, pas une paire avant/après) — la section "
+                "« NPS par contact Care identifié » ci-dessus reste une comparaison de groupes, jamais un "
+                "effet individuel démontré."
             )
-
-    if nps_contactes is not None and nps_non_contactes is not None:
-        ecart_nps = round(nps_contactes - nps_non_contactes, 1)
-        if ecart_nps >= 0:
-            texte_ecart = "supérieur de " + str(abs(ecart_nps))
-        else:
-            texte_ecart = "inférieur de " + str(abs(ecart_nps))
-        st.write(
-            "Les clients ayant contacté le support présentent un niveau de recommandation " + texte_ecart
-            + " points par rapport à ceux n'ayant jamais contacté le support. Cet écart reflète "
-            "l'expérience globale de ces clients et ne peut pas être attribué au support seul."
-        )
-
-    st.markdown("**Confiance par type d'expérience**")
-    st.caption(
-        "Rapproche chaque réponse du dernier ticket du même client dans les "
-        + str(FENETRE_NPS_EXPERIENCE_JOURS) + " jours précédents — une association, pas un lien "
-        "démontré (aucun ticket n'est référencé dans les réponses NPS elles-mêmes). Affiché "
-        "seulement pour les groupes d'au moins " + str(SEUIL_MIN_REPONSES_NPS) + " répondants."
-    )
-
-    index_tickets_email = tickets_par_email(tickets_historique_business)
-    reponses_par_experience = {}
-    for reponse in reponses_nps:
-        type_experience = obtenir_type_experience(reponse, index_tickets_email)
-        if type_experience in reponses_par_experience:
-            reponses_par_experience[type_experience].append(reponse)
-        else:
-            reponses_par_experience[type_experience] = [reponse]
-
-    def obtenir_repondants(ligne):
-        return ligne["Répondants"]
-
-    lignes_experience = []
-    for type_experience, reponses_experience in reponses_par_experience.items():
-        if len(reponses_experience) < SEUIL_MIN_REPONSES_NPS:
-            continue
-        nps_experience = calculer_nps(reponses_experience)
-        if nps_experience is None:
-            continue
-        lignes_experience.append({
-            "Type d'expérience": type_experience,
-            "NPS": round(nps_experience, 1),
-            "Répondants": len(reponses_experience),
-        })
-
-    if len(lignes_experience) == 0:
-        st.caption("Échantillon insuffisant par type d'expérience pour une comparaison robuste actuellement.")
-    else:
-        lignes_experience_triees = sorted(lignes_experience, key=obtenir_repondants, reverse=True)
-        st.dataframe(lignes_experience_triees, hide_index=True, width="stretch")
-
-    st.markdown("**Évolution du NPS dans le temps**")
-
-    nps_par_mois = {}
-    for reponse in reponses_nps:
-        cle_mois = reponse["date_reponse"].strftime("%Y-%m")
-        if cle_mois in nps_par_mois:
-            nps_par_mois[cle_mois].append(reponse)
-        else:
-            nps_par_mois[cle_mois] = [reponse]
-
-    lignes_nps_mois = []
-    mois_echantillon_faible = []
-    for cle_mois in sorted(nps_par_mois.keys()):
-        nps_mois = calculer_nps(nps_par_mois[cle_mois])
-        if nps_mois is None:
-            continue
-        nb_reponses_mois = len(nps_par_mois[cle_mois])
-        lignes_nps_mois.append({"Mois": cle_mois, "NPS": nps_mois, "Réponses": nb_reponses_mois})
-        if nb_reponses_mois < SEUIL_MIN_REPONSES_NPS:
-            mois_echantillon_faible.append(cle_mois)
-
-    tableau_nps_mois = pd.DataFrame(lignes_nps_mois)
-    graphique_nps = alt.Chart(tableau_nps_mois).mark_line(point=True, color=COULEUR_SECONDAIRE).encode(
-        x=alt.X("Mois:O", title=None),
-        y=alt.Y("NPS:Q"),
-        tooltip=["Mois:N", "NPS:Q", "Réponses:Q"],
-    ).properties(height=260).configure_view(strokeWidth=0)
-    with st.container(border=True):
-        st.altair_chart(graphique_nps, width="stretch")
-
-    if len(mois_echantillon_faible) > 0:
-        st.caption(
-            "Échantillon faible (< " + str(SEUIL_MIN_REPONSES_NPS) + " répondants) sur : "
-            + ", ".join(mois_echantillon_faible) + " — à lire avec prudence."
-        )
