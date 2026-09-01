@@ -117,6 +117,10 @@ from outils import (
     evaluer_diagnostics_structures_transversal_vue_ensemble,
     extraire_candidats_categoriels_vue_ensemble,
     filtrer_candidats_materiels_vue_ensemble,
+    filtrer_tickets_par_segment_transporteur,
+    SEGMENT_LIVRAISON_TOUS,
+    SEGMENT_LIVRAISON_STANDARD,
+    SEGMENT_LIVRAISON_EXPRESS,
     regrouper_candidats_par_categorie_vue_ensemble,
     signal_categoriel_est_materiel_vue_ensemble,
     texte_signal_transversal_vue_ensemble,
@@ -184,7 +188,7 @@ from outils import (
     construire_texte_resolution_produit,
     construire_texte_sav_recurrents_produit,
     titre_signal_produit,
-    TEXTE_PRUDENCE_CAUSALE_PRODUIT,
+    TEXTE_PRUDENCE_CAUSALE,
     construire_lecture_livraison,
     construire_dossiers_associes_livraison,
     construire_croisement_motif_issue_livraison,
@@ -1987,7 +1991,7 @@ class TestScopeTendances(unittest.TestCase):
         lecture_sans_futur = construire_lecture_tendances(profils_sans_futur, 1)
         self.assertEqual(
             lecture_sans_futur["niveau_confiance"],
-            "Cette période est replacée parmi 2 observation(s) antérieure(s) disponible(s).",
+            "Cette période est replacée parmi 2 observations antérieures disponibles.",
         )
 
         # si un pic futur (novembre) fuitait dans la référence, le rang d'octobre changerait --
@@ -2912,6 +2916,94 @@ class TestInvestigationTransporteurLivraison(unittest.TestCase):
         self.assertNotEqual(lecture["volume"], signal["volume"]["n"])
 
 
+# Phase 5B (passe finale, segmentation transporteur) : filtrer_tickets_par_segment_transporteur est
+# une pure fonction de sélection -- aucun recalcul, aucun seuil, aucune éligibilité. "Tous" doit
+# rester un court-circuit total et prouvable au niveau du moteur lui-même, pas seulement au niveau
+# de la liste filtrée.
+class TestFiltrageSegmentTransporteurLivraison(unittest.TestCase):
+    def test_a_tous_reproduit_la_liste_a_lidentique(self):
+        tickets = generer_tickets_livraison(10, transporteur="Noria Standard") + generer_tickets_livraison(
+            5, transporteur="Velox Express"
+        )
+        resultat = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_TOUS)
+        self.assertEqual(resultat, tickets)
+        self.assertEqual(len(resultat), 15)
+
+    def test_b_noria_ne_garde_que_noria(self):
+        tickets = generer_tickets_livraison(10, transporteur=SEGMENT_LIVRAISON_STANDARD) + generer_tickets_livraison(
+            5, transporteur=SEGMENT_LIVRAISON_EXPRESS
+        )
+        resultat = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_STANDARD)
+        self.assertEqual(len(resultat), 10)
+        for ticket in resultat:
+            self.assertEqual(ticket["transporteur"], SEGMENT_LIVRAISON_STANDARD)
+
+    def test_c_velox_ne_garde_que_velox(self):
+        tickets = generer_tickets_livraison(10, transporteur=SEGMENT_LIVRAISON_STANDARD) + generer_tickets_livraison(
+            5, transporteur=SEGMENT_LIVRAISON_EXPRESS
+        )
+        resultat = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_EXPRESS)
+        self.assertEqual(len(resultat), 5)
+        for ticket in resultat:
+            self.assertEqual(ticket["transporteur"], SEGMENT_LIVRAISON_EXPRESS)
+
+    def test_d_aucun_ticket_dans_les_deux_segments_a_la_fois(self):
+        tickets_standard = [ticket_livraison(ticket_id=i, transporteur=SEGMENT_LIVRAISON_STANDARD) for i in range(10)]
+        tickets_express = [ticket_livraison(ticket_id=100 + i, transporteur=SEGMENT_LIVRAISON_EXPRESS) for i in range(5)]
+        tickets = tickets_standard + tickets_express
+        noria = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_STANDARD)
+        velox = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_EXPRESS)
+        ids_noria = set(t["ticket_id"] for t in noria)
+        ids_velox = set(t["ticket_id"] for t in velox)
+        self.assertEqual(len(ids_noria & ids_velox), 0)
+        self.assertEqual(len(noria) + len(velox), len(tickets))
+
+    def test_e_moteur_tous_identique_avec_ou_sans_passage_par_le_filtre(self):
+        # "Tous" doit reproduire le moteur a l'identique, teste au niveau du moteur lui-meme --
+        # pas seulement au niveau de la liste de tickets.
+        tickets_sujet = generer_tickets_livraison(
+            30, subject_cluster="Colis annoncé livré non reçu", csat=3.0, nombre_relances=2.5,
+            issue_livraison_finale="Remboursé", transporteur=SEGMENT_LIVRAISON_STANDARD,
+        )
+        tickets_autres = generer_tickets_livraison(
+            20, subject_cluster="Où est ma commande", transporteur=SEGMENT_LIVRAISON_EXPRESS,
+        )
+        tickets = tickets_sujet + tickets_autres
+
+        resultat_direct = moteur_livraison_voie_a(tickets, [], 5)
+        tickets_via_filtre = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_TOUS)
+        resultat_filtre = moteur_livraison_voie_a(tickets_via_filtre, [], 5)
+
+        self.assertEqual(
+            [s["sujet"] for s in resultat_direct["prioritaires"]],
+            [s["sujet"] for s in resultat_filtre["prioritaires"]],
+        )
+        self.assertEqual(resultat_direct["nb_prioritaires_avant_plafond"], resultat_filtre["nb_prioritaires_avant_plafond"])
+
+    def test_f_concentration_transporteur_devient_none_dans_une_vue_mono_transporteur(self):
+        # Confirme le comportement naturel observe en Phase 5B.1 : dans un univers filtre a un seul
+        # transporteur, la comparaison "ce transporteur vs le reste" n'a plus de "reste" -- le
+        # signal ne doit jamais afficher une piste transporteur triviale (100 %/0 %).
+        tickets_sujet = generer_tickets_livraison(
+            30, subject_cluster="Colis annoncé livré non reçu", csat=3.0, nombre_relances=2.5,
+            issue_livraison_finale="Remboursé", transporteur=SEGMENT_LIVRAISON_STANDARD,
+        )
+        tickets_autres = generer_tickets_livraison(
+            20, subject_cluster="Où est ma commande", transporteur=SEGMENT_LIVRAISON_STANDARD,
+        )
+        tickets = tickets_sujet + tickets_autres
+        tickets_filtres = filtrer_tickets_par_segment_transporteur(tickets, SEGMENT_LIVRAISON_STANDARD)
+
+        resultat = moteur_livraison_voie_a(tickets_filtres, [], 5)
+        signal = [s for s in resultat["prioritaires"] if s["sujet"] == "Colis annoncé livré non reçu"][0]
+        self.assertIsNone(signal["concentration_transporteur"])
+
+    def test_g_segment_inconnu_ne_retourne_aucun_ticket(self):
+        tickets = generer_tickets_livraison(10, transporteur=SEGMENT_LIVRAISON_STANDARD)
+        resultat = filtrer_tickets_par_segment_transporteur(tickets, "Transporteur inexistant")
+        self.assertEqual(resultat, [])
+
+
 # Composition Livraison — investigation (Étape 5G.1) : 4C reste l'unique propriétaire de la
 # priorisation (aucune de ces fonctions ne recalcule une éligibilité) -- seuls le texte de lecture,
 # le matching "dossiers associés" et l'agrégation d'exploration motif x issue sont testés ici.
@@ -2932,12 +3024,12 @@ class TestLivraisonInvestigation5G1(unittest.TestCase):
     def test_d_lecture_watch_seul(self):
         texte = construire_lecture_livraison("Livraison représente 30 % des contacts.", 0, 2)
         self.assertNotIn("Aucun motif ne présente actuellement une convergence suffisante", texte)
-        self.assertIn("2 motif(s) supplémentaire(s) reste(nt) à surveiller", texte)
+        self.assertIn("2 motifs supplémentaires restent à surveiller", texte)
 
     def test_e_lecture_prioritaire_et_watch_combines(self):
         texte = construire_lecture_livraison("Livraison représente 45 % des contacts.", 1, 2)
         self.assertIn("Un motif présente une convergence suffisante pour être investigué.", texte)
-        self.assertIn("2 motif(s) supplémentaire(s) reste(nt) à surveiller", texte)
+        self.assertIn("2 motifs supplémentaires restent à surveiller", texte)
 
     def test_f_lecture_active_jamais_de_texte_causal_entre_activite_et_signal(self):
         texte = construire_lecture_livraison("Livraison représente 45 % des contacts.", 1, 0)
@@ -4963,7 +5055,7 @@ class TestCompositionCouverturePressionTension(unittest.TestCase):
     def test_lecture_couverture_mentionne_les_tensions(self):
         texte = construire_lecture_couverture(2, 1, 80, 85, False)
         self.assertIn("2 créneau", texte)
-        self.assertIn("1 autre(s)", texte)
+        self.assertIn("1 autre créneau", texte)
 
     # ---- statut_creneau_standard : inchangé (déplacé depuis app.py) ----
     def test_statut_creneau_standard_couverture_requise(self):
@@ -5077,7 +5169,7 @@ class TestCompositionProduitInvestigation(unittest.TestCase):
             signal_produit_test(GRAIN_COMPOSANT, "Batterie / charge", niveau_priorite="Priorité principale"),
         ]
         texte = construire_lecture_produit(prioritaires_affiches, 10, [], 0, 0, 27.6)
-        self.assertIn("10 signal", texte)
+        self.assertIn("10 signaux", texte)
         self.assertIn("1 affiché", texte)
         self.assertNotIn("Top 5", texte)
         self.assertNotIn("top 5", texte.lower())
@@ -5116,8 +5208,8 @@ class TestCompositionProduitInvestigation(unittest.TestCase):
 
     # ---- Prudence causale globale : reste explicite, jamais perdue ----
     def test_prudence_causale_globale_non_vide(self):
-        self.assertIn("association", TEXTE_PRUDENCE_CAUSALE_PRODUIT.lower())
-        self.assertIn("jamais une cause démontrée", TEXTE_PRUDENCE_CAUSALE_PRODUIT)
+        self.assertIn("association", TEXTE_PRUDENCE_CAUSALE.lower())
+        self.assertIn("jamais une cause démontrée", TEXTE_PRUDENCE_CAUSALE)
 
 
 # Composition Avant-vente — parcours & achats observés (Étape 5H.1) : 4D reste l'unique propriétaire
@@ -5141,12 +5233,12 @@ class TestAvantVenteParcours5H1(unittest.TestCase):
     def test_d_lecture_watch_seul(self):
         texte = construire_lecture_avant_vente("Avant-vente représente 22 % des contacts.", 0, 2)
         self.assertNotIn("Aucune opportunité ne se détache actuellement", texte)
-        self.assertIn("2 motif(s) supplémentaire(s) reste(nt) à surveiller", texte)
+        self.assertIn("2 motifs supplémentaires restent à surveiller", texte)
 
     def test_e_lecture_opportunite_et_watch_combines(self):
         texte = construire_lecture_avant_vente("Avant-vente représente 20 % des contacts.", 1, 1)
         self.assertIn("Une opportunité présente une convergence suffisante pour être investiguée.", texte)
-        self.assertIn("1 motif(s) supplémentaire(s) reste(nt) à surveiller", texte)
+        self.assertIn("1 motif supplémentaire reste à surveiller", texte)
 
     def test_f_lecture_jamais_de_connecteur_causal(self):
         texte = construire_lecture_avant_vente("Avant-vente représente 45 % des contacts.", 1, 0)
@@ -5293,13 +5385,13 @@ class TestImpactConfiance5I1(unittest.TestCase):
     def test_h_lecture_nps_present_sans_alignement(self):
         item_nps = {"nps": -6.0, "n": 69}
         texte = construire_lecture_impact_confiance(item_nps, None, 0, 0)
-        self.assertIn("Le NPS de la période est de -6 sur 69 réponse(s).", texte)
+        self.assertIn("Le NPS de la période est de -6 sur 69 réponses.", texte)
 
     def test_i_lecture_combine_nps_et_cout_sans_les_fusionner(self):
         item_nps = {"nps": 6.0, "n": 18}
         texte_align = "Le NPS de cette période recule dans la série disponible."
         texte = construire_lecture_impact_confiance(item_nps, texte_align, 5000, 1000)
-        self.assertIn("Le NPS de la période est de +6 sur 18 réponse(s).", texte)
+        self.assertIn("Le NPS de la période est de +6 sur 18 réponses.", texte)
         self.assertIn(texte_align, texte)
         self.assertIn("coût direct observé/estimé sur cette période s'élève à 5 000 €", texte)
         self.assertIn("20 % de ce montant est classé potentiellement évitable", texte)

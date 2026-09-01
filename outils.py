@@ -1094,6 +1094,17 @@ def formater_pourcentage(valeur):
     return str(round(valeur)) + " %"
 
 
+# Phase 3 (passe finale, vocabulaire) : accord singulier/pluriel naturel, remplace les marqueurs
+# "ticket(s)"/"présente(nt)" visibles tels quels à l'écran. Pur affichage -- ne touche à aucun
+# calcul, nombre reste celui déjà produit par le moteur concerné.
+def accorder(nombre, singulier, pluriel=None):
+    if pluriel is None:
+        pluriel = singulier + "s"
+    if nombre == 1:
+        return singulier
+    return pluriel
+
+
 def formater_csat(valeur):
     if valeur is None:
         return "N/A"
@@ -1342,8 +1353,8 @@ def evaluer_temporalite(niveaux_historiques, niveau_actuel):
 
     if abs(ecart) < SEUIL_ECART_RELATIF_TEMPORALITE:
         return (
-            "niveau habituel, cohérent avec les " + str(len(niveaux_historiques))
-            + " observation(s) disponible(s)"
+            "niveau habituel, cohérent avec les " + str(len(niveaux_historiques)) + " "
+            + accorder(len(niveaux_historiques), "observation disponible", "observations disponibles")
         )
 
     if ecart < 0:
@@ -1355,13 +1366,15 @@ def evaluer_temporalite(niveaux_historiques, niveau_actuel):
     if part_elevees >= SEUIL_PART_ELEVEES_PERSISTANCE and nb_observations >= NB_OBSERVATIONS_MIN_PERSISTANCE:
         return (
             "niveau inhabituel sur cette observation ; un niveau comparable a déjà été observé sur "
-            + str(nb_elevees) + " des " + str(nb_observations) + " période(s) disponible(s) "
-            "— répétition à confirmer, pas encore établie comme durable"
+            + str(nb_elevees) + " des " + str(nb_observations) + " "
+            + accorder(nb_observations, "période disponible", "périodes disponibles")
+            + " — répétition à confirmer, pas encore établie comme durable"
         )
 
     return (
         "niveau inhabituel sur cette observation, pas observé aussi haut sur les "
-        + str(nb_observations) + " période(s) disponible(s) — signal ponctuel pour l'instant"
+        + str(nb_observations) + " " + accorder(nb_observations, "période disponible", "périodes disponibles")
+        + " — signal ponctuel pour l'instant"
     )
 
 
@@ -1744,7 +1757,6 @@ def construire_signal_produit_voie_a(cle, grain, tickets_candidat, tickets_unive
         "cout": cout_info,
         "temporalite": texte_temporalite,
         "concentration": concentration_info,
-        "prudence": "Association observée sur les données disponibles, pas une cause démontrée.",
         "score_interne": None,  # usage interne uniquement (classement) -- jamais affiché en UI
         "_ecart_temporel": ecart_temporel,
         "_ecart_csat": ecart_csat,
@@ -2719,13 +2731,17 @@ def detecter_saisonnalite_apparente(profils):
     if len(saisons_valables) >= 4:
         confiance = "modérée (les 4 saisons sont représentées par au moins " + str(NB_OBSERVATIONS_MIN_SAISON) + " observations)"
     else:
-        confiance = "limitée (seulement " + str(len(saisons_valables)) + " saison(s) sur 4 avec assez d'observations)"
+        confiance = (
+            "limitée (seulement " + str(len(saisons_valables)) + " "
+            + accorder(len(saisons_valables), "saison", "saisons") + " sur 4 avec assez d'observations)"
+        )
 
     return construire_insight(
         "saisonnalite", observation,
         "Une lecture saisonnière aide à distinguer un mouvement récurrent d'un aléa ponctuel.",
         prudence=(
-            str(len(profils)) + " observation(s) disponible(s) ne constituent pas une preuve formelle de "
+            str(len(profils)) + " " + accorder(len(profils), "observation disponible", "observations disponibles")
+            + " ne constituent pas une preuve formelle de "
             "saisonnalité -- lecture indicative, confiance " + confiance + "."
         ),
     )
@@ -3006,7 +3022,9 @@ def construire_synthese_longue(profils):
     elif len(profils) >= 4:
         niveau_confiance = "modéré (" + str(len(profils)) + " observations disponibles)"
     else:
-        niveau_confiance = "limité (" + str(len(profils)) + " observation(s) seulement)"
+        niveau_confiance = (
+            "limité (" + str(len(profils)) + " " + accorder(len(profils), "observation", "observations") + " seulement)"
+        )
 
     return {
         "synthese_generale": synthese_generale,
@@ -3099,7 +3117,8 @@ def _lecture_mode_observation_unique(profils_historique):
             contrastes_mode1.append(contraste)
 
     niveau_confiance = (
-        "Cette période est replacée parmi " + str(index_semaine) + " observation(s) antérieure(s) disponible(s)."
+        "Cette période est replacée parmi " + str(index_semaine) + " "
+        + accorder(index_semaine, "observation antérieure disponible", "observations antérieures disponibles") + "."
     )
 
     return {
@@ -3150,7 +3169,8 @@ def _lecture_mode_periode_etendue(profils_historique, indice_debut_periode):
     synthese = construire_synthese_generale(jalons_fenetre, vigilances_fenetre, saisonnalite_fenetre)
 
     niveau_confiance = (
-        "Lecture sur les " + str(len(profils_fenetre)) + " observation(s) de cette période (" +
+        "Lecture sur les " + str(len(profils_fenetre)) + " "
+        + accorder(len(profils_fenetre), "observation", "observations") + " de cette période (" +
         str(len(profils_historique)) + " observations disponibles au total jusqu'à cette date)."
     )
 
@@ -3244,6 +3264,27 @@ def construire_lecture_tendances(profils_historique, nb_observations_periode):
 # ---------------------------------------------------------------------------
 
 SEUIL_MINIMUM_EVALUATION_LIVRAISON = SEUIL_MINIMUM_EVALUATION_PRODUIT  # même seuil, cohérence transversale
+
+# Phase 5B (passe finale, segmentation transporteur) : "Tous" reste un court-circuit total --
+# jamais filtré, reproduit exactement le comportement déjà validé. "Noria Standard"/"Velox Express"
+# filtrent sur le champ transporteur déjà présent sur chaque ticket -- aucun nouveau moteur, le même
+# moteur_livraison_voie_a reçoit simplement un univers pré-filtré ici. Le filtre doit être appliqué
+# de façon symétrique à la période courante ET à chaque fichier de l'historique (voir app.py) --
+# sinon la temporalité comparerait deux univers différents.
+SEGMENT_LIVRAISON_TOUS = "Tous"
+SEGMENT_LIVRAISON_STANDARD = "Noria Standard"
+SEGMENT_LIVRAISON_EXPRESS = "Velox Express"
+SEGMENTS_LIVRAISON = (SEGMENT_LIVRAISON_TOUS, SEGMENT_LIVRAISON_STANDARD, SEGMENT_LIVRAISON_EXPRESS)
+
+
+def filtrer_tickets_par_segment_transporteur(tickets, segment):
+    if segment == SEGMENT_LIVRAISON_TOUS:
+        return tickets
+    resultat = []
+    for ticket in tickets:
+        if ticket["transporteur"] == segment:
+            resultat.append(ticket)
+    return resultat
 
 # Issues finales considérées "défavorables" : elles impliquent une compensation réelle
 # (réexpédition, remboursement, geste commercial) ou un dossier resté sans résolution connue.
@@ -3469,21 +3510,22 @@ def controler_qualite_donnees_livraison(tickets_livraison):
             n_replies_negatifs = n_replies_negatifs + 1
 
     if n_sans_transporteur > 0:
-        anomalies.append(str(n_sans_transporteur) + " ticket(s) Livraison sans transporteur renseigné.")
+        anomalies.append(str(n_sans_transporteur) + " " + accorder(n_sans_transporteur, "ticket Livraison", "tickets Livraison") + " sans transporteur renseigné.")
     if n_sans_relances > 0:
-        anomalies.append(str(n_sans_relances) + " ticket(s) Livraison sans nombre_relances renseigné.")
+        anomalies.append(str(n_sans_relances) + " " + accorder(n_sans_relances, "ticket Livraison", "tickets Livraison") + " sans nombre_relances renseigné.")
     if n_relances_negatives > 0:
-        anomalies.append(str(n_relances_negatives) + " ticket(s) Livraison avec un nombre_relances négatif.")
+        anomalies.append(str(n_relances_negatives) + " " + accorder(n_relances_negatives, "ticket Livraison", "tickets Livraison") + " avec un nombre_relances négatif.")
     if n_sans_issue > 0:
-        anomalies.append(str(n_sans_issue) + " ticket(s) Livraison sans issue_livraison_finale renseignée.")
+        anomalies.append(str(n_sans_issue) + " " + accorder(n_sans_issue, "ticket Livraison", "tickets Livraison") + " sans issue_livraison_finale renseignée.")
     if n_issue_hors_taxonomie > 0:
         anomalies.append(
-            str(n_issue_hors_taxonomie) + " ticket(s) Livraison avec une issue_livraison_finale hors taxonomie connue."
+            str(n_issue_hors_taxonomie) + " " + accorder(n_issue_hors_taxonomie, "ticket Livraison", "tickets Livraison")
+            + " avec une issue_livraison_finale hors taxonomie connue."
         )
     if n_resolution_negative > 0:
-        anomalies.append(str(n_resolution_negative) + " ticket(s) Livraison avec un temps de résolution négatif.")
+        anomalies.append(str(n_resolution_negative) + " " + accorder(n_resolution_negative, "ticket Livraison", "tickets Livraison") + " avec un temps de résolution négatif.")
     if n_replies_negatifs > 0:
-        anomalies.append(str(n_replies_negatifs) + " ticket(s) Livraison avec un nombre d'échanges négatif.")
+        anomalies.append(str(n_replies_negatifs) + " " + accorder(n_replies_negatifs, "ticket Livraison", "tickets Livraison") + " avec un nombre d'échanges négatif.")
 
     return anomalies
 
@@ -3770,7 +3812,6 @@ def construire_signal_sujet_livraison_voie_a(sujet, tickets_sujet, tickets_livra
         "cout": None,  # jamais calculable actuellement -- aucun order_id sur les tickets Livraison
         "temporalite": texte_temporalite,
         "concentration_transporteur": concentration_info,
-        "prudence": "Association observée sur les données disponibles, pas une cause démontrée.",
         "score_interne": None,  # usage interne uniquement (classement) -- jamais affiché en UI
         "_ecart_temporel": ecart_temporel,
         "_ecart_csat": ecart_csat,
@@ -3829,11 +3870,11 @@ def construire_lecture_activite_livraison(tickets_livraison_periode, tickets_tot
         part_pct = volume / total * 100
 
     if part_pct is None:
-        observation = str(volume) + " ticket(s) Livraison sur cette période."
+        observation = str(volume) + " " + accorder(volume, "ticket Livraison", "tickets Livraison") + " sur cette période."
     else:
         observation = (
             "Livraison représente " + str(round(part_pct)) + " % des contacts sur cette période ("
-            + str(volume) + " ticket(s))."
+            + str(volume) + " " + accorder(volume, "ticket", "tickets") + ")."
         )
 
     contexte_texte = texte_contexte(evenements_contexte)
@@ -4204,11 +4245,11 @@ def construire_lecture_activite_avant_vente(tickets_avant_vente, tickets_totaux_
         part_pct = volume / total * 100
 
     if part_pct is None:
-        observation = str(volume) + " ticket(s) Avant-vente sur cette période."
+        observation = str(volume) + " " + accorder(volume, "ticket Avant-vente", "tickets Avant-vente") + " sur cette période."
     else:
         observation = (
             "Avant-vente représente " + str(round(part_pct)) + " % des contacts sur cette période ("
-            + str(volume) + " ticket(s))."
+            + str(volume) + " " + accorder(volume, "ticket", "tickets") + ")."
         )
 
     return {
@@ -4281,9 +4322,9 @@ def controler_qualite_donnees_avant_vente(tickets_avant_vente, tickets_hors_avan
             n_rdv_statut_hors_perimetre = n_rdv_statut_hors_perimetre + 1
 
     if n_sans_type_contact > 0:
-        anomalies.append(str(n_sans_type_contact) + " ticket(s) Avant-vente sans type_contact_avant_vente renseigné.")
+        anomalies.append(str(n_sans_type_contact) + " " + accorder(n_sans_type_contact, "ticket Avant-vente", "tickets Avant-vente") + " sans type_contact_avant_vente renseigné.")
     if n_type_contact_invalide > 0:
-        anomalies.append(str(n_type_contact_invalide) + " ticket(s) Avant-vente avec un type_contact_avant_vente hors taxonomie.")
+        anomalies.append(str(n_type_contact_invalide) + " " + accorder(n_type_contact_invalide, "ticket Avant-vente", "tickets Avant-vente") + " avec un type_contact_avant_vente hors taxonomie.")
     if n_rdv_sans_statut > 0:
         anomalies.append(str(n_rdv_sans_statut) + " RDV conseil sans rdv_statut renseigné.")
     if n_rdv_statut_invalide > 0:
@@ -4292,10 +4333,11 @@ def controler_qualite_donnees_avant_vente(tickets_avant_vente, tickets_hors_avan
         anomalies.append(str(n_rdv_non_telephone) + " RDV conseil hors canal téléphone.")
     if n_type_contact_hors_perimetre > 0:
         anomalies.append(
-            str(n_type_contact_hors_perimetre) + " ticket(s) hors Avant-vente avec type_contact_avant_vente renseigné."
+            str(n_type_contact_hors_perimetre) + " " + accorder(n_type_contact_hors_perimetre, "ticket hors Avant-vente", "tickets hors Avant-vente")
+            + " avec type_contact_avant_vente renseigné."
         )
     if n_rdv_statut_hors_perimetre > 0:
-        anomalies.append(str(n_rdv_statut_hors_perimetre) + " ticket(s) hors Avant-vente avec rdv_statut renseigné.")
+        anomalies.append(str(n_rdv_statut_hors_perimetre) + " " + accorder(n_rdv_statut_hors_perimetre, "ticket hors Avant-vente", "tickets hors Avant-vente") + " avec rdv_statut renseigné.")
 
     return anomalies
 
@@ -4455,7 +4497,6 @@ def construire_signal_motif_avant_vente(sujet, tickets_sujet, resultats_sujet, t
             "csat_reference": csat_reference, "n_csat_reference": n_csat_reference,
         },
         "contexte": contexte_texte,
-        "prudence": "Association observée sur les données disponibles, pas une cause démontrée.",
     }
 
 
@@ -5133,6 +5174,7 @@ def regrouper_candidats_par_categorie_vue_ensemble(candidats):
                 "titre": categorie + " — " + unique["sujet"],
                 "texte": unique["observation_principale"],
                 "volume_n": unique["volume_n"],
+                "part_univers_pct": unique["part_univers_pct"],
             })
         else:
             sujets = []
@@ -5161,6 +5203,7 @@ def regrouper_candidats_par_categorie_vue_ensemble(candidats):
                 "titre": categorie + " — plusieurs signaux",
                 "texte": texte,
                 "volume_n": volume_total,
+                "part_univers_pct": None,
             })
 
     return regroupes
@@ -5274,13 +5317,13 @@ def construire_signaux_attention_vue_ensemble(
         texte_transversal = texte_signal_transversal_vue_ensemble(diagnostics_transversaux, texte_nps_pour_fusion)
         signaux_bruts.append({
             "categorie": None, "onglet_cible": onglet_transversal, "titre": "Expérience client sous tension",
-            "texte": texte_transversal, "volume_n": None, "priorite_tri": 0,
+            "texte": texte_transversal, "volume_n": None, "part_univers_pct": None, "priorite_tri": 0,
         })
 
     if alignement_nps is not None and alignement_nps["type"] == "divergence" and texte_alignement_nps is not None:
         signaux_bruts.append({
             "categorie": None, "onglet_cible": "Impact & confiance", "titre": "Confiance (NPS)",
-            "texte": texte_alignement_nps, "volume_n": None, "priorite_tri": 0,
+            "texte": texte_alignement_nps, "volume_n": None, "part_univers_pct": None, "priorite_tri": 0,
         })
 
     candidats_materiels = filtrer_candidats_materiels_vue_ensemble(candidats_categoriels)
@@ -6208,19 +6251,22 @@ def construire_lecture_couverture(nb_tensions, nb_pressions_marquees_absorbees, 
         phrases.append("La pression de charge reste dans la norme habituelle sur cette observation.")
     elif nb_tensions == 0:
         phrases.append(
-            str(nb_pressions_marquees_absorbees) + " créneau(x) présentent une pression parmi les plus "
+            str(nb_pressions_marquees_absorbees) + " " + accorder(nb_pressions_marquees_absorbees, "créneau", "créneaux")
+            + " " + accorder(nb_pressions_marquees_absorbees, "présente", "présentent") + " une pression parmi les plus "
             "marquées observées, sans dégradation nette de la première réponse locale."
         )
     else:
         phrase_tension = (
-            str(nb_tensions) + " créneau(x) cumulent une pression de charge marquée et une réactivité "
+            str(nb_tensions) + " " + accorder(nb_tensions, "créneau", "créneaux")
+            + " " + accorder(nb_tensions, "cumule", "cumulent") + " une pression de charge marquée et une réactivité "
             "dégradée localement -- à examiner en priorité."
         )
         phrases.append(phrase_tension)
         if nb_pressions_marquees_absorbees > 0:
             phrases.append(
-                str(nb_pressions_marquees_absorbees) + " autre(s) créneau(x) à pression marquée restent "
-                "absorbés, sans dégradation de la réactivité locale."
+                str(nb_pressions_marquees_absorbees) + " " + accorder(nb_pressions_marquees_absorbees, "autre créneau", "autres créneaux")
+                + " à pression marquée " + accorder(nb_pressions_marquees_absorbees, "reste", "restent") + " "
+                + accorder(nb_pressions_marquees_absorbees, "absorbé", "absorbés") + ", sans dégradation de la réactivité locale."
             )
 
     if taux_sla_global is not None:
@@ -6250,7 +6296,13 @@ def construire_lecture_couverture(nb_tensions, nb_pressions_marquees_absorbees, 
 # reconstruction parallèle, jamais de correspondance par texte libre sur subject_cluster.
 # ------------------------------------------------------------------
 
-TEXTE_PRUDENCE_CAUSALE_PRODUIT = (
+# Phase 2 (passe finale, section méthodologie) : constante partagée -- remplace les 6+
+# formulations quasi identiques ("association observée... pas une cause démontrée") auparavant
+# dupliquées par carte sur Produit/Livraison/Avant-vente/Tendances. Affichée UNE fois par section
+# (via construire_note_methodologique) plutôt que répétée sur chaque carte -- "chaque signal" reste
+# donc volontairement au pluriel implicite, pertinent qu'il y ait un ou plusieurs signaux dans la
+# section.
+TEXTE_PRUDENCE_CAUSALE = (
     "Chaque signal reste une association observée sur les données disponibles, jamais une cause démontrée."
 )
 
@@ -6322,10 +6374,11 @@ def construire_lecture_produit(prioritaires_affiches, nb_prioritaires_avant_plaf
         if part_sav_pct is not None:
             phrases.append(
                 "Le SAV Produit représente " + formater_pourcentage(part_sav_pct) + " des demandes de la "
-                "période, mais aucun signal n'atteint actuellement le niveau de priorité."
+                "période, mais aucun signal ne présente actuellement une convergence suffisante pour être "
+                "investigué."
             )
         else:
-            phrases.append("Aucun signal Produit n'atteint actuellement le niveau de priorité.")
+            phrases.append("Aucun signal Produit ne présente actuellement une convergence suffisante pour être investigué.")
     else:
         signal_principal = None
         for signal in prioritaires_affiches:
@@ -6334,24 +6387,30 @@ def construire_lecture_produit(prioritaires_affiches, nb_prioritaires_avant_plaf
                 break
 
         texte = (
-            str(nb_prioritaires_avant_plafond) + " signal(aux) Produit présente(nt) une convergence "
-            "suffisante pour être investigué(s)"
+            str(nb_prioritaires_avant_plafond) + " " + accorder(nb_prioritaires_avant_plafond, "signal", "signaux")
+            + " Produit " + accorder(nb_prioritaires_avant_plafond, "présente", "présentent")
+            + " une convergence suffisante pour être "
+            + accorder(nb_prioritaires_avant_plafond, "investigué", "investigués")
         )
         if signal_principal is not None:
             texte = texte + ", dont " + titre_signal_produit(signal_principal) + " avec le niveau de preuve le plus complet"
         if nb_prioritaires_avant_plafond > nb_prioritaires_affiches:
-            texte = texte + " (" + str(nb_prioritaires_affiches) + " affiché(s) ici)"
+            texte = texte + " (" + str(nb_prioritaires_affiches) + " " + accorder(nb_prioritaires_affiches, "affiché", "affichés") + " ici)"
         phrases.append(texte + ".")
 
     if nb_a_surveiller_avant_plafond > 0:
         phrases.append(
-            str(nb_a_surveiller_avant_plafond) + " sujet(s) supplémentaire(s) reste(nt) à surveiller, "
+            str(nb_a_surveiller_avant_plafond) + " " + accorder(nb_a_surveiller_avant_plafond, "sujet", "sujets")
+            + " " + accorder(nb_a_surveiller_avant_plafond, "supplémentaire", "supplémentaires")
+            + " " + accorder(nb_a_surveiller_avant_plafond, "reste", "restent") + " à surveiller, "
             "avec une preuve encore partielle."
         )
 
     if nb_dossiers_individuels > 0:
         phrases.append(
-            str(nb_dossiers_individuels) + " dossier(s) individuel(s) présente(nt) des caractéristiques "
+            str(nb_dossiers_individuels) + " " + accorder(nb_dossiers_individuels, "dossier", "dossiers")
+            + " " + accorder(nb_dossiers_individuels, "individuel", "individuels")
+            + " " + accorder(nb_dossiers_individuels, "présente", "présentent") + " des caractéristiques "
             "justifiant une lecture humaine, indépendamment des signaux ci-dessus."
         )
 
@@ -6424,7 +6483,9 @@ def construire_lecture_livraison(observation_activite, nb_prioritaires_avant_pla
             )
         if nb_a_surveiller_avant_plafond > 0:
             phrases.append(
-                str(nb_a_surveiller_avant_plafond) + " motif(s) supplémentaire(s) reste(nt) à surveiller, "
+                str(nb_a_surveiller_avant_plafond) + " " + accorder(nb_a_surveiller_avant_plafond, "motif", "motifs")
+                + " " + accorder(nb_a_surveiller_avant_plafond, "supplémentaire", "supplémentaires")
+                + " " + accorder(nb_a_surveiller_avant_plafond, "reste", "restent") + " à surveiller, "
                 "avec une preuve encore partielle."
             )
 
@@ -6498,7 +6559,9 @@ def construire_lecture_avant_vente(observation_activite, nb_opportunites_avant_p
             )
         if nb_a_surveiller_avant_plafond > 0:
             phrases.append(
-                str(nb_a_surveiller_avant_plafond) + " motif(s) supplémentaire(s) reste(nt) à surveiller, "
+                str(nb_a_surveiller_avant_plafond) + " " + accorder(nb_a_surveiller_avant_plafond, "motif", "motifs")
+                + " " + accorder(nb_a_surveiller_avant_plafond, "supplémentaire", "supplémentaires")
+                + " " + accorder(nb_a_surveiller_avant_plafond, "reste", "restent") + " à surveiller, "
                 "avec une preuve encore partielle."
             )
 
@@ -6633,7 +6696,7 @@ def construire_lecture_impact_confiance(item_nps, texte_alignement, montant_tota
     else:
         phrases.append(
             "Le NPS de la période est de " + formater_nps_entier(item_nps["nps"]) + " sur "
-            + str(item_nps["n"]) + " réponse(s)."
+            + str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses") + "."
         )
         if texte_alignement is not None:
             phrases.append(texte_alignement)

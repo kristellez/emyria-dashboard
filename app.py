@@ -36,6 +36,7 @@ from outils import (
     formater_duree,
     formater_csat,
     formater_pourcentage,
+    accorder,
     grouper_par,
     grouper_par_categorie,
     cles_combinees,
@@ -69,6 +70,9 @@ from outils import (
     distribution_issues_livraison,
     TEXTE_COUT_INDISPONIBLE_LIVRAISON,
     construire_lecture_livraison,
+    filtrer_tickets_par_segment_transporteur,
+    SEGMENTS_LIVRAISON,
+    SEGMENT_LIVRAISON_TOUS,
     construire_dossiers_associes_livraison,
     construire_croisement_motif_issue_livraison,
     FENETRE_CONVERSION_JOURS,
@@ -150,7 +154,7 @@ from outils import (
     construire_dossiers_associes_produit,
     construire_texte_resolution_produit,
     construire_texte_sav_recurrents_produit,
-    TEXTE_PRUDENCE_CAUSALE_PRODUIT,
+    TEXTE_PRUDENCE_CAUSALE,
 )
 
 
@@ -591,6 +595,29 @@ def construire_bandeau_info(texte_html):
     )
 
 
+# Phase 2 (passe finale, section méthodologie) : note méthodologique partagée -- pour une
+# précaution qui s'applique identiquement à plusieurs cartes/éléments d'une même section, affichée
+# UNE fois au niveau section (juste sous le titre) plutôt que répétée sur chaque carte. Réduit le
+# bruit visuel au niveau de lecture principal sans perdre l'information : detail_html optionnel
+# reste disponible via un <details> natif replié, pour un complément plus long que la phrase
+# courte n'a pas besoin de porter en permanence.
+def construire_note_methodologique(texte, detail_html=None):
+    html = (
+        '<div style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + "; line-height:1.5; margin:2px 0 "
+        + ESPACE_S + ';">' + texte
+    )
+    if detail_html is not None:
+        html = html + (
+            '<details style="display:inline; margin-left:6px;">'
+            '<summary style="display:inline; cursor:pointer; color:' + COULEUR_PRIMAIRE + ';">'
+            "détail</summary>"
+            '<div style="margin-top:4px;">' + detail_html + "</div>"
+            "</details>"
+        )
+    html = html + "</div>"
+    return html
+
+
 # Style distinct pour LE titre principal de chaque onglet (un seul par onglet, celui qui
 # introduit le sujet central) — les st.subheader() suivants restent la hiérarchie "normale"
 # (déjà assagie par la règle CSS globale h2/h3), pour donner un vrai repère visuel de premier
@@ -621,7 +648,7 @@ ROLES_STATUT_CARTE_SIGNAL = {
 # entièrement la ligne d'en-tête (et le badge) -- variante allégée pour un signal secondaire qui
 # n'a pas de titre propre dans les données (Étape 6D, section 11 : partage radius/border/typo/
 # espacements avec la carte "attention", mais une hiérarchie visuelle plus légère).
-def construire_carte_signal(titre, statut, corps_html, badge=None):
+def construire_carte_signal(titre, statut, corps_html, badge=None, lien_croise=None):
     if statut is None:
         bordure_gauche = "border-left:1px solid " + COULEUR_BORDURE_CARTE + ";"
     else:
@@ -655,8 +682,19 @@ def construire_carte_signal(titre, statut, corps_html, badge=None):
     html = html + (
         '<div style="font-size:14px; line-height:1.5; color:' + COULEUR_TEXTE_VALEUR + "; margin-top:" + marge_haut_corps + ';">'
         + corps_html + "</div>"
-        "</div>"
     )
+
+    # Phase 5 (passe finale, liens contextuels) : pointeur secondaire vers un autre onglet, distinct
+    # du badge (réservé à la sévérité) et de corps_html (le contenu du signal) -- jamais une
+    # nouvelle carte, juste une ligne de renvoi discrète en pied de carte. None par défaut : la
+    # grande majorité des cartes n'en ont pas besoin.
+    if lien_croise is not None:
+        html = html + (
+            '<div style="font-size:12px; font-weight:600; color:' + COULEUR_PRIMAIRE + "; margin-top:" + ESPACE_XS + ';">'
+            + lien_croise + "</div>"
+        )
+
+    html = html + "</div>"
     return html
 
 
@@ -1495,8 +1533,9 @@ with onglet_contexte:
             "- Repérer ce qui mérite l'attention du manager sur la période choisie (barre latérale), "
             "pas seulement consulter des chiffres\n"
             "- Suivre alertes, réactivité et couverture au quotidien\n"
-            "- Piloter le volet business : parcours avant-vente, coûts SAV, confiance client (NPS), "
-            "opportunités produit hors catalogue"
+            "- Relier l'activité Care aux enjeux produit, logistiques, commerciaux et financiers : "
+            "signaux SAV produit, motifs logistiques, parcours avant-vente, coûts et confiance "
+            "client (NPS)"
         )
 
     # ------------------------------------------------------------------
@@ -1518,31 +1557,6 @@ with onglet_contexte:
         "explicite, chaque moteur applique ses propres règles pour la construire."
     )
 
-    # ------------------------------------------------------------------
-    # Étape 6I, section 14-18 : les 10 onglets, ordre et libellés courts identiques à la barre de
-    # navigation (Étape 6C). Chaque description reprend mot pour mot l'intro déjà validée de
-    # l'onglet correspondant (6D-6H) -- jamais un nouveau texte, jamais l'ancien nom d'onglet.
-    # ------------------------------------------------------------------
-
-    st.markdown(titre_section_principale("Comment lire les onglets"), unsafe_allow_html=True)
-    st.markdown(
-        "Les onglets suivent la cadence à laquelle chaque sujet se pilote réellement, "
-        "pas un ordre arbitraire :\n"
-        "- **Vue d'ensemble** : ce qui s'est passé sur la période, ce qui mérite attention, ce qui tient\n"
-        "- **Tendances** : ce que racontent les observations disponibles dans le temps -- jalons, "
-        "vigilances, contrastes\n"
-        "- **Agents** : qui compose l'équipe sur la période, comment la charge se répartit -- sans classement\n"
-        "- **Actions** : pistes d'amélioration à explorer et actions déjà menées\n"
-        "- **Couverture** : sommes-nous disponibles aux bons moments et répondons-nous suffisamment vite\n"
-        "- **Produit** : signaux SAV produit et composants concernés -- cadence trimestrielle recommandée\n"
-        "- **Livraison** : motifs logistiques et leurs conséquences -- cadence mensuelle, pensé pour un "
-        "point avec le transporteur\n"
-        "- **Avant-vente** : parcours de contact, opportunités à investiguer, achats observés après contact\n"
-        "- **Impact** : confiance client (NPS) et coûts SAV, avec quel niveau de prudence\n"
-        "- **Contexte** : comprendre le périmètre, les sources et les règles de lecture (cette page)"
-    )
-    st.caption("CSAT noté sur une échelle de 0 à 5.")
-
     st.markdown(titre_section_principale("Sources de données"), unsafe_allow_html=True)
     lignes_sources_contexte = [
         {"Source": "Tickets support", "Ce qu'elle apporte": "Canal, catégorie, agent, délais, CSAT"},
@@ -1553,25 +1567,32 @@ with onglet_contexte:
         },
         {"Source": "Commandes", "Ce qu'elle apporte": "Produit, montant, pays, date (fichier Shopify)"},
         {
+            "Source": "Coûts produit",
+            "Ce qu'elle apporte": "Coût de revient et coûts logistiques associés, utilisés pour le coût "
+            "direct et le coût garantie (onglet Impact)",
+        },
+        {
             "Source": "Réponses NPS",
             "Ce qu'elle apporte": "Score de recommandation par client, indépendant de la période affichée",
         },
         {"Source": "Suivi des suggestions", "Ce qu'elle apporte": "Macros/FAQ créées et leur effet mesuré"},
     ]
     st.dataframe(lignes_sources_contexte, hide_index=True, width="stretch")
+    st.caption("CSAT noté sur une échelle de 0 à 5.")
     st.caption(
-        "Toutes les données (tickets, commandes, avis NPS) sont générées aléatoirement pour cette "
-        "démonstration — les chiffres n'ont aucune valeur réelle."
+        "Toutes les données présentées sont fictives et ont été conçues exclusivement pour cette "
+        "démonstration. Elles reproduisent des situations plausibles de pilotage Customer Care et "
+        "n'ont aucune valeur réelle."
     )
 
     with st.expander("Limites connues de cette démo"):
         st.markdown(
             "- **Coût des incidents clients** : remboursement et remplacement/garantie utilisent un vrai "
-            "coût de revient produit (product_costs_fictif.xlsx) ; seul le geste commercial reste une "
-            "fraction estimée du prix de vente, faute d'un montant réellement accordé enregistré par "
-            "ticket — voir l'onglet Impact pour le détail par ligne.\n"
-            "- **Exports disponibles** : semaines représentatives espacées dans l'année (pas un "
-            "historique hebdomadaire continu) — voir l'onglet Tendances pour le détail des écarts.\n"
+            "coût de revient produit ; seul le geste commercial reste une fraction estimée du prix de "
+            "vente, faute d'un montant réellement accordé enregistré par ticket — voir l'onglet Impact "
+            "pour le détail par ligne.\n"
+            "- **Exports disponibles** : semaines représentatives espacées dans le temps, pas un "
+            "historique continu — voir l'onglet Tendances pour le détail des écarts.\n"
             "- **Volume support en période de pic** : les semaines Black Friday/Noël dépassent le "
             "rythme soutenable d'un fonctionnement normal — volontaire, pensé comme un mode « surge » "
             "temporaire plutôt qu'un défaut de modélisation.\n"
@@ -1830,10 +1851,22 @@ with onglet_vue:
     if len(resultat_attention_ve["retenus"]) == 0:
         st.caption("Aucun signal prioritaire ne se détache sur cette période avec les critères actuels.")
     else:
+        # Phase 4 (passe finale, mini-histoires) : conclusion transversale + jusqu'à 2 preuves
+        # (volume, part de l'univers) quand elles existent déjà -- les signaux transversaux
+        # (Tendances/NPS) n'en portent pas à ce niveau de composition, leur conclusion reste seule,
+        # déjà porteuse du "pourquoi". Renvoi vers l'onglet concerné : badge existant, inchangé.
         for signal_ve in resultat_attention_ve["retenus"]:
+            corps_ve_html = signal_ve["texte"]
+            if signal_ve["volume_n"] is not None:
+                texte_volume_ve = str(signal_ve["volume_n"]) + " " + accorder(signal_ve["volume_n"], "ticket", "tickets")
+                if signal_ve.get("part_univers_pct") is not None:
+                    texte_volume_ve = texte_volume_ve + " (" + formater_pourcentage(signal_ve["part_univers_pct"]) + " de la catégorie)"
+                corps_ve_html = corps_ve_html + (
+                    '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + texte_volume_ve + "</span>"
+                )
             st.markdown(
                 construire_carte_signal(
-                    signal_ve["titre"], "attention", signal_ve["texte"],
+                    signal_ve["titre"], "attention", corps_ve_html,
                     badge="Approfondir dans : " + signal_ve["onglet_cible"],
                 ),
                 unsafe_allow_html=True,
@@ -1857,11 +1890,11 @@ with onglet_vue:
     evenements_texte = construire_texte_evenements(exports_disponibles, date_a_debut, date_a_fin)
     for changement in changements_planning:
         evenements_texte = evenements_texte + "  \nChangement planning : " + changement
-    evenements_html = "Événement(s) de la période :<br>" + evenements_texte.replace("  \n", "<br>")
+    evenements_html = "Événements de la période :<br>" + evenements_texte.replace("  \n", "<br>")
     st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
     if len(anticipations_ve) > 0:
-        st.markdown("**Point(s) d'anticipation**")
+        st.markdown("**" + accorder(len(anticipations_ve), "Point d'anticipation", "Points d'anticipation") + "**")
         st.caption(
             "Événements à venir dans les " + str(FENETRE_ANTICIPATION_VUE_ENSEMBLE_JOURS) + " jours suivant "
             "cette période -- un repère, pas une dégradation actuelle."
@@ -2132,13 +2165,12 @@ with onglet_tendances:
     # doit attirer l'œil sans transformer l'observation en crise, donc jamais "critique" ici.
     if len(lecture_tendance["vigilances"]) > 0:
         st.markdown(titre_section_principale("Vigilances"), unsafe_allow_html=True)
+        st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
         for vigilance_tendance in lecture_tendance["vigilances"]:
             corps_vigilance_html = vigilance_tendance["observation"]
             lignes_meta_vigilance = [vigilance_tendance["pourquoi"]]
             if vigilance_tendance["contexte"] is not None:
                 lignes_meta_vigilance.append(vigilance_tendance["contexte"])
-            if vigilance_tendance["prudence"] is not None:
-                lignes_meta_vigilance.append(vigilance_tendance["prudence"])
             for ligne_meta_vigilance in lignes_meta_vigilance:
                 corps_vigilance_html = corps_vigilance_html + (
                     '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
@@ -2153,11 +2185,10 @@ with onglet_tendances:
     # None), aucune couleur d'alerte (Étape 6E, section 8). Wording inchangé.
     if len(lecture_tendance["contrastes"]) > 0:
         st.markdown(titre_section_principale("Contrastes entre observations comparables"), unsafe_allow_html=True)
+        st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
         for contraste_tendance in lecture_tendance["contrastes"]:
             corps_contraste_html = contraste_tendance["observation"]
             lignes_meta_contraste = [contraste_tendance["pourquoi"]]
-            if contraste_tendance["prudence"] is not None:
-                lignes_meta_contraste.append(contraste_tendance["prudence"])
             for ligne_meta_contraste in lignes_meta_contraste:
                 corps_contraste_html = corps_contraste_html + (
                     '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
@@ -2317,7 +2348,10 @@ with onglet_agents:
         if ticket_verif_assignee["assignee"] is None:
             n_tickets_non_assignes = n_tickets_non_assignes + 1
     if n_tickets_non_assignes > 0:
-        st.caption(str(n_tickets_non_assignes) + " ticket(s) non assigné(s) cette période (non inclus ci-dessous).")
+        st.caption(
+            str(n_tickets_non_assignes) + " " + accorder(n_tickets_non_assignes, "ticket non assigné", "tickets non assignés")
+            + " cette période (non inclus ci-dessous)."
+        )
 
     # ---- Lecture de l'équipe (factuelle, jamais un classement -- Étape 5C.1) ----
     # Étape 6E, section 15 : panneau éditorial 6D, texte inchangé, aucun jugement ajouté.
@@ -2578,13 +2612,18 @@ def construire_carte_piste_actions(piste, quoi, pourquoi):
 # famille peut compter 14-17 pistes) sans jamais supprimer une piste -- aperçu des premières
 # (déjà triées par volume décroissant), le reste reste accessible dans un expander, jamais caché
 # sans accès.
-def afficher_cartes_avec_apercu(cartes_html, nombre_apercu, libelle_restantes):
+def afficher_cartes_avec_apercu(cartes_html, nombre_apercu, libelle_singulier, libelle_pluriel=None):
     cartes_apercu = cartes_html[:nombre_apercu]
     cartes_restantes = cartes_html[nombre_apercu:]
     for carte_html in cartes_apercu:
         st.markdown(carte_html, unsafe_allow_html=True)
     if len(cartes_restantes) > 0:
-        with st.expander("Voir les " + str(len(cartes_restantes)) + " autres " + libelle_restantes):
+        n_restantes = len(cartes_restantes)
+        if n_restantes == 1:
+            titre_expander_apercu = "Voir l'autre " + libelle_singulier
+        else:
+            titre_expander_apercu = "Voir les " + str(n_restantes) + " autres " + accorder(n_restantes, libelle_singulier, libelle_pluriel)
+        with st.expander(titre_expander_apercu):
             for carte_html in cartes_restantes:
                 st.markdown(carte_html, unsafe_allow_html=True)
 
@@ -2646,7 +2685,10 @@ with onglet_alertes:
         st.caption("Aucune nouvelle piste d'amélioration ne ressort sur cette observation.")
     else:
         if len(pistes_standardisation) > 0:
-            st.markdown("**Standardisation** — " + str(len(pistes_standardisation)) + " piste(s)")
+            st.markdown(
+                "**Standardisation** — " + str(len(pistes_standardisation))
+                + " " + accorder(len(pistes_standardisation), "piste", "pistes")
+            )
             cartes_standardisation = []
             for piste in pistes_standardisation:
                 quoi = piste["sujet"] + " — " + str(piste["volume"]) + " tickets"
@@ -2655,10 +2697,16 @@ with onglet_alertes:
                     + formater_pourcentage(piste["usage_macro_pct"])
                 )
                 cartes_standardisation.append(construire_carte_piste_actions(piste, quoi, pourquoi))
-            afficher_cartes_avec_apercu(cartes_standardisation, NOMBRE_PISTES_APERCU_ACTIONS, "piste(s) de standardisation")
+            afficher_cartes_avec_apercu(
+                cartes_standardisation, NOMBRE_PISTES_APERCU_ACTIONS,
+                "piste de standardisation", "pistes de standardisation",
+            )
 
         if len(pistes_self_service) > 0:
-            st.markdown("**Self-service** — " + str(len(pistes_self_service)) + " piste(s)")
+            st.markdown(
+                "**Self-service** — " + str(len(pistes_self_service))
+                + " " + accorder(len(pistes_self_service), "piste", "pistes")
+            )
             cartes_self_service = []
             for piste in pistes_self_service:
                 quoi = piste["sujet"] + " — " + str(piste["volume"]) + " tickets"
@@ -2666,17 +2714,29 @@ with onglet_alertes:
                 if piste["csat"] is not None:
                     pourquoi = pourquoi + ", CSAT " + formater_csat(piste["csat"])
                 cartes_self_service.append(construire_carte_piste_actions(piste, quoi, pourquoi))
-            afficher_cartes_avec_apercu(cartes_self_service, NOMBRE_PISTES_APERCU_ACTIONS, "piste(s) de self-service")
+            afficher_cartes_avec_apercu(
+                cartes_self_service, NOMBRE_PISTES_APERCU_ACTIONS,
+                "piste de self-service", "pistes de self-service",
+            )
 
         if len(retours_clients_a_explorer) > 0:
-            st.markdown("**Retours clients à explorer** — " + str(len(retours_clients_a_explorer)) + " sujet(s)")
+            st.markdown(
+                "**Retours clients à explorer** — " + str(len(retours_clients_a_explorer))
+                + " " + accorder(len(retours_clients_a_explorer), "sujet", "sujets")
+            )
             st.caption("Voix client à investiguer, pas une conclusion causale — détail dans l'accordéon plus bas.")
             cartes_retours_clients = []
             for groupe in retours_clients_a_explorer:
-                titre_retour = groupe["sujet"] + " — " + str(groupe["volume"]) + " commentaire(s)"
+                titre_retour = (
+                    groupe["sujet"] + " — " + str(groupe["volume"])
+                    + " " + accorder(groupe["volume"], "commentaire", "commentaires")
+                )
                 corps_retour = "CSAT moyen sur ces retours : " + formater_csat(groupe["csat"])
                 cartes_retours_clients.append(construire_carte_signal(titre_retour, None, corps_retour))
-            afficher_cartes_avec_apercu(cartes_retours_clients, NOMBRE_PISTES_APERCU_ACTIONS, "sujet(s) de retours clients")
+            afficher_cartes_avec_apercu(
+                cartes_retours_clients, NOMBRE_PISTES_APERCU_ACTIONS,
+                "sujet de retours clients", "sujets de retours clients",
+            )
 
     # ------------------------------------------------------------------
     # B. Actions déjà menées -- suivi_suggestions.xlsx. "Fait" = action réalisée, pas succès garanti :
@@ -2700,6 +2760,14 @@ with onglet_alertes:
         # pas de grande surface colorée, juste un liseré) signale que l'action a été RÉALISÉE, pas
         # qu'elle a réussi -- le texte d'impact reste neutre (aucune flèche colorée), donc aucune
         # contradiction possible avec un résultat neutre ou non amélioré.
+        au_moins_une_comparaison_chiffree = False
+        for action in actions_menees:
+            if action["mesure_avant_disponible"] and action["mesure_apres_disponible"]:
+                au_moins_une_comparaison_chiffree = True
+                break
+        if au_moins_une_comparaison_chiffree:
+            st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_AVANT_APRES_ACTIONS), unsafe_allow_html=True)
+
         for action in actions_menees:
             corps_action_html = ""
             if action["notes"]:
@@ -2712,7 +2780,9 @@ with onglet_alertes:
                     + " à " + formater_csat(impact["csat_apres"]) + " (" + str(impact["volume_avant"])
                     + " tickets avant, " + str(impact["volume_apres"]) + " après)."
                 )
-                texte_secondaire_action = TEXTE_PRUDENCE_AVANT_APRES_ACTIONS
+                # Précaution causale déjà affichée une fois au niveau section (voir
+                # au_moins_une_comparaison_chiffree ci-dessus) -- jamais répétée par carte.
+                texte_secondaire_action = None
             else:
                 texte_impact_action = None
                 texte_secondaire_action = (
@@ -2720,17 +2790,22 @@ with onglet_alertes:
                     "donner une lecture chiffrée."
                 )
 
+            # Phase 4 (passe finale, mini-histoires) : constat (notes, poids normal de la carte) ->
+            # preuve (impact chiffré, en retrait muted comme partout ailleurs -- avant/après n'avait
+            # jusqu'ici pas la même hiérarchie visuelle que les autres onglets).
             if texte_impact_action is not None:
                 if corps_action_html != "":
-                    corps_action_html = corps_action_html + "<br>" + texte_impact_action
-                else:
-                    corps_action_html = texte_impact_action
+                    corps_action_html = corps_action_html + "<br>"
+                corps_action_html = corps_action_html + (
+                    '<span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + texte_impact_action + "</span>"
+                )
 
-            if corps_action_html != "":
-                corps_action_html = corps_action_html + "<br>"
-            corps_action_html = corps_action_html + (
-                '<span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + texte_secondaire_action + "</span>"
-            )
+            if texte_secondaire_action is not None:
+                if corps_action_html != "":
+                    corps_action_html = corps_action_html + "<br>"
+                corps_action_html = corps_action_html + (
+                    '<span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + texte_secondaire_action + "</span>"
+                )
 
             badge_action = action["statut"] + " · " + action["date_action"].strftime("%d/%m/%Y")
             st.markdown(
@@ -2791,7 +2866,10 @@ with onglet_alertes:
         else:
             for groupe in retours_clients_a_explorer:
                 tickets_recents = sorted(groupe["tickets"], key=obtenir_date_ticket, reverse=True)[:3]
-                titre_expander = groupe["sujet"] + " (" + str(groupe["volume"]) + " commentaire(s))"
+                titre_expander = (
+                    groupe["sujet"] + " (" + str(groupe["volume"])
+                    + " " + accorder(groupe["volume"], "commentaire", "commentaires") + ")"
+                )
                 with st.expander(titre_expander):
                     lignes_verbatims_sujet = []
                     for ticket in tickets_recents:
@@ -3160,7 +3238,7 @@ with onglet_creneaux:
         cartes_tensions = []
         for entree in tensions_triees:
             cartes_tensions.append(construire_carte_tension_couverture(entree))
-        afficher_cartes_avec_apercu(cartes_tensions, 5, "tension(s)")
+        afficher_cartes_avec_apercu(cartes_tensions, 5, "tension")
     else:
         st.caption("Aucune tension à examiner sur cette observation.")
 
@@ -3168,8 +3246,10 @@ with onglet_creneaux:
         morceaux_pression = []
         for entree in pressions_marquees_absorbees_triees:
             morceaux_pression.append(entree["jour"] + " " + str(entree["heure"]) + "h")
+        n_pressions_marquees_absorbees = len(pressions_marquees_absorbees_triees)
         st.caption(
-            str(len(pressions_marquees_absorbees_triees)) + " créneau(x) à pression marquée, absorbés "
+            str(n_pressions_marquees_absorbees) + " " + accorder(n_pressions_marquees_absorbees, "créneau", "créneaux")
+            + " à pression marquée, " + accorder(n_pressions_marquees_absorbees, "absorbé", "absorbés") + " "
             "(réactivité locale non dégradée, ou non mesurable localement) : "
             + " · ".join(morceaux_pression) + "."
         )
@@ -3373,11 +3453,10 @@ with onglet_creneaux:
 
         st.dataframe(tableau_planning_stylise, hide_index=True, width="stretch")
         st.caption(
-            "Tout est éditable dans l'onglet PLANNING du fichier Excel de l'export concerné (colonnes "
-            "agent, jour, heure_debut, heure_fin, role) : les horaires et le rôle d'un agent, mais aussi "
-            "le créneau standard lui-même (ligne \"DEFAUT\") — utile si un client passe à mi-temps, ferme "
-            "un mois donné, ou ajoute des heures supplémentaires. Les arrivées/départs/absences se notent "
-            "dans la colonne evenement_semaine de l'onglet RAW_TICKETS."
+            "Les horaires et le rôle d'un agent, ainsi que le créneau standard de l'équipe, sont mis à "
+            "jour en amont à partir des exports fournis — utile si un agent passe à mi-temps, ferme un "
+            "mois donné, ou ajoute des heures supplémentaires. Les arrivées/départs/absences ponctuelles "
+            "sont également pris en compte de cette façon."
         )
 
 
@@ -3415,7 +3494,7 @@ with onglet_produit:
     st.caption(
         "Cadence trimestrielle recommandée — élargis la Période A dans la barre latérale pour une vraie "
         "tendance produit. Les exports disponibles sont des semaines représentatives espacées dans le "
-        "temps (pas un historique hebdomadaire continu) : élargir la période ajoute les exports compris "
+        "temps, pas un historique continu : élargir la période ajoute les exports compris "
         "dans la plage, sans combler les semaines entre deux exports."
     )
 
@@ -3500,9 +3579,12 @@ with onglet_produit:
     # ------------------------------------------------------------------
 
     st.markdown(titre_section_principale("Priorités à investiguer"), unsafe_allow_html=True)
-    st.caption(
-        "« Priorité principale »/« secondaire » décrit le niveau de convergence des preuves, pas une "
-        "gravité absolue. " + TEXTE_PRUDENCE_CAUSALE_PRODUIT
+    st.markdown(
+        construire_note_methodologique(
+            "« Priorité principale »/« secondaire » décrit le niveau de convergence des preuves, pas une "
+            "gravité absolue. " + TEXTE_PRUDENCE_CAUSALE
+        ),
+        unsafe_allow_html=True,
     )
 
     if len(signaux_prioritaires) == 0 and len(signaux_a_surveiller) == 0 and len(signaux_voie_b) == 0:
@@ -3530,62 +3612,104 @@ with onglet_produit:
                 statut_signal_produit = None
 
             corps_produit_html = signal_produit["observation_principale"]
-            lignes_meta_produit = []
 
-            texte_volume = (
+            # Phase 4 (passe finale, mini-histoires) : constat -> 2-3 preuves principales
+            # sélectionnées pour CE signal (jamais le même trio imposé partout) -> détail/
+            # méthodologie relégué dans un expander. Volume toujours en premier (établit
+            # l'échelle) ; puis CSAT et impact financier priorisés s'ils existent (ce sont eux qui
+            # disent "pourquoi ça compte" -- expérience client, conséquence business), sinon
+            # concentration puis temporalité comblent les 2-3 preuves. Rien n'est supprimé : tout
+            # champ non promu en preuve principale reste visible dans le détail, avec sa référence/
+            # son n intacts.
+            texte_volume_produit = (
                 str(signal_produit["volume"]["n"]) + " tickets ("
                 + formater_pourcentage(signal_produit["volume"]["part_univers_pct"])
                 + " du SAV produit de la période, univers " + str(signal_produit["volume"]["univers"]) + ")"
             )
-            lignes_meta_produit.append(texte_volume)
-            lignes_meta_produit.append("Temporalité : " + signal_produit["temporalite"])
+            texte_temporalite_produit = "Temporalité : " + signal_produit["temporalite"]
 
+            texte_csat_produit = None
             if signal_produit["experience"]["csat"] is not None:
-                lignes_meta_produit.append(
+                texte_csat_produit = (
                     "CSAT : " + formater_csat(signal_produit["experience"]["csat"])
                     + " (n=" + str(signal_produit["experience"]["n_csat"]) + ") vs "
                     + formater_csat(signal_produit["experience"]["csat_reference"])
                     + " pour le SAV Produit sur cette observation — " + signal_produit["experience"]["lecture"]
                 )
 
+            texte_cout_produit = None
             if signal_produit["cout"] is not None:
-                lignes_meta_produit.append(
+                texte_cout_produit = (
                     "Impact financier associé : " + formater_montant(signal_produit["cout"]["montant"])
                     + " (méthodologie détaillée dans l'onglet Impact & confiance)"
                 )
 
+            texte_concentration_produit = None
             if signal_produit["concentration"] is not None:
-                lignes_meta_produit.append(
+                texte_concentration_produit = (
                     "Concentré sur " + str(signal_produit["concentration"]["produit_dominant"]) + " ("
                     + formater_pourcentage(signal_produit["concentration"]["part"] * 100)
                     + " des tickets de ce composant, n=" + str(signal_produit["concentration"]["n"]) + ")"
                 )
 
+            texte_elements_consolides_produit = None
             if len(signal_produit["elements_consolides"]) > 0:
-                texte_elements_consolides = signal_produit["elements_consolides"][0]
+                texte_elements_consolides_produit = signal_produit["elements_consolides"][0]
                 for element_consolide in signal_produit["elements_consolides"][1:]:
-                    texte_elements_consolides = texte_elements_consolides + " · " + element_consolide
-                lignes_meta_produit.append("Concerne notamment : " + texte_elements_consolides)
+                    texte_elements_consolides_produit = texte_elements_consolides_produit + " · " + element_consolide
+                texte_elements_consolides_produit = "Concerne notamment : " + texte_elements_consolides_produit
 
+            texte_regroupement_produit = None
             if signal_produit["regroupement_produit"] is not None:
-                lignes_meta_produit.append(
-                    "Voir aussi sur " + signal_produit["regroupement_produit"]["produit"] + " — autre(s) sujet(s) "
-                    "distinct(s) cette période : " + " · ".join(signal_produit["regroupement_produit"]["autres_sujets"])
+                n_autres_sujets = len(signal_produit["regroupement_produit"]["autres_sujets"])
+                texte_regroupement_produit = (
+                    "Voir aussi sur " + signal_produit["regroupement_produit"]["produit"] + " — "
+                    + accorder(n_autres_sujets, "autre sujet distinct", "autres sujets distincts")
+                    + " cette période : " + " · ".join(signal_produit["regroupement_produit"]["autres_sujets"])
                 )
 
-            for ligne_meta_produit in lignes_meta_produit:
+            lignes_meta_produit_principales = [texte_volume_produit]
+            candidats_preuve_produit = [texte_csat_produit, texte_cout_produit, texte_concentration_produit]
+            for candidat_preuve_produit in candidats_preuve_produit:
+                if candidat_preuve_produit is not None and len(lignes_meta_produit_principales) < 3:
+                    lignes_meta_produit_principales.append(candidat_preuve_produit)
+            if len(lignes_meta_produit_principales) < 3:
+                lignes_meta_produit_principales.append(texte_temporalite_produit)
+
+            lignes_meta_produit_detail = []
+            for texte_champ_produit in (
+                texte_temporalite_produit, texte_csat_produit, texte_cout_produit,
+                texte_concentration_produit, texte_elements_consolides_produit, texte_regroupement_produit,
+            ):
+                if texte_champ_produit is not None and texte_champ_produit not in lignes_meta_produit_principales:
+                    lignes_meta_produit_detail.append(texte_champ_produit)
+
+            for ligne_meta_produit in lignes_meta_produit_principales:
                 corps_produit_html = corps_produit_html + (
                     '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
                     + ligne_meta_produit + "</span>"
                 )
 
+            # Phase 5 (passe finale, liens contextuels) : "Voir l'impact" uniquement quand un coût a
+            # déjà été calculé pour CE signal (signal["cout"], moteur Produit inchangé) -- jamais un
+            # lien systématique. Réutilise le même nom d'onglet que la navigation Vue d'ensemble
+            # déjà en place ("Impact & confiance"), pas un second mécanisme.
+            lien_croise_produit = None
+            if signal_produit["cout"] is not None:
+                lien_croise_produit = "Voir l'impact →"
+
             st.markdown(
                 construire_carte_signal(
                     titre_html_produit, statut_signal_produit, corps_produit_html,
-                    badge=signal_produit["niveau_priorite"],
+                    badge=signal_produit["niveau_priorite"], lien_croise=lien_croise_produit,
                 ),
                 unsafe_allow_html=True,
             )
+
+            if len(lignes_meta_produit_detail) > 0:
+                with st.expander("Détail et méthodologie"):
+                    for ligne_detail_produit in lignes_meta_produit_detail:
+                        st.caption(ligne_detail_produit)
 
             # ---- F (au niveau carte) : dossiers associés, matchés structurellement (5F.1, section 28-30) ----
             dossiers_associes = construire_dossiers_associes_produit(signal_produit, tickets_sav_produit_s2)
@@ -3962,17 +4086,31 @@ with onglet_livraison:
     st.caption(
         "Miroir mensuel de la catégorie Livraison, pensé pour un point avec le transporteur — voir "
         "l'onglet Vue d'ensemble pour la vue hebdomadaire toutes catégories confondues. Cadence mensuelle "
-        "recommandée (élargis la Période A dans la barre latérale) — les exports disponibles restent des "
-        "semaines représentatives isolées, pas un historique continu."
+        "recommandée (élargis la Période A dans la barre latérale) — les exports disponibles sont des "
+        "semaines représentatives espacées dans le temps, pas un historique continu."
     )
 
-    tickets_livraison_s2 = categories_s2.get("Livraison", [])
-    tickets_livraison_s1 = categories_s1.get("Livraison", [])
+    # Phase 5B (passe finale, segmentation transporteur) : "Tous" reproduit exactement le
+    # fonctionnement déjà validé (court-circuit total, aucun filtre appliqué). Noria Standard/Velox
+    # Express filtrent le même moteur, sur le même champ transporteur -- jamais un second moteur.
+    segment_livraison = st.radio(
+        "Transporteur", SEGMENTS_LIVRAISON, horizontal=True, key="segment_livraison",
+    )
+
+    tickets_livraison_s2 = filtrer_tickets_par_segment_transporteur(
+        categories_s2.get("Livraison", []), segment_livraison
+    )
+    tickets_livraison_s1 = filtrer_tickets_par_segment_transporteur(
+        categories_s1.get("Livraison", []), segment_livraison
+    )
 
     # ---- Moteur Livraison (Étape 4C) : convergence de familles de preuve (demande, expérience,
     # effort, relances, issues, concentration transporteur, persistance) -- jamais le volume seul.
     # Historique = exports STRICTEMENT antérieurs à la Période A, jamais de fuite du futur (même
-    # principe que le moteur Produit ci-dessous).
+    # principe que le moteur Produit ci-dessous). Le filtre transporteur est appliqué ICI, au même
+    # niveau que le filtre catégoriel Livraison -- jamais seulement sur la période courante, sinon
+    # la temporalité comparerait un univers filtré à un historique non filtré (risque identifié en
+    # Phase 5B.1).
     NOMBRE_MAX_SIGNAUX_LIVRAISON = 5
 
     historique_livraison_par_fichier = []
@@ -3983,7 +4121,9 @@ with onglet_livraison:
             for ticket_historique_liv in tickets_fichier_historique_liv:
                 if categoriser(ticket_historique_liv) == "Livraison":
                     tickets_livraison_fichier_historique.append(ticket_historique_liv)
-            historique_livraison_par_fichier.append(tickets_livraison_fichier_historique)
+            historique_livraison_par_fichier.append(
+                filtrer_tickets_par_segment_transporteur(tickets_livraison_fichier_historique, segment_livraison)
+            )
 
     contexte_livraison_periode = contexte_periode(evenements_calendrier, date_a_debut, date_a_fin)
     lecture_activite_livraison = construire_lecture_activite_livraison(
@@ -4044,6 +4184,7 @@ with onglet_livraison:
     if len(signaux_prioritaires_livraison) == 0:
         st.caption("Aucun motif ne présente actuellement une convergence suffisante pour être investigué.")
     else:
+        st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
         # Étape 6F, section 17-18 : même fondation que Produit -- statut "attention" uniquement pour
         # la priorité principale, badge = niveau. Les relances restent en corps principal (taille
         # normale, jamais reléguées en petite légende muted) : c'est la métrique distinctive de
@@ -4064,55 +4205,83 @@ with onglet_livraison:
                     + " (référence Livraison " + str(round(signal_livraison["relances"]["reference"], 2)) + ")</span>"
                 )
 
-            lignes_meta_livraison = []
-
+            # Phase 4 (passe finale, mini-histoires) : constat -> relances (déjà en évidence,
+            # inchangé, métrique distinctive de Livraison) -> 2 preuves principales choisies pour CE
+            # signal (volume toujours, puis résolution priorisée sur CSAT -- cf. consigne, "résolution
+            # peut être plus parlant que temporalité") -> investigation (toujours visible, jamais
+            # reléguée) -> détail/méthodologie en expander. Rien n'est supprimé : n/références
+            # intacts partout où ils existent déjà.
             texte_volume_livraison = (
                 str(signal_livraison["volume"]["n"]) + " tickets ("
                 + formater_pourcentage(signal_livraison["volume"]["part_univers_pct"])
                 + " de Livraison sur la période, univers " + str(signal_livraison["volume"]["univers"]) + ")"
             )
-            lignes_meta_livraison.append(texte_volume_livraison)
-            lignes_meta_livraison.append("Temporalité : " + signal_livraison["temporalite"])
+            texte_temporalite_livraison = "Temporalité : " + signal_livraison["temporalite"]
 
+            texte_csat_livraison = None
             if signal_livraison["experience"]["csat"] is not None:
-                lignes_meta_livraison.append(
+                texte_csat_livraison = (
                     "CSAT : " + formater_csat(signal_livraison["experience"]["csat"])
                     + " (n=" + str(signal_livraison["experience"]["n_csat"]) + ") — "
                     + signal_livraison["experience"]["lecture"]
                 )
 
+            texte_resolution_livraison = None
             if signal_livraison["effort"]["resolution_h_moyenne"] is not None:
-                lignes_meta_livraison.append(
+                texte_resolution_livraison = (
                     "Résolution moyenne : " + formater_duree(signal_livraison["effort"]["resolution_h_moyenne"] * 60)
                     + " (référence " + formater_duree(signal_livraison["effort"]["resolution_h_reference"] * 60) + ")"
                 )
 
+            texte_issues_livraison = None
             distribution_livraison = signal_livraison["issues"]["distribution"]
             if len(distribution_livraison) > 0:
-                texte_issues = []
+                textes_issues = []
                 for item_issue in distribution_livraison:
-                    texte_issues.append(
+                    textes_issues.append(
                         item_issue["issue"] + " " + formater_pourcentage(item_issue["part_pct"])
                         + " (n=" + str(item_issue["n"]) + ")"
                     )
-                lignes_meta_livraison.append("Issues finales : " + " · ".join(texte_issues))
+                texte_issues_livraison = "Issues finales : " + " · ".join(textes_issues)
 
+            texte_transporteur_livraison = None
+            texte_prudence_transporteur_livraison = None
             if signal_livraison["concentration_transporteur"] is not None:
-                lignes_meta_livraison.append(
+                texte_transporteur_livraison = (
                     "Piste transporteur : "
                     + texte_piste_transporteur_livraison(signal_livraison["concentration_transporteur"])
                 )
-                lignes_meta_livraison.append(signal_livraison["concentration_transporteur"]["prudence_echantillon"])
+                texte_prudence_transporteur_livraison = signal_livraison["concentration_transporteur"]["prudence_echantillon"]
 
-            lignes_meta_livraison.append(signal_livraison["action_investigation"])
-            lignes_meta_livraison.append(signal_livraison["prudence"])
+            lignes_meta_livraison_principales = [texte_volume_livraison]
+            candidats_preuve_livraison = [texte_resolution_livraison, texte_csat_livraison]
+            for candidat_preuve_livraison in candidats_preuve_livraison:
+                if candidat_preuve_livraison is not None and len(lignes_meta_livraison_principales) < 2:
+                    lignes_meta_livraison_principales.append(candidat_preuve_livraison)
 
-            for ligne_meta_livraison in lignes_meta_livraison:
+            lignes_meta_livraison_detail = []
+            for texte_champ_livraison in (
+                texte_temporalite_livraison, texte_resolution_livraison, texte_csat_livraison,
+                texte_issues_livraison, texte_transporteur_livraison, texte_prudence_transporteur_livraison,
+            ):
+                if texte_champ_livraison is not None and texte_champ_livraison not in lignes_meta_livraison_principales:
+                    lignes_meta_livraison_detail.append(texte_champ_livraison)
+
+            for ligne_meta_livraison in lignes_meta_livraison_principales:
                 corps_livraison_html = corps_livraison_html + (
                     '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
                     + ligne_meta_livraison + "</span>"
                 )
 
+            corps_livraison_html = corps_livraison_html + (
+                '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                + signal_livraison["action_investigation"] + "</span>"
+            )
+
+            # Phase 5 (passe finale, liens contextuels) : pas de "Voir l'impact" ici -- signal_livraison
+            # ["cout"] est toujours None (outils.py, moteur Livraison : "jamais calculable actuellement
+            # -- aucun order_id sur les tickets Livraison"). Documenté plutôt que forcé : un lien vers
+            # Impact & confiance ne serait pas fiable tant que cette limite structurelle existe.
             st.markdown(
                 construire_carte_signal(
                     signal_livraison["sujet"], statut_signal_livraison, corps_livraison_html,
@@ -4120,6 +4289,11 @@ with onglet_livraison:
                 ),
                 unsafe_allow_html=True,
             )
+
+            if len(lignes_meta_livraison_detail) > 0:
+                with st.expander("Détail et méthodologie"):
+                    for ligne_detail_livraison in lignes_meta_livraison_detail:
+                        st.caption(ligne_detail_livraison)
 
             # ---- Dossiers associés : matching structurel exact sur le grain motif (subject_cluster) ----
             dossiers_associes_livraison = construire_dossiers_associes_livraison(signal_livraison, tickets_livraison_s2)
@@ -4398,7 +4572,7 @@ with onglet_conversion:
                     sous_texte_parcours_av = "achat observé, n=" + str(stats_parcours_av["n_contacts"]) + " contacts"
                 else:
                     valeur_parcours_av = str(stats_parcours_av["n_contacts"])
-                    sous_texte_parcours_av = "contact(s)"
+                    sous_texte_parcours_av = accorder(stats_parcours_av["n_contacts"], "contact", "contacts")
 
                 if stats_parcours_av["panier_moyen"] is not None:
                     sous_texte_parcours_av = sous_texte_parcours_av + (
@@ -4414,7 +4588,7 @@ with onglet_conversion:
             index_colonne_parcours_av = index_colonne_parcours_av + 1
 
         st.caption(parcours_av["conclusion"])
-        st.caption("Association observée sur les données disponibles, pas une cause démontrée.")
+        st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
 
         contacts_avant_achat_av = parcours_av["contacts_avant_achat"]
         if contacts_avant_achat_av is not None:
@@ -4435,45 +4609,73 @@ with onglet_conversion:
         # Étape 6F, section 6-25 : même fondation Signal card. Un seul niveau existe ici ("Opportunité
         # à investiguer", tier unique -- pas de principal/secondaire comme Produit/Livraison), donc
         # statut "attention" uniforme et badge = signal_av["niveau"] tel quel.
+        st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
         for signal_av in resultats_motifs_av["opportunites"]:
             corps_av_html = signal_av["observation_principale"]
-            lignes_meta_av = []
 
-            lignes_meta_av.append(
+            # Phase 4 (passe finale, mini-histoires) : constat -> 2-3 preuves principales pour CE
+            # signal (volume et achat observé -- avec sa référence -- toujours présents car ce sont
+            # les deux faits qui font qu'un motif Avant-vente mérite l'attention ; panier ou CSAT
+            # complète selon ce qui existe) -> investigation (piste_investigation, toujours visible)
+            # -> détail/méthodologie en expander.
+            texte_volume_av = (
                 str(signal_av["volume"]["n"]) + " tickets ("
                 + formater_pourcentage(signal_av["volume"]["part_univers_pct"])
                 + " d'Avant-vente sur la période, univers " + str(signal_av["volume"]["univers"]) + ")"
             )
-            lignes_meta_av.append("Temporalité : " + signal_av["temporalite"])
-            lignes_meta_av.append(
+            texte_temporalite_av = "Temporalité : " + signal_av["temporalite"]
+            texte_achat_observe_av = (
                 "Achat observé : " + formater_pourcentage(signal_av["achat_observe"]["taux_pct"])
                 + " des contacts (n=" + str(signal_av["achat_observe"]["n_contacts"]) + "), contre "
                 + formater_pourcentage(signal_av["achat_observe_reference_pct"]) + " en référence Avant-vente"
             )
+
+            texte_panier_av = None
             if signal_av["achat_observe"]["panier_moyen"] is not None:
-                lignes_meta_av.append(
+                texte_panier_av = (
                     "Panier observé moyen : " + formater_montant(signal_av["achat_observe"]["panier_moyen"])
                     + " (n=" + str(signal_av["achat_observe"]["n_panier"]) + ")"
                 )
+
+            texte_csat_av = None
             if signal_av["experience"]["csat"] is not None:
-                lignes_meta_av.append(
+                texte_csat_av = (
                     "CSAT : " + formater_csat(signal_av["experience"]["csat"])
                     + " (n=" + str(signal_av["experience"]["n_csat"]) + ")"
                 )
-            if signal_av["contexte"] is not None:
-                lignes_meta_av.append(signal_av["contexte"])
-            lignes_meta_av.append(signal_av["piste_investigation"])
-            lignes_meta_av.append(signal_av["prudence"])
 
-            for ligne_meta_av in lignes_meta_av:
+            texte_contexte_av = signal_av["contexte"]
+
+            lignes_meta_av_principales = [texte_volume_av, texte_achat_observe_av]
+            candidats_preuve_av = [texte_panier_av, texte_csat_av]
+            for candidat_preuve_av in candidats_preuve_av:
+                if candidat_preuve_av is not None and len(lignes_meta_av_principales) < 3:
+                    lignes_meta_av_principales.append(candidat_preuve_av)
+
+            lignes_meta_av_detail = []
+            for texte_champ_av in (texte_temporalite_av, texte_panier_av, texte_csat_av, texte_contexte_av):
+                if texte_champ_av is not None and texte_champ_av not in lignes_meta_av_principales:
+                    lignes_meta_av_detail.append(texte_champ_av)
+
+            for ligne_meta_av in lignes_meta_av_principales:
                 corps_av_html = corps_av_html + (
                     '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">' + ligne_meta_av + "</span>"
                 )
+
+            corps_av_html = corps_av_html + (
+                '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
+                + signal_av["piste_investigation"] + "</span>"
+            )
 
             st.markdown(
                 construire_carte_signal(signal_av["sujet"], "attention", corps_av_html, badge=signal_av["niveau"]),
                 unsafe_allow_html=True,
             )
+
+            if len(lignes_meta_av_detail) > 0:
+                with st.expander("Détail et méthodologie"):
+                    for ligne_detail_av in lignes_meta_av_detail:
+                        st.caption(ligne_detail_av)
 
             # ---- G (au niveau carte) : contacts associés + achats associés, matchés
             # structurellement (grain subject_cluster), source unique = resultats_achats_av ----
@@ -4792,7 +4994,8 @@ with onglet_impact:
     kpis_contexte_impact = []
     if item_nps is not None:
         kpis_contexte_impact.append((
-            "NPS de la période", formater_nps_entier(item_nps["nps"]), str(item_nps["n"]) + " réponse(s)",
+            "NPS de la période", formater_nps_entier(item_nps["nps"]),
+            str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses"),
         ))
     if montant_total_pertes > 0:
         kpis_contexte_impact.append(("Coût direct observé / estimé", formater_montant(montant_total_pertes), None))
@@ -4826,7 +5029,8 @@ with onglet_impact:
             st.caption(texte_sensibilite_periode)
         st.markdown(
             construire_carte_kpi(
-                "NPS", formater_nps_entier(item_nps["nps"]), sous_texte=str(item_nps["n"]) + " réponse(s)",
+                "NPS", formater_nps_entier(item_nps["nps"]),
+                sous_texte=str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses"),
             ),
             unsafe_allow_html=True,
         )
@@ -4866,10 +5070,10 @@ with onglet_impact:
     st.markdown(titre_section_principale("Impact financier"), unsafe_allow_html=True)
     st.caption(
         "Remboursement = montant réellement remboursé. Remplacement et garantie = coût de revient "
-        "produit + logistique associée (product_costs_fictif.xlsx), pas le prix de vente payé par le "
-        "client. Geste commercial reste une fraction estimée du prix de vente — seule ligne encore une "
-        "estimation, marquée comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois "
-        "même si plusieurs tickets s'y rattachent."
+        "produit + logistique associée, pas le prix de vente payé par le client. Geste commercial "
+        "reste une fraction estimée du prix de vente — seule ligne encore une estimation, marquée "
+        "comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois même si plusieurs "
+        "tickets s'y rattachent."
     )
     with st.container(border=True):
         st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
