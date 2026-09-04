@@ -63,6 +63,10 @@ from outils import (
     MODE_PERIODE_ETENDUE,
     montant_cout_garantie,
     montant_perte_estime,
+    est_cout_potentiellement_evitable,
+    calculer_impact_financier,
+    calculer_impact_garantie,
+    formater_montant,
     moteur_avant_vente_motifs,
     moteur_livraison_voie_a,
     moteur_produit_voie_a,
@@ -145,6 +149,11 @@ from outils import (
     ETAT_PRUDENCE_VOLUME_ELEVE,
     ETAT_PRUDENCE_VOLUME_FAIBLE,
     ETAT_PRUDENCE_VOLUME_HABITUEL,
+    ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE,
+    ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE,
+    ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE,
+    evaluer_robustesse_comparaison_nps,
+    texte_robustesse_comparaison_nps,
     SEUIL_AMPLITUDE_PART_ETENDUE_NPS,
     SEUIL_CSAT_INSATISFAISANT,
     SEUIL_PRUDENCE_ECHANTILLON_NPS,
@@ -209,6 +218,7 @@ from outils import (
     formater_delta_points,
     formater_delta_pourcentage_relatif,
     formater_delta_duree,
+    formater_delta_montant,
     texte_reference_b,
     evaluer_evolution_signal_vs_b,
     texte_evolution_signal_vs_b,
@@ -387,6 +397,168 @@ class TestMontantCoutGarantie(unittest.TestCase):
     def test_sans_commande_retourne_none(self):
         ticket = {"order_id": None}
         self.assertIsNone(montant_cout_garantie(ticket, {}, {}))
+
+
+class TestEstCoutPotentiellementEvitable(unittest.TestCase):
+    def test_champ_absent_retourne_false(self):
+        self.assertFalse(est_cout_potentiellement_evitable({}))
+
+    def test_zero_sav_anterieur_retourne_false(self):
+        self.assertFalse(est_cout_potentiellement_evitable({"prior_sav_count": 0}))
+
+    def test_au_moins_un_sav_anterieur_retourne_true(self):
+        self.assertTrue(est_cout_potentiellement_evitable({"prior_sav_count": 1}))
+
+
+def ticket_impact_test(order_id, resolution_type, component=None, prior_sav_count=None):
+    ticket = {"order_id": order_id, "resolution_type": resolution_type, "component": component}
+    if prior_sav_count is not None:
+        ticket["prior_sav_count"] = prior_sav_count
+    return ticket
+
+
+# Non-régression Étape 7H : ces tests figent le comportement de calculer_impact_financier tel
+# qu'observé AVANT son extraction depuis app.py (mêmes règles, mêmes montants, mêmes
+# déduplications par order_id, mêmes agrégats) -- ils doivent rester verts sans aucune
+# modification une fois B branché dessus, la fonction elle-même n'étant pas retouchée pour B.
+class TestCalculerImpactFinancierNonRegression7H(unittest.TestCase):
+    def setUp(self):
+        self.commandes = {
+            "EMY-1": {"montant_total": 200, "product_category": "Diffuseur", "product_name": "Cocon"},
+            "EMY-2": {"montant_total": 300, "product_category": "Diffuseur", "product_name": "Cocon"},
+            "EMY-3": {"montant_total": 50, "product_category": "Accessoire", "product_name": "Clip"},
+        }
+        self.couts_produits = {
+            ("Diffuseur", "Cocon"): {
+                "prix_vente_ttc": 200, "cout_revient_produit": 80,
+                "cout_logistique_remplacement": 10, "cout_retour": 5,
+            },
+        }
+        self.tickets = [
+            ticket_impact_test("EMY-1", "Remboursement", component="Batterie", prior_sav_count=0),
+            # Même order_id que le précédent, même type de perte -- doit être dédupliqué (aucune
+            # deuxième contribution au montant, jamais compté deux fois).
+            ticket_impact_test("EMY-1", "Remboursement", component="Batterie", prior_sav_count=1),
+            # Order_id absent des commandes -- compté dans "Tickets" du groupe, jamais dans le
+            # montant (montant_perte_estime renvoie None).
+            ticket_impact_test("EMY-INCONNU", "Remboursement", component="Batterie", prior_sav_count=1),
+            ticket_impact_test("EMY-2", "Remplacement produit", component="Tete", prior_sav_count=1),
+            ticket_impact_test("EMY-3", "Geste commercial", component="Autre"),
+            # Groupe entier sans commande résolue -- doit retomber sur "Montant": "N/A", jamais 0.
+            # Raw resolution_type ticket ("Remplacement appareil / accessoire"), pas le libellé
+            # déjà mappé -- type_perte_financiere fait cette traduction, jamais l'inverse.
+            ticket_impact_test("EMY-INCONNU2", "Remplacement appareil / accessoire", component="Y", prior_sav_count=1),
+            # resolution_type non mappé -- exclu de tous les groupes, mais reste dans len(tickets).
+            ticket_impact_test("EMY-4", "Assistance orale", component="Z"),
+        ]
+        self.resultat = calculer_impact_financier(self.tickets, self.commandes, self.couts_produits)
+
+    def test_montant_total_pertes(self):
+        self.assertEqual(self.resultat["montant_total_pertes"], 342.5)
+
+    def test_montant_subi_et_evitable(self):
+        self.assertEqual(self.resultat["montant_subi"], 207.5)
+        self.assertEqual(self.resultat["montant_evitable"], 135)
+
+    def test_montants_par_composant(self):
+        self.assertEqual(
+            self.resultat["montants_par_composant"], {"Batterie": 200, "Tete": 135, "Autre": 7.5}
+        )
+
+    def test_nb_commandes_comptees_deduplique_par_order_id(self):
+        # 3 commandes distinctes effectivement comptées (EMY-1, EMY-2, EMY-3) -- EMY-1 une seule
+        # fois malgré 2 tickets, EMY-INCONNU/EMY-INCONNU2 jamais comptées (montant None).
+        self.assertEqual(self.resultat["nb_commandes_comptees"], 3)
+
+    def test_quatre_lignes_perte_une_par_type(self):
+        types_presents = []
+        for ligne in self.resultat["lignes_perte"]:
+            types_presents.append(ligne["Type de perte"])
+        self.assertEqual(
+            sorted(types_presents),
+            sorted(["Remboursement", "Remplacement produit", "Geste commercial", "Remplacement accessoire"]),
+        )
+
+    def test_ligne_remboursement_compte_les_trois_tickets_du_groupe(self):
+        for ligne in self.resultat["lignes_perte"]:
+            if ligne["Type de perte"] == "Remboursement":
+                self.assertEqual(ligne["Tickets"], 3)
+                self.assertEqual(ligne["Montant"], formater_montant(200))
+                return
+        self.fail("Ligne Remboursement absente")
+
+    def test_ligne_sans_commande_resolue_est_n_a(self):
+        for ligne in self.resultat["lignes_perte"]:
+            if ligne["Type de perte"] == "Remplacement accessoire":
+                self.assertEqual(ligne["Montant"], "N/A")
+                return
+        self.fail("Ligne Remplacement accessoire absente")
+
+    def test_montants_bruts_par_type_pour_ecart_vs_b(self):
+        # Clé technique séparée des lignes affichées (jamais fusionnée dans lignes_perte) --
+        # un type sans commande résolue (Remplacement accessoire) en est absent, pas à 0.
+        self.assertEqual(
+            self.resultat["montants_bruts_par_type"],
+            {"Remboursement": 200, "Remplacement produit": 135, "Geste commercial": 7.5},
+        )
+        for ligne in self.resultat["lignes_perte"]:
+            self.assertNotIn("montants_bruts_par_type", ligne)
+            self.assertNotIn("_montant_brut", ligne)
+
+    def test_methode_geste_commercial_marquee_estimee(self):
+        for ligne in self.resultat["lignes_perte"]:
+            if ligne["Type de perte"] == "Geste commercial":
+                self.assertEqual(ligne["Méthode"], "Estimé (fraction du prix de vente)")
+                return
+        self.fail("Ligne Geste commercial absente")
+
+
+# Non-régression Étape 7H, même principe que ci-dessus pour calculer_impact_garantie.
+class TestCalculerImpactGarantieNonRegression7H(unittest.TestCase):
+    def setUp(self):
+        self.commandes = {
+            "EMY-1": {"montant_total": 200, "product_category": "Diffuseur", "product_name": "Cocon"},
+            "EMY-3": {"montant_total": 50, "product_category": "Accessoire", "product_name": "Clip"},
+        }
+        self.couts_produits = {
+            ("Diffuseur", "Cocon"): {
+                "prix_vente_ttc": 200, "cout_revient_produit": 80,
+                "cout_logistique_remplacement": 10, "cout_retour": 5,
+            },
+            # Volontairement aucune entrée pour ("Accessoire", "Clip") -- teste le cas d'un ticket
+            # sous garantie dont le coût ne peut pas être résolu (catalogue de coûts incomplet).
+        }
+        self.tickets_sav_produit = [
+            self._avec_garantie(ticket_impact_test("EMY-1", "Remplacement produit"), "Sous garantie"),
+            # Même order_id que le précédent -- doit être dédupliqué dans le montant, pas dans
+            # tickets_garantie (les deux restent comptés comme "sous garantie").
+            self._avec_garantie(ticket_impact_test("EMY-1", "Remplacement produit"), "Sous garantie"),
+            self._avec_garantie(ticket_impact_test("EMY-2", "Remplacement produit"), "Hors garantie"),
+            self._avec_garantie(ticket_impact_test("EMY-3", "Remplacement produit"), "Sous garantie"),
+        ]
+        self.resultat = calculer_impact_garantie(self.tickets_sav_produit, self.commandes, self.couts_produits)
+
+    def _avec_garantie(self, ticket, statut):
+        ticket["warranty_status"] = statut
+        return ticket
+
+    def test_part_du_sav_sous_garantie(self):
+        # 3 tickets sur 4 sont sous garantie (le "Hors garantie" exclu du numérateur et du filtre).
+        self.assertEqual(self.resultat["pct_garantie_volume_sav"], 75.0)
+        self.assertEqual(len(self.resultat["tickets_garantie"]), 3)
+
+    def test_montant_garantie_deduplique_par_order_id(self):
+        # EMY-1 compté une seule fois (95) malgré 2 tickets sous garantie sur la même commande ;
+        # EMY-3 sous garantie mais coût introuvable (catalogue incomplet) -- exclu du montant, pas
+        # du dénominateur "tickets_garantie" ci-dessus.
+        self.assertEqual(self.resultat["montants_garantie"], [95])
+        self.assertEqual(self.resultat["montant_garantie_total"], 95)
+
+    def test_aucun_ticket_sav_retourne_etat_vide(self):
+        resultat_vide = calculer_impact_garantie([], self.commandes, self.couts_produits)
+        self.assertIsNone(resultat_vide["pct_garantie_volume_sav"])
+        self.assertEqual(resultat_vide["montant_garantie_total"], 0)
+        self.assertEqual(resultat_vide["montants_garantie"], [])
 
 
 class TestDernierTicketAvant(unittest.TestCase):
@@ -5587,6 +5759,57 @@ class TestFormaterDeltaDuree7A(unittest.TestCase):
     # (signal de baisse trompeur pour un écart en réalité nul à l'affichage).
     def test_d_delta_negatif_infra_minute_ne_produit_pas_moins_zero(self):
         self.assertEqual(formater_delta_duree(-0.006), "+0min")
+
+
+class TestFormaterDeltaMontant7H(unittest.TestCase):
+    def test_a_hausse(self):
+        self.assertEqual(formater_delta_montant(1240), "+1 240 €")
+
+    def test_b_baisse(self):
+        self.assertEqual(formater_delta_montant(-350), "-350 €")
+
+    def test_c_none_renvoie_na(self):
+        self.assertEqual(formater_delta_montant(None), "N/A")
+
+    # Même garde que formater_delta_nombre/formater_delta_duree : un delta négatif qui s'arrondit
+    # à zéro ne doit jamais afficher "-0 €".
+    def test_d_delta_negatif_infra_unite_ne_produit_pas_moins_zero(self):
+        self.assertEqual(formater_delta_montant(-0.2), "+0 €")
+
+
+class TestEvaluerRobustesseComparaisonNps7H(unittest.TestCase):
+    def test_a_deux_volumes_suffisants_est_robuste(self):
+        self.assertEqual(
+            evaluer_robustesse_comparaison_nps(ETAT_PRUDENCE_VOLUME_HABITUEL, ETAT_PRUDENCE_VOLUME_ELEVE),
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE,
+        )
+
+    def test_b_premiere_observation_dun_cote_est_fragile(self):
+        self.assertEqual(
+            evaluer_robustesse_comparaison_nps(ETAT_PRUDENCE_PREMIERE_OBSERVATION, ETAT_PRUDENCE_VOLUME_HABITUEL),
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE,
+        )
+
+    def test_c_deux_volumes_faibles_est_fragile(self):
+        self.assertEqual(
+            evaluer_robustesse_comparaison_nps(ETAT_PRUDENCE_VOLUME_FAIBLE, ETAT_PRUDENCE_VOLUME_FAIBLE),
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE,
+        )
+
+    def test_d_un_seul_volume_faible_est_exploitable(self):
+        self.assertEqual(
+            evaluer_robustesse_comparaison_nps(ETAT_PRUDENCE_VOLUME_FAIBLE, ETAT_PRUDENCE_VOLUME_HABITUEL),
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE,
+        )
+
+    def test_texte_ne_contient_aucun_vocabulaire_statistique(self):
+        for etat in (
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE, ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE,
+            ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE,
+        ):
+            texte = texte_robustesse_comparaison_nps(etat)
+            for mot_interdit in ("significatif", "significativité", "intervalle de confiance", "preuve statistique"):
+                self.assertNotIn(mot_interdit, texte.lower())
 
 
 class TestTexteReferenceB7A(unittest.TestCase):

@@ -173,6 +173,135 @@ def formater_montant(valeur):
     return formater_nombre_espace(round(valeur)) + " €"
 
 
+# Un ticket récurrent (le client a déjà eu au moins un SAV avant) pointe vers un défaut
+# structurel qu'un correctif produit peut prévenir -- "potentiellement évitable". Un incident
+# isolé (accident de transport, mauvaise manipulation ponctuelle...) reste un "coût subi" : rien
+# n'indique qu'une action corrective l'aurait empêché. Simplification assumée, pas une vérité
+# absolue -- documentée comme telle dans l'UI. Déplacée depuis app.py (Étape 7H) : appartient au
+# même bloc métier que calculer_impact_financier ci-dessous, qui l'appelle.
+def est_cout_potentiellement_evitable(ticket):
+    return ticket.get("prior_sav_count") is not None and ticket["prior_sav_count"] >= 1
+
+
+# Extrait depuis app.py, onglet Impact & confiance (Étape 7H) : extraction strictement
+# structurelle -- mêmes règles, mêmes montants, mêmes déduplications, mêmes résultats qu'avant
+# extraction (voir TestCalculerImpactFinancierNonRegression7H). Nécessaire pour rejouer le calcul
+# sur B sans dupliquer ~60 lignes de glue. Le tri par volume (obtenir_tickets) reste dans app.py,
+# comme pour tous les autres tableaux du fichier -- ce moteur retourne les lignes non triées.
+def calculer_impact_financier(tickets, commandes, couts_produits):
+    groupes_perte = {}
+    for ticket in tickets:
+        type_perte = type_perte_financiere(ticket)
+        if type_perte is None:
+            continue
+        if type_perte in groupes_perte:
+            groupes_perte[type_perte].append(ticket)
+        else:
+            groupes_perte[type_perte] = [ticket]
+
+    lignes_perte = []
+    montant_total_pertes = 0
+    montant_subi = 0
+    montant_evitable = 0
+    montants_par_composant = {}
+    montants_bruts_par_type = {}
+    commandes_deja_comptees = set()
+
+    for type_perte, tickets_perte in groupes_perte.items():
+        pct_perte = len(tickets_perte) / len(tickets) * 100
+
+        montants = []
+        for ticket in tickets_perte:
+            order_id = ticket["order_id"]
+            if order_id in commandes_deja_comptees:
+                continue
+            montant = montant_perte_estime(ticket, commandes, type_perte, couts_produits)
+            if montant is None:
+                continue
+
+            montants.append(montant)
+            commandes_deja_comptees.add(order_id)
+
+            if est_cout_potentiellement_evitable(ticket):
+                montant_evitable = montant_evitable + montant
+            else:
+                montant_subi = montant_subi + montant
+
+            composant_ticket = ticket.get("component")
+            if composant_ticket is not None:
+                montants_par_composant[composant_ticket] = montants_par_composant.get(composant_ticket, 0) + montant
+
+        methode = "Coût de revient réel"
+        if type_perte == "Geste commercial":
+            methode = "Estimé (fraction du prix de vente)"
+
+        ligne = {
+            "Type de perte": type_perte,
+            "Tickets": len(tickets_perte),
+            "% du volume global": formater_pourcentage(pct_perte),
+            "Montant": "N/A",
+            "Méthode": methode,
+        }
+
+        if len(montants) > 0:
+            somme = sum(montants)
+            ligne["Montant"] = formater_montant(somme)
+            montant_total_pertes = montant_total_pertes + somme
+            montants_bruts_par_type[type_perte] = somme
+
+        lignes_perte.append(ligne)
+
+    return {
+        "lignes_perte": lignes_perte,
+        "montant_total_pertes": montant_total_pertes,
+        "montant_subi": montant_subi,
+        "montant_evitable": montant_evitable,
+        "montants_par_composant": montants_par_composant,
+        # Jamais fusionné dans lignes_perte (Étape 7H) : un montant brut par type de perte, utilisé
+        # UNIQUEMENT pour calculer un écart vs B côté app.py -- fusionner cette clé dans les lignes
+        # affichées via st.dataframe ferait apparaître une colonne technique non voulue.
+        "montants_bruts_par_type": montants_bruts_par_type,
+        "nb_commandes_comptees": len(commandes_deja_comptees),
+    }
+
+
+# Extrait depuis app.py, onglet Impact & confiance (Étape 7H), même principe que
+# calculer_impact_financier ci-dessus -- extraction strictement structurelle. tickets_sav_produit
+# est déjà filtré sur la catégorie SAV produit par l'appelant (categories_s2/s1.get(...)), comme
+# avant extraction.
+def calculer_impact_garantie(tickets_sav_produit, commandes, couts_produits):
+    tickets_garantie = []
+    for ticket in tickets_sav_produit:
+        if ticket["warranty_status"] == "Sous garantie":
+            tickets_garantie.append(ticket)
+
+    pct_garantie_volume_sav = None
+    montants_garantie = []
+    montant_garantie_total = 0
+    if len(tickets_sav_produit) > 0 and len(tickets_garantie) > 0:
+        pct_garantie_volume_sav = len(tickets_garantie) / len(tickets_sav_produit) * 100
+
+        commandes_garantie_deja_comptees = set()
+        for ticket in tickets_garantie:
+            order_id = ticket["order_id"]
+            if order_id in commandes_garantie_deja_comptees:
+                continue
+            montant = montant_cout_garantie(ticket, commandes, couts_produits)
+            if montant is not None:
+                montants_garantie.append(montant)
+                commandes_garantie_deja_comptees.add(order_id)
+
+        if len(montants_garantie) > 0:
+            montant_garantie_total = sum(montants_garantie)
+
+    return {
+        "tickets_garantie": tickets_garantie,
+        "pct_garantie_volume_sav": pct_garantie_volume_sav,
+        "montants_garantie": montants_garantie,
+        "montant_garantie_total": montant_garantie_total,
+    }
+
+
 def commandes_par_email(commandes):
     par_email = {}
     for order_id in commandes:
@@ -1225,6 +1354,21 @@ def formater_delta_duree(delta_minutes):
     if delta_minutes_arrondi < 0:
         return "-" + formater_duree(-delta_minutes_arrondi)
     return "+" + formater_duree(delta_minutes_arrondi)
+
+
+# Écart en MONTANT (ex. coût direct, coût garantie) -- somme/volume, donc soumise à la même règle
+# de comparabilité de durée que formater_delta_nombre (Étape 7H, Impact & confiance). Réutilise
+# formater_montant/formater_nombre_espace pour l'espacement des milliers, jamais réimplémenté.
+def formater_delta_montant(delta):
+    if delta is None:
+        return "N/A"
+    # round() sans decimales renvoie toujours un int -- jamais de -0.0 a normaliser ici,
+    # contrairement a formater_delta_nombre/formater_delta_duree qui arrondissent des flottants.
+    valeur_arrondie = round(delta)
+    texte_valeur = formater_montant(abs(valeur_arrondie))
+    if valeur_arrondie < 0:
+        return "-" + texte_valeur
+    return "+" + texte_valeur
 
 
 # Assemble une référence B compacte pour un sous-texte de carte KPI (ex. "B : 3,82 · +0,18 vs B").
@@ -6844,6 +6988,38 @@ def texte_sensibilite_echantillon_nps(etat_prudence):
     if etat_prudence == ETAT_PRUDENCE_VOLUME_FAIBLE or etat_prudence == ETAT_PRUDENCE_PREMIERE_OBSERVATION:
         return TEXTE_SENSIBILITE_PETIT_ECHANTILLON_NPS
     return None
+
+
+# Robustesse de la comparaison NPS A vs B (Étape 7H) -- n'invente aucun seuil : combine les deux
+# états de prudence déjà produits indépendamment pour A et pour B par evaluer_prudence_echantillon_nps
+# (rang du n dans l'historique déjà disponible à CHAQUE période, jamais un état recalculé pour
+# l'occasion). Vocabulaire jamais statistique (pas de "significatif"/"intervalle de confiance") --
+# une lecture de prudence contextuelle, comme le reste de la famille ETAT_PRUDENCE_*.
+ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE = "robuste"
+ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE = "exploitable"
+ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE = "fragile"
+
+_ETATS_PRUDENCE_VOLUME_SUFFISANT = (ETAT_PRUDENCE_VOLUME_HABITUEL, ETAT_PRUDENCE_VOLUME_ELEVE)
+
+
+def evaluer_robustesse_comparaison_nps(etat_prudence_a, etat_prudence_b):
+    if etat_prudence_a in _ETATS_PRUDENCE_VOLUME_SUFFISANT and etat_prudence_b in _ETATS_PRUDENCE_VOLUME_SUFFISANT:
+        return ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE
+
+    if etat_prudence_a == ETAT_PRUDENCE_PREMIERE_OBSERVATION or etat_prudence_b == ETAT_PRUDENCE_PREMIERE_OBSERVATION:
+        return ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE
+    if etat_prudence_a == ETAT_PRUDENCE_VOLUME_FAIBLE and etat_prudence_b == ETAT_PRUDENCE_VOLUME_FAIBLE:
+        return ETAT_ROBUSTESSE_COMPARAISON_NPS_FRAGILE
+
+    return ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE
+
+
+def texte_robustesse_comparaison_nps(etat_robustesse):
+    if etat_robustesse == ETAT_ROBUSTESSE_COMPARAISON_NPS_ROBUSTE:
+        return "Comparaison robuste dans le contexte des observations disponibles."
+    if etat_robustesse == ETAT_ROBUSTESSE_COMPARAISON_NPS_EXPLOITABLE:
+        return "Comparaison exploitable, avec prudence sur la période au plus faible volume de réponses."
+    return "Comparaison fragile, le volume de réponses limite la portée de l'écart observé."
 
 
 TEXTE_CAVEAT_RECOUVREMENT_COUT = (

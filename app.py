@@ -15,6 +15,8 @@ from outils import (
     charger_couts_produits,
     montant_perte_estime,
     montant_cout_garantie,
+    calculer_impact_financier,
+    calculer_impact_garantie,
     formater_montant,
     formater_nombre_espace,
     commandes_par_email,
@@ -156,6 +158,9 @@ from outils import (
     periodes_comparables_en_duree,
     formater_delta_nombre,
     formater_delta_points,
+    formater_delta_montant,
+    evaluer_robustesse_comparaison_nps,
+    texte_robustesse_comparaison_nps,
     formater_delta_duree,
     evaluer_evolution_signal_vs_b,
     texte_evolution_signal_vs_b,
@@ -5557,15 +5562,6 @@ def _texte_composition_nps(composition):
     )
 
 
-# Un ticket récurrent (le client a déjà eu au moins un SAV avant) pointe vers un défaut
-# structurel qu'un correctif produit peut prévenir — "potentiellement évitable". Un incident
-# isolé (accident de transport, mauvaise manipulation ponctuelle...) reste un "coût subi" : rien
-# n'indique qu'une action corrective l'aurait empêché. Simplification assumée, pas une vérité
-# absolue — documentée comme telle dans l'UI.
-def est_cout_potentiellement_evitable(ticket):
-    return ticket.get("prior_sav_count") is not None and ticket["prior_sav_count"] >= 1
-
-
 # ------------------------------------------------------------------
 # Onglet 9 : Impact & confiance
 # ------------------------------------------------------------------
@@ -5574,94 +5570,37 @@ with onglet_impact:
     st.subheader("Impact & confiance")
     st.caption("Ce que disent réellement les données disponibles sur la confiance client et l'impact financier -- avec quel niveau de prudence.")
 
-    # ---- Calculs : coût direct (moteur de coût inchangé, Étape 5I : sain) ----
-    groupes_perte = {}
-    for ticket in tickets_s2:
-        type_perte = type_perte_financiere(ticket)
-        if type_perte is None:
-            continue
-        if type_perte in groupes_perte:
-            groupes_perte[type_perte].append(ticket)
-        else:
-            groupes_perte[type_perte] = [ticket]
-
-    lignes_perte = []
-    montant_total_pertes = 0
-    montant_subi = 0
-    montant_evitable = 0
-    montants_par_composant = {}
-    commandes_deja_comptees = set()
-
-    for type_perte, tickets_perte in groupes_perte.items():
-        pct_perte = len(tickets_perte) / len(tickets_s2) * 100
-
-        montants = []
-        for ticket in tickets_perte:
-            order_id = ticket["order_id"]
-            if order_id in commandes_deja_comptees:
-                continue
-            montant = montant_perte_estime(ticket, commandes, type_perte, couts_produits)
-            if montant is None:
-                continue
-
-            montants.append(montant)
-            commandes_deja_comptees.add(order_id)
-
-            if est_cout_potentiellement_evitable(ticket):
-                montant_evitable = montant_evitable + montant
-            else:
-                montant_subi = montant_subi + montant
-
-            composant_ticket = ticket.get("component")
-            if composant_ticket is not None:
-                montants_par_composant[composant_ticket] = montants_par_composant.get(composant_ticket, 0) + montant
-
-        methode = "Coût de revient réel"
-        if type_perte == "Geste commercial":
-            methode = "Estimé (fraction du prix de vente)"
-
-        ligne = {
-            "Type de perte": type_perte,
-            "Tickets": len(tickets_perte),
-            "% du volume global": formater_pourcentage(pct_perte),
-            "Montant": "N/A",
-            "Méthode": methode,
-        }
-
-        if len(montants) > 0:
-            somme = sum(montants)
-            ligne["Montant"] = formater_montant(somme)
-            montant_total_pertes = montant_total_pertes + somme
-
-        lignes_perte.append(ligne)
+    # ---- Calculs : coût direct (moteur extrait en outils.py, Étape 7H -- rejouable sur B) ----
+    resultat_impact_financier_a = calculer_impact_financier(tickets_s2, commandes, couts_produits)
+    lignes_perte = resultat_impact_financier_a["lignes_perte"]
+    montant_total_pertes = resultat_impact_financier_a["montant_total_pertes"]
+    montant_subi = resultat_impact_financier_a["montant_subi"]
+    montant_evitable = resultat_impact_financier_a["montant_evitable"]
+    montants_par_composant = resultat_impact_financier_a["montants_par_composant"]
+    nb_commandes_comptees = resultat_impact_financier_a["nb_commandes_comptees"]
 
     lignes_perte_triees = sorted(lignes_perte, key=obtenir_tickets, reverse=True)
 
-    # ---- Calculs : SAV sous garantie ----
+    # ---- Calculs : SAV sous garantie (moteur extrait en outils.py, Étape 7H) ----
     tickets_sav_produit_business = categories_s2.get(CATEGORIE_SAV_PRODUIT, [])
-    tickets_garantie = []
-    for ticket in tickets_sav_produit_business:
-        if ticket["warranty_status"] == "Sous garantie":
-            tickets_garantie.append(ticket)
+    resultat_impact_garantie_a = calculer_impact_garantie(tickets_sav_produit_business, commandes, couts_produits)
+    tickets_garantie = resultat_impact_garantie_a["tickets_garantie"]
+    pct_garantie_volume_sav = resultat_impact_garantie_a["pct_garantie_volume_sav"]
+    montants_garantie = resultat_impact_garantie_a["montants_garantie"]
+    montant_garantie_total = resultat_impact_garantie_a["montant_garantie_total"]
 
-    pct_garantie_volume_sav = None
-    montants_garantie = []
-    montant_garantie_total = 0
-    if len(tickets_sav_produit_business) > 0 and len(tickets_garantie) > 0:
-        pct_garantie_volume_sav = len(tickets_garantie) / len(tickets_sav_produit_business) * 100
-
-        commandes_garantie_deja_comptees = set()
-        for ticket in tickets_garantie:
-            order_id = ticket["order_id"]
-            if order_id in commandes_garantie_deja_comptees:
-                continue
-            montant = montant_cout_garantie(ticket, commandes, couts_produits)
-            if montant is not None:
-                montants_garantie.append(montant)
-                commandes_garantie_deja_comptees.add(order_id)
-
-        if len(montants_garantie) > 0:
-            montant_garantie_total = sum(montants_garantie)
+    # ---- Calculs B (Étape 7H) : mêmes moteurs rejoués sur la période B, jamais un calcul
+    # différent. Comparabilité de durée gérée séparément par métrique à l'usage (sommes gatées,
+    # ratios non gatés) -- duree_comparable_impact est calculé une seule fois ici et réutilisé
+    # partout où une SOMME (coût direct, coût garantie) est comparée à B.
+    resultat_impact_financier_b = None
+    resultat_impact_garantie_b = None
+    duree_comparable_impact = False
+    if comparaison_disponible:
+        resultat_impact_financier_b = calculer_impact_financier(tickets_s1, commandes, couts_produits)
+        tickets_sav_produit_b = categories_s1.get(CATEGORIE_SAV_PRODUIT, [])
+        resultat_impact_garantie_b = calculer_impact_garantie(tickets_sav_produit_b, commandes, couts_produits)
+        duree_comparable_impact = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
 
     # ---- Calculs : NPS calé sur la PÉRIODE SÉLECTIONNÉE (Étape 5I.1 -- corrige le bug identifié en
     # 5I : l'ancienne "Lecture de confiance" utilisait toujours index_dernier_mois = len(historique)-1,
@@ -5673,9 +5612,12 @@ with onglet_impact:
     composition_globale_nps = calculer_composition_nps(reponses_nps)
 
     item_nps = None
+    item_nps_b = None
     texte_alignement_periode = None
     texte_prudence_periode = None
     texte_sensibilite_periode = None
+    texte_robustesse_nps_ab = None
+    index_mois_nps_b = None
     historique_nps_mensuel = []
     historique_nps_borne = []
 
@@ -5718,6 +5660,20 @@ with onglet_impact:
             texte_prudence_periode = texte_prudence_echantillon_nps(etat_prudence_periode, item_nps["n"])
             texte_sensibilite_periode = texte_sensibilite_echantillon_nps(etat_prudence_periode)
 
+        # Étape 7H -- même mécanisme que pour A (identifier_observation_nps_periode puis
+        # evaluer_prudence_echantillon_nps), rejoué pour B sur EXACTEMENT le même historique
+        # mensuel non filtré par période. Indépendant de la réussite du calage de A : B peut avoir
+        # une observation NPS même si A n'en a pas, et inversement.
+        if comparaison_disponible:
+            index_mois_nps_b = identifier_observation_nps_periode(historique_nps_mensuel, date_b_debut)
+            if index_mois_nps_b is not None:
+                item_nps_b = historique_nps_mensuel[index_mois_nps_b]
+                etat_prudence_b = evaluer_prudence_echantillon_nps(historique_n_mensuel, index_mois_nps_b)
+
+        if item_nps is not None and item_nps_b is not None:
+            etat_robustesse_nps_ab = evaluer_robustesse_comparaison_nps(etat_prudence_periode, etat_prudence_b)
+            texte_robustesse_nps_ab = texte_robustesse_comparaison_nps(etat_robustesse_nps_ab)
+
     # ---- A. Lecture Impact & confiance ----
     # L'alignement n'est jamais passé ici : la section D ci-dessous en est l'unique affichage
     # (Étape 5I.1, section 15/16 -- corrige la duplication identifiée en 5I entre "Lecture de
@@ -5733,14 +5689,51 @@ with onglet_impact:
     # ---- B. Contexte compact (max 3 KPI -- jamais un total combiné Coût direct + Garantie) ----
     kpis_contexte_impact = []
     if item_nps is not None:
+        sous_texte_nps_ctx = str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses")
+        delta_nps_ctx = None
+        if comparaison_disponible:
+            if item_nps_b is not None:
+                delta_nps_ctx = formater_delta_points(item_nps["nps"] - item_nps_b["nps"])
+                sous_texte_nps_ctx = (
+                    sous_texte_nps_ctx + " · B : " + formater_nps_entier(item_nps_b["nps"])
+                    + " (n=" + str(item_nps_b["n"]) + ")"
+                )
+            else:
+                sous_texte_nps_ctx = sous_texte_nps_ctx + " · B : N/A"
         kpis_contexte_impact.append((
-            "NPS de la période", formater_nps_entier(item_nps["nps"]),
-            str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses"),
+            "NPS de la période", formater_nps_entier(item_nps["nps"]), sous_texte_nps_ctx,
+            delta_nps_ctx, "normal",
         ))
     if montant_total_pertes > 0:
-        kpis_contexte_impact.append(("Coût direct observé / estimé", formater_montant(montant_total_pertes), None))
+        sous_texte_cout_direct_ctx = None
+        delta_cout_direct_ctx = None
+        if comparaison_disponible:
+            montant_total_pertes_b = resultat_impact_financier_b["montant_total_pertes"]
+            if duree_comparable_impact:
+                delta_cout_direct_ctx = formater_delta_montant(montant_total_pertes - montant_total_pertes_b)
+            else:
+                sous_texte_cout_direct_ctx = (
+                    "B : " + formater_montant(montant_total_pertes_b) + " (durées non comparables)"
+                )
+        kpis_contexte_impact.append((
+            "Coût direct observé / estimé", formater_montant(montant_total_pertes), sous_texte_cout_direct_ctx,
+            delta_cout_direct_ctx, "inverse",
+        ))
     if montant_garantie_total > 0:
-        kpis_contexte_impact.append(("Coût garantie estimé", formater_montant(montant_garantie_total), None))
+        sous_texte_cout_garantie_ctx = None
+        delta_cout_garantie_ctx = None
+        if comparaison_disponible:
+            montant_garantie_total_b = resultat_impact_garantie_b["montant_garantie_total"]
+            if duree_comparable_impact:
+                delta_cout_garantie_ctx = formater_delta_montant(montant_garantie_total - montant_garantie_total_b)
+            else:
+                sous_texte_cout_garantie_ctx = (
+                    "B : " + formater_montant(montant_garantie_total_b) + " (durées non comparables)"
+                )
+        kpis_contexte_impact.append((
+            "Coût garantie estimé", formater_montant(montant_garantie_total), sous_texte_cout_garantie_ctx,
+            delta_cout_garantie_ctx, "inverse",
+        ))
 
     if len(kpis_contexte_impact) == 0:
         st.caption("Aucune donnée exploitable pour cette période.")
@@ -5748,9 +5741,15 @@ with onglet_impact:
         with st.container(border=True):
             colonnes_contexte_impact = st.columns(len(kpis_contexte_impact))
             for index_kpi_impact in range(len(kpis_contexte_impact)):
-                label_kpi_impact, valeur_kpi_impact, sous_texte_kpi_impact = kpis_contexte_impact[index_kpi_impact]
+                (
+                    label_kpi_impact, valeur_kpi_impact, sous_texte_kpi_impact,
+                    delta_kpi_impact, delta_couleur_kpi_impact,
+                ) = kpis_contexte_impact[index_kpi_impact]
                 colonnes_contexte_impact[index_kpi_impact].markdown(
-                    construire_carte_kpi(label_kpi_impact, valeur_kpi_impact, sous_texte=sous_texte_kpi_impact),
+                    construire_carte_kpi(
+                        label_kpi_impact, valeur_kpi_impact, sous_texte=sous_texte_kpi_impact,
+                        delta=delta_kpi_impact, delta_couleur=delta_couleur_kpi_impact,
+                    ),
                     unsafe_allow_html=True,
                 )
         if montant_total_pertes > 0 and montant_garantie_total > 0:
@@ -5769,11 +5768,15 @@ with onglet_impact:
             st.caption(texte_sensibilite_periode)
         st.markdown(
             construire_carte_kpi(
-                "NPS", formater_nps_entier(item_nps["nps"]),
-                sous_texte=str(item_nps["n"]) + " " + accorder(item_nps["n"], "réponse", "réponses"),
+                "NPS", formater_nps_entier(item_nps["nps"]), sous_texte=sous_texte_nps_ctx,
+                delta=delta_nps_ctx, delta_couleur="normal",
             ),
             unsafe_allow_html=True,
         )
+        # Qualification robuste/exploitable/fragile (Étape 7H) : lecture secondaire, jamais un
+        # badge coloré -- vocabulaire jamais statistique (voir texte_robustesse_comparaison_nps).
+        if texte_robustesse_nps_ab is not None:
+            st.caption(texte_robustesse_nps_ab)
         st.write(
             "Promoteurs " + str(item_nps["composition"]["n_promoteurs"]) + " / Passifs "
             + str(item_nps["composition"]["n_passifs"]) + " / Détracteurs "
@@ -5815,27 +5818,101 @@ with onglet_impact:
         "comme telle ci-dessous. Chaque commande n'est comptée qu'une seule fois même si plusieurs "
         "tickets s'y rattachent."
     )
+    # Étape 7H -- même motif 3 états déjà validé sur Livraison ("Sujets livraison — détail") :
+    # colonne absente si B désactivé, delta montant si durées comparables, littéral "Non
+    # comparable" sinon (jamais omis). Un 4e état "N/A" existe quand la ligne de A OU la ligne de B
+    # n'a pas de montant résolu (commande introuvable) -- distinct de "Non comparable" (qui signale
+    # une raison méthodologique différente, la durée) : jamais confondus. Revue Ava : un type de
+    # perte absent de montants_bruts_b_par_type peut signifier soit "B n'a aucun ticket de ce type"
+    # (0 € réel) soit "B a des tickets de ce type mais aucun n'a de montant résolu" (inconnu, pas
+    # 0 €) -- lignes_b_par_type distingue les deux via la présence d'une ligne B pour ce type.
+    if comparaison_disponible:
+        montants_bruts_a_par_type = resultat_impact_financier_a["montants_bruts_par_type"]
+        montants_bruts_b_par_type = resultat_impact_financier_b["montants_bruts_par_type"]
+        lignes_b_par_type = {}
+        for ligne_b in resultat_impact_financier_b["lignes_perte"]:
+            lignes_b_par_type[ligne_b["Type de perte"]] = ligne_b
+
+        for ligne in lignes_perte_triees:
+            if not duree_comparable_impact:
+                ligne["Écart vs B"] = "Non comparable"
+                continue
+            montant_a_brut = montants_bruts_a_par_type.get(ligne["Type de perte"])
+            ligne_b_correspondante = lignes_b_par_type.get(ligne["Type de perte"])
+            if montant_a_brut is None or (
+                ligne_b_correspondante is not None and ligne_b_correspondante["Montant"] == "N/A"
+            ):
+                ligne["Écart vs B"] = "N/A"
+            else:
+                montant_b_brut = montants_bruts_b_par_type.get(ligne["Type de perte"], 0)
+                ligne["Écart vs B"] = formater_delta_montant(montant_a_brut - montant_b_brut)
+
     with st.container(border=True):
         st.dataframe(lignes_perte_triees, hide_index=True, width="stretch")
 
     if montant_total_pertes > 0 and montant_evitable > 0:
+        sous_texte_evitable = None
+        if comparaison_disponible:
+            pct_evitable_a = montant_evitable / montant_total_pertes * 100
+            montant_evitable_b = resultat_impact_financier_b["montant_evitable"]
+            montant_total_pertes_b = resultat_impact_financier_b["montant_total_pertes"]
+            if montant_total_pertes_b > 0:
+                pct_evitable_b = montant_evitable_b / montant_total_pertes_b * 100
+                sous_texte_evitable = (
+                    " (B : " + formater_pourcentage(pct_evitable_b) + " du coût, "
+                    + formater_delta_points(pct_evitable_a - pct_evitable_b) + " vs B)"
+                )
+            else:
+                sous_texte_evitable = " (B : N/A)"
         st.caption(
             "Dont potentiellement évitable : " + formater_montant(montant_evitable) + " ("
             + formater_pourcentage(montant_evitable / montant_total_pertes * 100) + " du coût — SAV récurrents)."
+            + (sous_texte_evitable if sous_texte_evitable is not None else "")
         )
 
     if len(montants_par_composant) > 0:
+        # Étape 7H (revue Ava) : montant_principal démarre à None, pas 0 -- si tous les montants
+        # résolus valent exactement 0 (ex. geste commercial nul), l'ancienne condition "montant >
+        # montant_principal" ne se déclenchait jamais et composant_principal restait None, crashant
+        # la concaténation de chaîne juste en dessous. None comme sentinelle garantit qu'un premier
+        # candidat est toujours retenu, quelle que soit sa valeur.
         composant_principal = None
-        montant_principal = 0
+        montant_principal = None
         for composant, montant in montants_par_composant.items():
-            if montant > montant_principal:
+            if montant_principal is None or montant > montant_principal:
                 montant_principal = montant
                 composant_principal = composant
 
-        st.caption(
-            "Principale cause du coût : " + composant_principal + " (" + formater_montant(montant_principal)
-            + ", " + formater_pourcentage(montant_principal / montant_total_pertes * 100) + " du coût total)."
-        )
+        # Étape 7H -- comparaison factuelle uniquement, même principe que la concentration
+        # transporteur sur Livraison : jamais "amélioré"/"dégradé" pour le composant lui-même,
+        # seulement ce qui ressort sur chaque période.
+        texte_principale_cause = "Principale cause du coût : " + composant_principal + " (" + formater_montant(montant_principal)
+        if montant_total_pertes > 0:
+            texte_principale_cause = texte_principale_cause + (
+                ", " + formater_pourcentage(montant_principal / montant_total_pertes * 100) + " du coût total)."
+            )
+        else:
+            texte_principale_cause = texte_principale_cause + ")."
+        st.caption(texte_principale_cause)
+        if comparaison_disponible:
+            montants_par_composant_b = resultat_impact_financier_b["montants_par_composant"]
+            if len(montants_par_composant_b) > 0:
+                composant_principal_b = None
+                montant_principal_b = None
+                for composant_b, montant_b in montants_par_composant_b.items():
+                    if montant_principal_b is None or montant_b > montant_principal_b:
+                        montant_principal_b = montant_b
+                        composant_principal_b = composant_b
+                montant_total_pertes_b = resultat_impact_financier_b["montant_total_pertes"]
+                if montant_total_pertes_b > 0:
+                    st.caption(
+                        "B : " + composant_principal_b + ", "
+                        + formater_pourcentage(montant_principal_b / montant_total_pertes_b * 100) + " du coût."
+                    )
+                else:
+                    st.caption("B : " + composant_principal_b + ".")
+            else:
+                st.caption("B : aucune cause de coût identifiée sur cette période.")
 
     if len(montants_garantie) > 0:
         st.markdown("**SAV sous garantie**")
@@ -5844,15 +5921,40 @@ with onglet_impact:
             "dans l'onglet Produit, pas répété ici."
         )
         colonne_gar_a, colonne_gar_b = st.columns(2)
+
+        sous_texte_garantie_ctx = str(len(tickets_garantie)) + " tickets sous garantie"
+        delta_garantie_ctx = None
+        if comparaison_disponible:
+            montant_garantie_total_b_gar = resultat_impact_garantie_b["montant_garantie_total"]
+            if duree_comparable_impact:
+                delta_garantie_ctx = formater_delta_montant(montant_garantie_total - montant_garantie_total_b_gar)
+            else:
+                sous_texte_garantie_ctx = (
+                    sous_texte_garantie_ctx + " · B : " + formater_montant(montant_garantie_total_b_gar)
+                    + " (durées non comparables)"
+                )
         colonne_gar_a.markdown(
             construire_carte_kpi(
                 "Coût garantie estimé", formater_montant(montant_garantie_total),
-                sous_texte=str(len(tickets_garantie)) + " tickets sous garantie",
+                sous_texte=sous_texte_garantie_ctx, delta=delta_garantie_ctx, delta_couleur="inverse",
             ),
             unsafe_allow_html=True,
         )
+
+        sous_texte_part_garantie = None
+        delta_part_garantie = None
+        if comparaison_disponible:
+            pct_garantie_volume_sav_b = resultat_impact_garantie_b["pct_garantie_volume_sav"]
+            if pct_garantie_volume_sav_b is not None:
+                delta_part_garantie = formater_delta_points(pct_garantie_volume_sav - pct_garantie_volume_sav_b)
+                sous_texte_part_garantie = "B : " + formater_pourcentage(pct_garantie_volume_sav_b)
+            else:
+                sous_texte_part_garantie = "B : N/A"
         colonne_gar_b.markdown(
-            construire_carte_kpi("Part du SAV produit concernée", formater_pourcentage(pct_garantie_volume_sav)),
+            construire_carte_kpi(
+                "Part du SAV produit concernée", formater_pourcentage(pct_garantie_volume_sav),
+                sous_texte=sous_texte_part_garantie, delta=delta_part_garantie, delta_couleur="inverse",
+            ),
             unsafe_allow_html=True,
         )
 
@@ -5862,8 +5964,8 @@ with onglet_impact:
         # lui, reste valide même si les deux ensembles se recoupent partiellement.
         cout_moyen_garantie = montant_garantie_total / len(tickets_garantie)
         cout_moyen_global = None
-        if len(commandes_deja_comptees) > 0:
-            cout_moyen_global = montant_total_pertes / len(commandes_deja_comptees)
+        if nb_commandes_comptees > 0:
+            cout_moyen_global = montant_total_pertes / nb_commandes_comptees
 
         if cout_moyen_global is not None and cout_moyen_global > 0:
             ecart_cout_moyen_pct = (cout_moyen_garantie - cout_moyen_global) / cout_moyen_global * 100
@@ -5874,6 +5976,20 @@ with onglet_impact:
                     "incidents chiffrés — un ticket garantie coûte structurellement plus cher (remplacement "
                     "complet à la charge de l'entreprise, pas de part payée par le client)."
                 )
+
+        # Étape 7H -- coût moyen par ticket sous garantie A vs B : un ratio, jamais gaté par la
+        # durée (même principe que ci-dessus, contre un total combiné).
+        if comparaison_disponible:
+            tickets_garantie_b = resultat_impact_garantie_b["tickets_garantie"]
+            montant_garantie_total_b_moyen = resultat_impact_garantie_b["montant_garantie_total"]
+            if len(tickets_garantie_b) > 0:
+                cout_moyen_garantie_b = montant_garantie_total_b_moyen / len(tickets_garantie_b)
+                st.caption(
+                    "Coût moyen par ticket sous garantie — B : " + formater_montant(cout_moyen_garantie_b)
+                    + " · " + formater_delta_montant(cout_moyen_garantie - cout_moyen_garantie_b) + " vs B."
+                )
+            else:
+                st.caption("Coût moyen par ticket sous garantie — B : aucun ticket sous garantie sur cette période.")
 
         st.caption(TEXTE_CAVEAT_RECOUVREMENT_COUT)
 
@@ -5990,9 +6106,48 @@ with onglet_impact:
                     y=alt.Y("NPS:Q", scale=alt.Scale(domain=[-100, 100])),
                     tooltip=["Mois:N", "NPS:Q", "Réponses:Q"],
                 ).properties(height=260)
-                st.altair_chart(
-                    configurer_apparence_graphique(ligne_zero + graphique_nps), width="stretch"
-                )
+                graphique_complet = ligne_zero + graphique_nps
+
+                # Étape 7H -- repères discrets A/B, UNIQUEMENT quand une comparaison B est active
+                # (sinon un simple repère "A" apparaîtrait sur ce graphique en mode période unique,
+                # un changement d'affichage jamais souhaité quand B est désactivé). Uniquement si le
+                # mois est DÉJÀ dans la fenêtre affichée (jamais de prolongation de l'historique pour
+                # aller chercher B, jamais de fuite du futur relative à A). Un seul repère "A/B" si
+                # les deux tombent sur le même mois NPS -- jamais deux marqueurs superposés.
+                marqueurs_ab = []
+                if comparaison_disponible:
+                    cles_mois_affiches = []
+                    for item_mois in historique_nps_borne:
+                        cles_mois_affiches.append(item_mois["cle_mois"])
+
+                    if item_nps is not None and item_nps["cle_mois"] in cles_mois_affiches:
+                        marqueurs_ab.append({
+                            "cle_mois": item_nps["cle_mois"], "nps": round(item_nps["nps"]), "label": "A",
+                        })
+                    if item_nps_b is not None and item_nps_b["cle_mois"] in cles_mois_affiches:
+                        if len(marqueurs_ab) > 0 and marqueurs_ab[0]["cle_mois"] == item_nps_b["cle_mois"]:
+                            marqueurs_ab[0]["label"] = "A/B"
+                        else:
+                            marqueurs_ab.append({
+                                "cle_mois": item_nps_b["cle_mois"], "nps": round(item_nps_b["nps"]), "label": "B",
+                            })
+
+                if len(marqueurs_ab) > 0:
+                    lignes_marqueurs_ab = []
+                    for marqueur in marqueurs_ab:
+                        lignes_marqueurs_ab.append(
+                            {"Mois": marqueur["cle_mois"], "NPS": marqueur["nps"], "Label": marqueur["label"]}
+                        )
+                    tableau_marqueurs_ab = pd.DataFrame(lignes_marqueurs_ab)
+                    graphique_points_ab = alt.Chart(tableau_marqueurs_ab).mark_point(
+                        size=130, filled=True, color=COULEUR_PRIMAIRE, shape="diamond"
+                    ).encode(x=alt.X("Mois:O"), y=alt.Y("NPS:Q"), tooltip=["Mois:N", "NPS:Q", "Label:N"])
+                    graphique_texte_ab = alt.Chart(tableau_marqueurs_ab).mark_text(
+                        dy=-16, color=COULEUR_PRIMAIRE, fontWeight="bold"
+                    ).encode(x=alt.X("Mois:O"), y=alt.Y("NPS:Q"), text="Label:N")
+                    graphique_complet = graphique_complet + graphique_points_ab + graphique_texte_ab
+
+                st.altair_chart(configurer_apparence_graphique(graphique_complet), width="stretch")
 
                 # n rendu directement lisible (pas seulement au survol) -- Étape 5I.1, section 30.
                 textes_n_mois = []
