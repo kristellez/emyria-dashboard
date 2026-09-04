@@ -203,6 +203,13 @@ from outils import (
     TEXTE_SENSIBILITE_PETIT_ECHANTILLON_NPS,
     TEXTE_CAVEAT_RECOUVREMENT_COUT,
     construire_lecture_impact_confiance,
+    nb_jours_periode,
+    periodes_comparables_en_duree,
+    formater_delta_nombre,
+    formater_delta_points,
+    formater_delta_pourcentage_relatif,
+    formater_delta_duree,
+    texte_reference_b,
 )
 
 
@@ -5466,6 +5473,115 @@ class TestShellVisuel6C(unittest.TestCase):
         texte = formater_csat(3.91)
         valeur_repartie = texte.replace(",", ".")
         self.assertAlmostEqual(float(valeur_repartie), 3.91)
+
+
+class TestNbJoursPeriode7A(unittest.TestCase):
+    def test_a_une_semaine_fait_sept_jours(self):
+        debut = datetime.date(2026, 1, 12)
+        fin = debut + datetime.timedelta(days=6)
+        self.assertEqual(nb_jours_periode(debut, fin), 7)
+
+    def test_b_meme_jour_fait_un_jour(self):
+        debut = datetime.date(2026, 1, 12)
+        self.assertEqual(nb_jours_periode(debut, debut), 1)
+
+    def test_c_date_manquante_renvoie_none(self):
+        self.assertIsNone(nb_jours_periode(None, datetime.date(2026, 1, 12)))
+        self.assertIsNone(nb_jours_periode(datetime.date(2026, 1, 12), None))
+
+
+class TestPeriodesComparablesEnDuree7A(unittest.TestCase):
+    def test_a_meme_duree_est_comparable(self):
+        date_a_debut = datetime.date(2026, 1, 12)
+        date_a_fin = date_a_debut + datetime.timedelta(days=6)
+        date_b_debut = datetime.date(2025, 12, 15)
+        date_b_fin = date_b_debut + datetime.timedelta(days=6)
+        self.assertTrue(periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin))
+
+    def test_b_duree_double_nest_pas_comparable(self):
+        date_a_debut = datetime.date(2026, 1, 12)
+        date_a_fin = date_a_debut + datetime.timedelta(days=13)
+        date_b_debut = datetime.date(2025, 12, 15)
+        date_b_fin = date_b_debut + datetime.timedelta(days=6)
+        self.assertFalse(periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin))
+
+    def test_c_ecart_leger_sous_le_seuil_reste_comparable(self):
+        date_a_debut = datetime.date(2026, 1, 12)
+        date_a_fin = date_a_debut + datetime.timedelta(days=6)
+        date_b_debut = datetime.date(2025, 12, 15)
+        date_b_fin = date_b_debut + datetime.timedelta(days=7)
+        self.assertTrue(periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin))
+
+    def test_d_ecart_juste_au_dessus_du_seuil_nest_pas_comparable(self):
+        date_a_debut = datetime.date(2026, 1, 12)
+        date_a_fin = date_a_debut + datetime.timedelta(days=9)
+        date_b_debut = datetime.date(2025, 12, 15)
+        date_b_fin = date_b_debut + datetime.timedelta(days=6)
+        self.assertFalse(periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin))
+
+
+class TestFormaterDeltaNombre7A(unittest.TestCase):
+    def test_a_delta_positif_entier(self):
+        self.assertEqual(formater_delta_nombre(3), "+3")
+
+    def test_b_delta_negatif_entier(self):
+        self.assertEqual(formater_delta_nombre(-2), "-2")
+
+    def test_c_delta_zero_est_positif(self):
+        self.assertEqual(formater_delta_nombre(0), "+0")
+
+    def test_d_delta_decimales_virgule_francaise(self):
+        self.assertEqual(formater_delta_nombre(0.18, decimales=2), "+0,18")
+
+    def test_e_delta_decimales_negatif_virgule_francaise(self):
+        self.assertEqual(formater_delta_nombre(-0.12, decimales=2), "-0,12")
+
+    def test_f_delta_none_renvoie_na(self):
+        self.assertEqual(formater_delta_nombre(None), "N/A")
+
+
+class TestFormaterDeltaPoints7A(unittest.TestCase):
+    def test_a_delta_points_positif(self):
+        self.assertEqual(formater_delta_points(5), "+5 pts")
+
+    def test_b_delta_points_negatif(self):
+        self.assertEqual(formater_delta_points(-3), "-3 pts")
+
+    def test_c_delta_points_none_renvoie_na(self):
+        self.assertEqual(formater_delta_points(None), "N/A")
+
+
+class TestFormaterDeltaPourcentageRelatif7A(unittest.TestCase):
+    def test_a_hausse(self):
+        self.assertEqual(formater_delta_pourcentage_relatif(14), "+14 %")
+
+    def test_b_baisse(self):
+        self.assertEqual(formater_delta_pourcentage_relatif(-12), "-12 %")
+
+    def test_c_none_renvoie_na(self):
+        self.assertEqual(formater_delta_pourcentage_relatif(None), "N/A")
+
+
+class TestFormaterDeltaDuree7A(unittest.TestCase):
+    def test_a_hausse_en_heures(self):
+        self.assertEqual(formater_delta_duree(138), "+2h 18min")
+
+    def test_b_baisse_en_minutes(self):
+        self.assertEqual(formater_delta_duree(-45), "-45min")
+
+    def test_c_none_renvoie_na(self):
+        self.assertEqual(formater_delta_duree(None), "N/A")
+
+
+class TestTexteReferenceB7A(unittest.TestCase):
+    def test_a_avec_delta(self):
+        self.assertEqual(texte_reference_b("3,82", "+0,18"), "B : 3,82 · +0,18 vs B")
+
+    def test_b_sans_delta(self):
+        self.assertEqual(texte_reference_b("3,82"), "B : 3,82")
+
+    def test_c_valeur_b_none_renvoie_none(self):
+        self.assertIsNone(texte_reference_b(None, "+0,18"))
 
 
 if __name__ == "__main__":

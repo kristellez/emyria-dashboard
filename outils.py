@@ -530,6 +530,31 @@ def evolution_pourcentage(ancienne_valeur, nouvelle_valeur):
     return difference / ancienne_valeur * 100
 
 
+# Étape 7A -- comparaison Période A / Période B. nb_jours_periode compte les deux bornes incluses
+# (une semaine seule = 7 jours, cohérent avec date_a_fin = semaine_a + 6 jours côté app.py).
+def nb_jours_periode(date_debut, date_fin):
+    jours = delai_jours(date_debut, date_fin)
+    if jours is None:
+        return None
+    return jours + 1
+
+
+# Un delta de VOLUME BRUT n'a de sens que si A et B couvrent une durée comparable -- sinon une
+# période A étendue affichera mécaniquement "plus de tickets" sans que ce soit un signal réel
+# (Étape 7A, règle validée : écart de durée > 20 % = non comparable). Les ratios/moyennes/CSAT/SLA
+# ne sont pas concernés par cette règle : ils restent comparables quelle que soit la durée.
+SEUIL_ECART_RELATIF_DUREE_COMPARABLE = 0.20
+
+
+def periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin):
+    jours_a = nb_jours_periode(date_a_debut, date_a_fin)
+    jours_b = nb_jours_periode(date_b_debut, date_b_fin)
+    if jours_a is None or jours_b is None or jours_a == 0:
+        return False
+    ecart_relatif = abs(jours_b - jours_a) / jours_a
+    return ecart_relatif <= SEUIL_ECART_RELATIF_DUREE_COMPARABLE
+
+
 def moyenne(tickets, champ):
     valeurs = []
     for ticket in tickets:
@@ -1127,6 +1152,66 @@ def formater_duree(minutes):
         return str(heures) + "h " + str(minutes_restantes) + "min"
     else:
         return str(minutes_restantes) + "min"
+
+
+# Étape 7A -- formateurs de delta Période A vs B, communs à tous les onglets (remplace les
+# fragments "+" + str(delta) dupliqués au cas par cas). Le signe est toujours explicite (+/-),
+# jamais de couleur ici -- le sens métier (hausse bonne ou mauvaise) reste décidé par l'appelant
+# via delta_couleur sur construire_carte_kpi, jamais par ces fonctions elles-mêmes.
+def formater_delta_nombre(delta, decimales=0):
+    if delta is None:
+        return "N/A"
+    valeur_arrondie = round(delta, decimales)
+    if decimales == 0:
+        texte_valeur = str(int(valeur_arrondie))
+    else:
+        texte_valeur = ("{:." + str(decimales) + "f}").format(valeur_arrondie)
+        texte_valeur = texte_valeur.replace(".", ",")
+    if valeur_arrondie < 0:
+        return texte_valeur
+    return "+" + texte_valeur
+
+
+# Écart en POINTS (ex. points de %, jamais un pourcentage relatif) -- utilisé pour "Part du total"
+# ou toute métrique déjà exprimée en %, où comparer deux % en % relatif serait trompeur.
+def formater_delta_points(delta_points):
+    if delta_points is None:
+        return "N/A"
+    valeur_arrondie = round(delta_points)
+    texte_valeur = str(abs(valeur_arrondie)) + " pts"
+    if valeur_arrondie < 0:
+        return "-" + texte_valeur
+    return "+" + texte_valeur
+
+
+# Évolution RELATIVE (ex. volume, montant) -- attend un delta déjà exprimé en % (voir
+# evolution_pourcentage), distinct du delta en points ci-dessus.
+def formater_delta_pourcentage_relatif(delta_pourcentage):
+    if delta_pourcentage is None:
+        return "N/A"
+    valeur_arrondie = round(delta_pourcentage)
+    if valeur_arrondie < 0:
+        return str(valeur_arrondie) + " %"
+    return "+" + str(valeur_arrondie) + " %"
+
+
+def formater_delta_duree(delta_minutes):
+    if delta_minutes is None:
+        return "N/A"
+    if delta_minutes < 0:
+        return "-" + formater_duree(-delta_minutes)
+    return "+" + formater_duree(delta_minutes)
+
+
+# Assemble une référence B compacte pour un sous-texte de carte KPI (ex. "B : 3,82 · +0,18 vs B").
+# Purement de la composition de texte déjà formaté -- ne décide d'aucun sens métier.
+def texte_reference_b(valeur_b_formattee, delta_formatte=None):
+    if valeur_b_formattee is None:
+        return None
+    texte = "B : " + valeur_b_formattee
+    if delta_formatte is not None:
+        texte = texte + " · " + delta_formatte + " vs B"
+    return texte
 
 
 # ---------------------------------------------------------------------------

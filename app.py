@@ -1546,15 +1546,28 @@ with onglet_contexte:
     # comparaison"), aucune règle de calcul nouvelle.
     # ------------------------------------------------------------------
 
+    # Étape 7A -- grammaire temporelle réécrite pour documenter le rôle de B une fois la comparaison
+    # A/B étendue à l'ensemble du dashboard (B enrichit A, ne crée jamais une deuxième lecture
+    # parallèle) ; contenu toujours dérivé de la mécanique déjà en place dans la barre latérale,
+    # aucune règle de calcul nouvelle ici.
     st.markdown(titre_section_principale("Période & comparaison"), unsafe_allow_html=True)
     st.markdown(
-        "- **Période A** : la période analysée -- réglée une seule fois dans la barre latérale, "
-        "affichée en haut de chaque page.\n"
-        "- **Période de comparaison** (optionnelle) : une deuxième période, affichée uniquement si "
-        "vous cochez « Comparer à une autre période ».\n"
-        "- **Historique** : la suite des observations disponibles jusqu'à la période analysée, "
-        "utilisée pour resituer les chiffres dans le temps -- distinct d'une comparaison A/B "
-        "explicite, chaque moteur applique ses propres règles pour la construire."
+        "- **Période A** : la période analysée. Elle constitue toujours la lecture principale du "
+        "dashboard.\n"
+        "- **Période B** (optionnelle) : une période de référence utilisée pour comprendre ce qui a "
+        "changé par rapport à A. Lorsqu'elle est activée, elle enrichit les indicateurs de A par des "
+        "écarts, évolutions ou changements significatifs. Elle ne crée pas une seconde lecture "
+        "parallèle du dashboard.\n"
+        "- **Historique** : les observations disponibles antérieures à A, utilisées lorsque "
+        "nécessaire pour déterminer si un niveau ou une évolution est habituel, récent ou "
+        "exceptionnel. L'historique est distinct de la comparaison explicite entre A et B."
+    )
+    st.markdown(
+        construire_bandeau_info(
+            "<strong>Principe de lecture :</strong> A montre la situation à piloter. B aide à "
+            "comprendre son évolution. L'historique aide à la replacer dans le temps."
+        ),
+        unsafe_allow_html=True,
     )
 
     st.markdown(titre_section_principale("Sources de données"), unsafe_allow_html=True)
@@ -1573,7 +1586,8 @@ with onglet_contexte:
         },
         {
             "Source": "Réponses NPS",
-            "Ce qu'elle apporte": "Score de recommandation par client, indépendant de la période affichée",
+            "Ce qu'elle apporte": "Score de recommandation, date et client, exploités selon les analyses "
+            "à l'échelle de la période sélectionnée ou de l'historique disponible",
         },
         {"Source": "Suivi des suggestions", "Ce qu'elle apporte": "Macros/FAQ créées et leur effet mesuré"},
     ]
