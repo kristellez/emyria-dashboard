@@ -474,11 +474,26 @@ def impact_avant_apres(tickets_sujet, date_action):
         else:
             apres.append(ticket)
 
+    n_csat_avant = 0
+    for ticket in avant:
+        if ticket["csat"] is not None:
+            n_csat_avant = n_csat_avant + 1
+
+    n_csat_apres = 0
+    for ticket in apres:
+        if ticket["csat"] is not None:
+            n_csat_apres = n_csat_apres + 1
+
     return {
         "volume_avant": len(avant),
         "volume_apres": len(apres),
         "csat_avant": moyenne(avant, "csat"),
         "csat_apres": moyenne(apres, "csat"),
+        # Diagnostic MAC-018 (Étape 7G) : le volume ci-dessus compte tous les tickets du sujet, pas
+        # seulement ceux avec une réponse CSAT -- n_csat_* est le vrai dénominateur du CSAT moyen,
+        # distinct du volume, pour ne jamais laisser croire que "n tickets" = "n réponses CSAT".
+        "n_csat_avant": n_csat_avant,
+        "n_csat_apres": n_csat_apres,
         "macro_avant": taux_rempli(avant, "macro_applied"),
         "macro_apres": taux_rempli(apres, "macro_applied"),
     }

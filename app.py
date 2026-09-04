@@ -2979,14 +2979,22 @@ with onglet_alertes:
 
             impact = action["impact"]
             if action["mesure_avant_disponible"] and action["mesure_apres_disponible"]:
+                # Diagnostic MAC-018 (Étape 7G) : volume_avant/apres (tickets, tous) et n_csat_avant/apres
+                # (réponses CSAT réelles) sont deux dénominateurs distincts -- jamais les mélanger dans la
+                # même parenthèse comme avant, au risque de laisser croire que "n tickets" = "n réponses
+                # CSAT". Format "(n=X)" repris tel quel du reste de l'app (Agents/Produit/Livraison/
+                # Avant-vente). Volume relégué en ligne secondaire : une simple observation avant/après,
+                # jamais présentée comme une réduction attribuée à l'action (la précaution causale au
+                # niveau section couvre déjà ce point, non répétée par carte).
                 texte_impact_action = (
-                    "Après la mise en place, le CSAT observé passe de " + formater_csat(impact["csat_avant"])
-                    + " à " + formater_csat(impact["csat_apres"]) + " (" + str(impact["volume_avant"])
-                    + " tickets avant, " + str(impact["volume_apres"]) + " après)."
+                    "CSAT observé avant → après la mise en place : " + formater_csat(impact["csat_avant"])
+                    + " (n=" + str(impact["n_csat_avant"]) + ") → " + formater_csat(impact["csat_apres"])
+                    + " (n=" + str(impact["n_csat_apres"]) + ")."
                 )
-                # Précaution causale déjà affichée une fois au niveau section (voir
-                # au_moins_une_comparaison_chiffree ci-dessus) -- jamais répétée par carte.
-                texte_secondaire_action = None
+                texte_secondaire_action = (
+                    "Volume de tickets avant → après : " + str(impact["volume_avant"]) + " → "
+                    + str(impact["volume_apres"]) + "."
+                )
             else:
                 texte_impact_action = None
                 texte_secondaire_action = (
