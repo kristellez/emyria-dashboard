@@ -4912,6 +4912,88 @@ with onglet_conversion:
         contexte_avant_vente_periode, NOMBRE_MAX_SIGNAUX_AVANT_VENTE,
     )
 
+    # ------------------------------------------------------------------
+    # Étape 7D -- comparaison A/B Avant-vente. Réutilise strictement la grammaire Produit/Livraison
+    # (RANG_NIVEAU_PRIORITE étendu avec "Opportunité à investiguer", voir outils.py -- aucune
+    # nouvelle logique de tier). Clé d'identité = signal["sujet"] (grain unique, comme Livraison).
+    # Taux d'achat observé / panier / délai sont des RATIOS (dénominateur contact ou achat, jamais
+    # un volume brut) -- pas de gate de comparabilité de durée pour ces trois-là, contrairement aux
+    # volumes bruts (Contacts Avant-vente, RDV conseil) qui la respectent comme Produit/Livraison.
+    # ------------------------------------------------------------------
+
+    tickets_avant_vente_s1 = categories_s1.get("Avant-vente / conseil", [])
+    av_duree_comparable = False
+    parcours_av_b = None
+    resultats_opportunites_b_av = []
+    resultats_a_surveiller_b_av = []
+
+    if comparaison_disponible:
+        av_duree_comparable = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+
+        resultats_achats_av_b = resoudre_achats_observes_avant_vente(
+            tickets_avant_vente_s1, index_commandes_email, FENETRE_CONVERSION_JOURS
+        )
+        parcours_av_b = analyser_parcours_rdv(tickets_avant_vente_s1, resultats_achats_av_b)
+
+        contexte_avant_vente_periode_b = contexte_periode(evenements_calendrier, date_b_debut, date_b_fin)
+
+        historique_avant_vente_par_fichier_b = []
+        for date_export_historique_av_b, chemin_historique_av_b in exports_disponibles:
+            if date_export_historique_av_b < date_b_debut:
+                tickets_fichier_historique_av_b = charger_tickets(chemin_historique_av_b)
+                tickets_av_fichier_historique_b = []
+                for ticket_historique_av_b in tickets_fichier_historique_av_b:
+                    if categoriser(ticket_historique_av_b) == "Avant-vente / conseil":
+                        tickets_av_fichier_historique_b.append(ticket_historique_av_b)
+                historique_avant_vente_par_fichier_b.append(tickets_av_fichier_historique_b)
+
+        resultats_motifs_av_b = moteur_avant_vente_motifs(
+            tickets_avant_vente_s1, resultats_achats_av_b, historique_avant_vente_par_fichier_b,
+            contexte_avant_vente_periode_b, PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        resultats_opportunites_b_av = resultats_motifs_av_b["opportunites"]
+        resultats_a_surveiller_b_av = resultats_motifs_av_b["a_surveiller"]
+
+    niveau_par_sujet_b_av = {}
+    for signal_b_av in resultats_opportunites_b_av + resultats_a_surveiller_b_av:
+        niveau_par_sujet_b_av[signal_b_av["sujet"]] = signal_b_av["niveau"]
+
+    def _evolution_signal_av_vs_b(signal):
+        niveau_b_av = niveau_par_sujet_b_av.get(signal["sujet"])
+        qualification_av = evaluer_evolution_signal_vs_b(signal["niveau"], niveau_b_av)
+        return texte_evolution_signal_vs_b(qualification_av)
+
+    # "Ne ressort plus parmi les signaux de A" -- même mécanique uncapped que Produit/Livraison :
+    # le set d'exclusion de A utilise TOUS les signaux qualifiés (plafond retiré), jamais la liste
+    # plafonnée à l'affichage.
+    texte_signaux_disparus_av = None
+    if comparaison_disponible:
+        resultats_motifs_av_complet = moteur_avant_vente_motifs(
+            tickets_avant_vente, resultats_achats_av, historique_avant_vente_par_fichier,
+            contexte_avant_vente_periode, PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        sujets_a_av = set()
+        for signal_a_av in resultats_motifs_av_complet["opportunites"] + resultats_motifs_av_complet["a_surveiller"]:
+            sujets_a_av.add(signal_a_av["sujet"])
+
+        signaux_disparus_av = []
+        for signal_b_av in resultats_opportunites_b_av + resultats_a_surveiller_b_av:
+            if signal_b_av["sujet"] not in sujets_a_av:
+                signaux_disparus_av.append(signal_b_av)
+
+        if len(signaux_disparus_av) > 0:
+            def _rang_disparu_av(signal):
+                return -RANG_NIVEAU_PRIORITE.get(signal["niveau"], 0)
+
+            signaux_disparus_av_tries = sorted(signaux_disparus_av, key=_rang_disparu_av)
+            noms_disparus_av = []
+            for signal_disparu_av in signaux_disparus_av_tries[:2]:
+                noms_disparus_av.append(signal_disparu_av["sujet"])
+            verbe_disparu_av = accorder(len(noms_disparus_av), "ne ressort plus", "ne ressortent plus")
+            texte_signaux_disparus_av = (
+                " · ".join(noms_disparus_av) + " " + verbe_disparu_av + " parmi les signaux de A."
+            )
+
     # ---- A. Lecture Avant-vente : juxtapose ACTIVITÉ et SIGNAL, sans les fusionner. ----
     st.markdown(titre_section_principale("Lecture Avant-vente"), unsafe_allow_html=True)
     texte_lecture_av = construire_lecture_avant_vente(
@@ -4919,6 +5001,8 @@ with onglet_conversion:
         resultats_motifs_av["nb_opportunites_avant_plafond"],
         resultats_motifs_av["nb_a_surveiller_avant_plafond"],
     )
+    if texte_signaux_disparus_av is not None:
+        texte_lecture_av = texte_lecture_av + " " + texte_signaux_disparus_av
     if lecture_activite_av["contexte"] is not None:
         texte_lecture_av_html = texte_lecture_av + (
             '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
@@ -4936,20 +5020,42 @@ with onglet_conversion:
 
     with st.container(border=True):
         colonne_ctx_a, colonne_ctx_b = st.columns(2)
+
+        delta_volume_av = None
+        sous_texte_volume_av = formater_pourcentage(pct_av_global) + " du volume global"
+        if comparaison_disponible:
+            if av_duree_comparable:
+                delta_volume_av = formater_delta_nombre(volume_av_total - len(tickets_avant_vente_s1))
+            else:
+                sous_texte_volume_av = (
+                    sous_texte_volume_av + " · B : " + formater_nombre_espace(len(tickets_avant_vente_s1))
+                    + " (durées non comparables)"
+                )
         colonne_ctx_a.markdown(
             construire_carte_kpi(
                 "Contacts Avant-vente", formater_nombre_espace(volume_av_total),
-                sous_texte=formater_pourcentage(pct_av_global) + " du volume global",
+                delta=delta_volume_av, delta_couleur="off", sous_texte=sous_texte_volume_av,
             ),
             unsafe_allow_html=True,
         )
+        sous_texte_rdv_av = (
+            formater_pourcentage(parcours_av["rdv_demandes"] / volume_av_total * 100) + " de l'Avant-vente"
+            if volume_av_total > 0 else None
+        )
+        delta_rdv_av = None
+        if comparaison_disponible and parcours_av_b is not None:
+            if av_duree_comparable:
+                delta_rdv_av = formater_delta_nombre(parcours_av["rdv_demandes"] - parcours_av_b["rdv_demandes"])
+            else:
+                note_rdv_av = "B : " + formater_nombre_espace(parcours_av_b["rdv_demandes"]) + " (durées non comparables)"
+                if sous_texte_rdv_av is not None:
+                    sous_texte_rdv_av = sous_texte_rdv_av + " · " + note_rdv_av
+                else:
+                    sous_texte_rdv_av = note_rdv_av
         colonne_ctx_b.markdown(
             construire_carte_kpi(
                 "RDV conseil", formater_nombre_espace(parcours_av["rdv_demandes"]),
-                sous_texte=(
-                    formater_pourcentage(parcours_av["rdv_demandes"] / volume_av_total * 100) + " de l'Avant-vente"
-                    if volume_av_total > 0 else None
-                ),
+                delta=delta_rdv_av, delta_couleur="off", sous_texte=sous_texte_rdv_av,
             ),
             unsafe_allow_html=True,
         )
@@ -4960,6 +5066,18 @@ with onglet_conversion:
     # couleur gagnant/perdant : "RDV annulé / no-show" à 31,9 % ne doit pas paraître plus "gagnant"
     # que "RDV honoré" à 28,7 % -- les 3 cartes partagent rigoureusement le même traitement visuel.
     st.markdown(titre_section_principale("Parcours observés"), unsafe_allow_html=True)
+
+    # Étape 7D -- B référencé en une seule ligne de sous-texte compacte (taux uniquement, jamais
+    # panier/délai qui alourdiraient les 3 cartes déjà denses). delta_couleur="off" partout : le
+    # principe "aucune couleur gagnant/perdant" déjà en place sur ces 3 cartes s'applique aussi à B.
+    stats_b_par_nom_parcours_av = {}
+    if parcours_av_b is not None:
+        stats_b_par_nom_parcours_av = {
+            "RDV honoré": parcours_av_b["stats_rdv_honore"],
+            "RDV annulé / no-show": parcours_av_b["stats_rdv_non_honore"],
+            "Contact spontané": parcours_av_b["stats_spontane"],
+        }
+
     with st.container(border=True):
         colonnes_parcours_av = st.columns(3)
         index_colonne_parcours_av = 0
@@ -4969,9 +5087,20 @@ with onglet_conversion:
             ("Contact spontané", parcours_av["stats_spontane"]),
         ):
             if stats_parcours_av["n_contacts"] > 0:
+                delta_parcours_av = None
                 if stats_parcours_av["taux_pct"] is not None:
                     valeur_parcours_av = formater_pourcentage(stats_parcours_av["taux_pct"])
                     sous_texte_parcours_av = "achat observé, n=" + str(stats_parcours_av["n_contacts"]) + " contacts"
+                    if comparaison_disponible:
+                        stats_b_parcours_av = stats_b_par_nom_parcours_av.get(nom_parcours_av)
+                        if stats_b_parcours_av is not None and stats_b_parcours_av["taux_pct"] is not None:
+                            delta_parcours_av = formater_delta_points(
+                                stats_parcours_av["taux_pct"] - stats_b_parcours_av["taux_pct"]
+                            )
+                            sous_texte_parcours_av = sous_texte_parcours_av + (
+                                " · B : " + formater_pourcentage(stats_b_parcours_av["taux_pct"])
+                                + " (n=" + str(stats_b_parcours_av["n_contacts"]) + ")"
+                            )
                 else:
                     valeur_parcours_av = str(stats_parcours_av["n_contacts"])
                     sous_texte_parcours_av = accorder(stats_parcours_av["n_contacts"], "contact", "contacts")
@@ -4984,7 +5113,10 @@ with onglet_conversion:
                     )
 
                 colonnes_parcours_av[index_colonne_parcours_av].markdown(
-                    construire_carte_kpi(nom_parcours_av, valeur_parcours_av, sous_texte=sous_texte_parcours_av),
+                    construire_carte_kpi(
+                        nom_parcours_av, valeur_parcours_av, delta=delta_parcours_av, delta_couleur="off",
+                        sous_texte=sous_texte_parcours_av,
+                    ),
                     unsafe_allow_html=True,
                 )
             index_colonne_parcours_av = index_colonne_parcours_av + 1
@@ -5014,6 +5146,17 @@ with onglet_conversion:
         st.markdown(construire_note_methodologique(TEXTE_PRUDENCE_CAUSALE), unsafe_allow_html=True)
         for signal_av in resultats_motifs_av["opportunites"]:
             corps_av_html = signal_av["observation_principale"]
+
+            # Étape 7D -- tag de comparaison A/B, même grammaire que Produit/Livraison. Décrit
+            # uniquement le passage entre niveaux produits par LE MOTEUR (jamais inféré d'un taux
+            # d'achat, panier, volume ou CSAT).
+            if comparaison_disponible:
+                texte_evolution_av = _evolution_signal_av_vs_b(signal_av)
+                if texte_evolution_av is not None:
+                    corps_av_html = corps_av_html + (
+                        '<br><span style="font-size:12px; font-weight:600; color:' + COULEUR_TEXTE_MUTED + ';">'
+                        + texte_evolution_av + "</span>"
+                    )
 
             # Phase 4 (passe finale, mini-histoires) : constat -> 2-3 preuves principales pour CE
             # signal (volume et achat observé -- avec sa référence -- toujours présents car ce sont
@@ -5130,9 +5273,15 @@ with onglet_conversion:
     if len(resultats_motifs_av["a_surveiller"]) > 0:
         texte_a_surveiller_av = []
         for signal_surveillance_av in resultats_motifs_av["a_surveiller"]:
+            texte_tag_surveillance_av = ""
+            if comparaison_disponible:
+                texte_evolution_surveillance_av = _evolution_signal_av_vs_b(signal_surveillance_av)
+                if texte_evolution_surveillance_av is not None:
+                    texte_tag_surveillance_av = " — " + texte_evolution_surveillance_av
             texte_a_surveiller_av.append(
                 signal_surveillance_av["sujet"] + " (" + str(signal_surveillance_av["volume"]["n"]) + " tickets — "
                 + signal_surveillance_av["observation_principale"].rstrip(".") + ")"
+                + texte_tag_surveillance_av
             )
         st.caption("À surveiller (preuve encore partielle) : " + " · ".join(texte_a_surveiller_av))
 

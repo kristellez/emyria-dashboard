@@ -5625,6 +5625,28 @@ class TestEvaluerEvolutionSignalVsB7A(unittest.TestCase):
             QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE,
         )
 
+    # Étape 7D (Avant-vente, 2 paliers seulement) : "Opportunité à investiguer" doit être reconnu
+    # au même titre que les niveaux Produit/Livraison -- régression du bug identifié avant codage
+    # (la chaîne était absente de RANG_NIVEAU_PRIORITE, ce qui aurait classé à tort tout passage
+    # Opportunité <-> À surveiller comme "déjà présent").
+    def test_e_opportunite_avant_vente_renforcee_depuis_a_surveiller(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("Opportunité à investiguer", "À surveiller"),
+            QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE,
+        )
+
+    def test_f_opportunite_avant_vente_attenuee_vers_a_surveiller(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("À surveiller", "Opportunité à investiguer"),
+            QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE,
+        )
+
+    def test_g_opportunite_avant_vente_meme_niveau_est_deja_presente(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("Opportunité à investiguer", "Opportunité à investiguer"),
+            QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT,
+        )
+
 
 class TestTexteEvolutionSignalVsB7A(unittest.TestCase):
     def test_a_nouveau(self):

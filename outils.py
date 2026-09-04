@@ -1235,9 +1235,15 @@ PLAFOND_SIGNAUX_COMPARAISON_B = 999
 # vocabulaire d'écart, distinct de celui-ci). Sert UNIQUEMENT à comparer le tier d'un même signal
 # (même clé structurelle) entre A et B -- ne réévalue jamais un tier, ne compare jamais deux
 # signaux différents entre eux.
+# "Opportunité à investiguer" (Avant-vente, 2 paliers seulement) : rang 2 est un équivalent
+# ORDINAL TECHNIQUE, valable uniquement pour comparer un même signal Avant-vente entre A et B --
+# ça ne prétend jamais qu'une opportunité Avant-vente équivaut métierement à une Priorité
+# secondaire Produit/Livraison. Ce rang ne doit jamais servir à comparer un signal d'un domaine à
+# un signal d'un autre domaine.
 RANG_NIVEAU_PRIORITE = {
     "Priorité principale": 3,
     "Priorité secondaire": 2,
+    "Opportunité à investiguer": 2,
     "À surveiller": 1,
 }
 
