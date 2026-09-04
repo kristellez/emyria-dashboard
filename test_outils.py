@@ -210,6 +210,12 @@ from outils import (
     formater_delta_pourcentage_relatif,
     formater_delta_duree,
     texte_reference_b,
+    evaluer_evolution_signal_vs_b,
+    texte_evolution_signal_vs_b,
+    QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU,
+    QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT,
+    QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE,
+    QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE,
 )
 
 
@@ -5539,6 +5545,11 @@ class TestFormaterDeltaNombre7A(unittest.TestCase):
     def test_f_delta_none_renvoie_na(self):
         self.assertEqual(formater_delta_nombre(None), "N/A")
 
+    # Régression Ava (revue Produit) : un delta négatif qui s'arrondit à zéro affichait "+-0,00"
+    # (le signe du -0.0 flottant survivait au formatage) au lieu de "+0,00".
+    def test_g_delta_negatif_proche_de_zero_ne_produit_pas_double_signe(self):
+        self.assertEqual(formater_delta_nombre(-0.001, decimales=2), "+0,00")
+
 
 class TestFormaterDeltaPoints7A(unittest.TestCase):
     def test_a_delta_points_positif(self):
@@ -5572,6 +5583,11 @@ class TestFormaterDeltaDuree7A(unittest.TestCase):
     def test_c_none_renvoie_na(self):
         self.assertEqual(formater_delta_duree(None), "N/A")
 
+    # Régression Ava (revue Produit) : un delta négatif inférieur à la minute affichait "-0min"
+    # (signal de baisse trompeur pour un écart en réalité nul à l'affichage).
+    def test_d_delta_negatif_infra_minute_ne_produit_pas_moins_zero(self):
+        self.assertEqual(formater_delta_duree(-0.006), "+0min")
+
 
 class TestTexteReferenceB7A(unittest.TestCase):
     def test_a_avec_delta(self):
@@ -5582,6 +5598,46 @@ class TestTexteReferenceB7A(unittest.TestCase):
 
     def test_c_valeur_b_none_renvoie_none(self):
         self.assertIsNone(texte_reference_b(None, "+0,18"))
+
+
+class TestEvaluerEvolutionSignalVsB7A(unittest.TestCase):
+    def test_a_absent_de_b_est_nouveau(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("Priorité secondaire", None),
+            QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU,
+        )
+
+    def test_b_meme_niveau_est_deja_present(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("Priorité secondaire", "Priorité secondaire"),
+            QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT,
+        )
+
+    def test_c_niveau_superieur_sur_a_est_renforce(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("Priorité principale", "À surveiller"),
+            QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE,
+        )
+
+    def test_d_niveau_inferieur_sur_a_est_attenue(self):
+        self.assertEqual(
+            evaluer_evolution_signal_vs_b("À surveiller", "Priorité principale"),
+            QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE,
+        )
+
+
+class TestTexteEvolutionSignalVsB7A(unittest.TestCase):
+    def test_a_nouveau(self):
+        self.assertEqual(texte_evolution_signal_vs_b(QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU), "Nouveau signal vs B")
+
+    def test_b_deja_present(self):
+        self.assertEqual(texte_evolution_signal_vs_b(QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT), "Déjà présent sur B")
+
+    def test_c_renforce(self):
+        self.assertEqual(texte_evolution_signal_vs_b(QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE), "Renforcé vs B")
+
+    def test_d_attenue(self):
+        self.assertEqual(texte_evolution_signal_vs_b(QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE), "Atténué vs B")
 
 
 if __name__ == "__main__":

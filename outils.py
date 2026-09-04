@@ -1162,6 +1162,11 @@ def formater_delta_nombre(delta, decimales=0):
     if delta is None:
         return "N/A"
     valeur_arrondie = round(delta, decimales)
+    # round() peut renvoyer -0.0 pour un delta négatif qui s'arrondit à zéro (ex. -0.001 à 2
+    # décimales) -- normalisé ici pour éviter un "+-0,00" (le signe du flottant survit au
+    # formatage même quand la valeur affichée est 0).
+    if valeur_arrondie == 0:
+        valeur_arrondie = 0
     if decimales == 0:
         texte_valeur = str(int(valeur_arrondie))
     else:
@@ -1198,9 +1203,13 @@ def formater_delta_pourcentage_relatif(delta_pourcentage):
 def formater_delta_duree(delta_minutes):
     if delta_minutes is None:
         return "N/A"
-    if delta_minutes < 0:
-        return "-" + formater_duree(-delta_minutes)
-    return "+" + formater_duree(delta_minutes)
+    # Arrondi avant le test de signe (comme formater_duree le fait déjà en interne) -- sinon un
+    # delta négatif inférieur à la minute (ex. -0,006 min) affiche "-0min", un signal de baisse
+    # pour un écart en réalité nul à l'affichage.
+    delta_minutes_arrondi = round(delta_minutes)
+    if delta_minutes_arrondi < 0:
+        return "-" + formater_duree(-delta_minutes_arrondi)
+    return "+" + formater_duree(delta_minutes_arrondi)
 
 
 # Assemble une référence B compacte pour un sous-texte de carte KPI (ex. "B : 3,82 · +0,18 vs B").
@@ -1212,6 +1221,51 @@ def texte_reference_b(valeur_b_formattee, delta_formatte=None):
     if delta_formatte is not None:
         texte = texte + " · " + delta_formatte + " vs B"
     return texte
+
+
+# Ordre relatif des niveaux de priorité déjà produits par les moteurs voie A -- Produit et
+# Livraison partagent exactement ce vocabulaire à 3 paliers (voir VOCABULAIRE_ECART_* pour le
+# vocabulaire d'écart, distinct de celui-ci). Sert UNIQUEMENT à comparer le tier d'un même signal
+# (même clé structurelle) entre A et B -- ne réévalue jamais un tier, ne compare jamais deux
+# signaux différents entre eux.
+RANG_NIVEAU_PRIORITE = {
+    "Priorité principale": 3,
+    "Priorité secondaire": 2,
+    "À surveiller": 1,
+}
+
+QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU = "nouveau"
+QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT = "deja_present"
+QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE = "renforce"
+QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE = "attenue"
+
+
+# niveau_priorite_b = None signifie que la clé structurelle du signal A n'apparaît pas parmi les
+# signaux qualifiés de B (jamais que le problème réel a disparu -- seulement que le moteur ne l'a
+# pas qualifié comme signal sur B). "Renforcé"/"atténué" ne s'appuie que sur le tier déjà produit
+# par le moteur, jamais sur un delta de métrique brute recalculé ici.
+def evaluer_evolution_signal_vs_b(niveau_priorite_a, niveau_priorite_b):
+    if niveau_priorite_b is None:
+        return QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU
+    rang_a = RANG_NIVEAU_PRIORITE.get(niveau_priorite_a)
+    rang_b = RANG_NIVEAU_PRIORITE.get(niveau_priorite_b)
+    if rang_a is None or rang_b is None or rang_a == rang_b:
+        return QUALIFICATION_EVOLUTION_SIGNAL_DEJA_PRESENT
+    if rang_a > rang_b:
+        return QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE
+    return QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE
+
+
+# Vocabulaire imposé (validé explicitement) : "Nouveau signal vs B" -- jamais "Nouveau vs B" --
+# qualifie l'apparition du signal DANS LE MOTEUR, pas l'apparition réelle du problème.
+def texte_evolution_signal_vs_b(qualification):
+    if qualification == QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU:
+        return "Nouveau signal vs B"
+    if qualification == QUALIFICATION_EVOLUTION_SIGNAL_RENFORCE:
+        return "Renforcé vs B"
+    if qualification == QUALIFICATION_EVOLUTION_SIGNAL_ATTENUE:
+        return "Atténué vs B"
+    return "Déjà présent sur B"
 
 
 # ---------------------------------------------------------------------------

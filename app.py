@@ -152,6 +152,14 @@ from outils import (
     titre_signal_produit_parties,
     construire_lecture_produit,
     construire_dossiers_associes_produit,
+    cle_signal_produit,
+    periodes_comparables_en_duree,
+    formater_delta_nombre,
+    formater_delta_points,
+    formater_delta_duree,
+    evaluer_evolution_signal_vs_b,
+    texte_evolution_signal_vs_b,
+    RANG_NIVEAU_PRIORITE,
     construire_texte_resolution_produit,
     construire_texte_sav_recurrents_produit,
     TEXTE_PRUDENCE_CAUSALE,
@@ -3540,20 +3548,118 @@ with onglet_produit:
         part_sav_pct = len(tickets_sav_produit_s2) / len(tickets_s2) * 100
 
     # ------------------------------------------------------------------
+    # Étape 7B -- comparaison A/B Produit. B est évalué avec exactement les mêmes règles métier
+    # que A (même moteur, même historique symétrique construit sur date_b_debut) -- seul le
+    # plafond d'affichage est retiré (PLAFOND_SIGNAUX_COMPARAISON_B), jamais un critère du moteur.
+    # Sert uniquement de table de correspondance (clé structurelle -> niveau_priorite), jamais
+    # affiché comme une seconde liste de signaux.
+    # ------------------------------------------------------------------
+
+    PLAFOND_SIGNAUX_COMPARAISON_B = 999
+
+    signaux_prioritaires_b_produit = []
+    signaux_a_surveiller_b_produit = []
+    part_sav_pct_s1 = None
+    csat_sav_global_s1 = None
+    n_csat_sav_global_s1 = 0
+    resolution_sav_global_s1 = None
+    produit_duree_comparable = False
+
+    if comparaison_disponible:
+        produit_duree_comparable = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+
+        if len(tickets_s1) > 0:
+            part_sav_pct_s1 = len(tickets_sav_produit_s1) / len(tickets_s1) * 100
+        csat_sav_global_s1 = moyenne(tickets_sav_produit_s1, "csat")
+        for ticket_sav_ctx_s1 in tickets_sav_produit_s1:
+            if ticket_sav_ctx_s1["csat"] is not None:
+                n_csat_sav_global_s1 = n_csat_sav_global_s1 + 1
+        resolution_sav_global_s1 = moyenne(tickets_sav_produit_s1, "full_resolution_time_hours")
+
+        historique_sav_produit_par_fichier_b = []
+        for date_export_historique_b, chemin_historique_b in exports_disponibles:
+            if date_export_historique_b < date_b_debut:
+                tickets_fichier_historique_b = charger_tickets(chemin_historique_b)
+                tickets_sav_produit_fichier_b = []
+                for ticket_historique_b in tickets_fichier_historique_b:
+                    if categoriser(ticket_historique_b) == CATEGORIE_SAV_PRODUIT:
+                        tickets_sav_produit_fichier_b.append(ticket_historique_b)
+                historique_sav_produit_par_fichier_b.append(tickets_sav_produit_fichier_b)
+
+        resultats_voie_a_b_produit = moteur_produit_voie_a(
+            tickets_sav_produit_s1, historique_sav_produit_par_fichier_b, commandes, couts_produits,
+            PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        signaux_prioritaires_b_produit = resultats_voie_a_b_produit["prioritaires"]
+        signaux_a_surveiller_b_produit = resultats_voie_a_b_produit["a_surveiller"]
+
+    niveau_priorite_par_cle_b_produit = {}
+    for signal_b_produit in signaux_prioritaires_b_produit + signaux_a_surveiller_b_produit:
+        cle_b_produit, grain_b_produit = cle_signal_produit(signal_b_produit)
+        if cle_b_produit is not None:
+            niveau_priorite_par_cle_b_produit[(cle_b_produit, grain_b_produit)] = signal_b_produit["niveau_priorite"]
+
+    def _evolution_signal_produit_vs_b(signal):
+        cle_produit_ab, grain_produit_ab = cle_signal_produit(signal)
+        if cle_produit_ab is None:
+            return None
+        niveau_b_produit = niveau_priorite_par_cle_b_produit.get((cle_produit_ab, grain_produit_ab))
+        qualification_produit = evaluer_evolution_signal_vs_b(signal["niveau_priorite"], niveau_b_produit)
+        return texte_evolution_signal_vs_b(qualification_produit)
+
+    # "Ne ressort plus parmi les signaux de A" -- jamais "résolu" (formulation imposée). Limité aux
+    # 2 signaux B les mieux étayés (niveau de priorité le plus haut) pour rester une mention dans la
+    # synthèse, pas une seconde liste.
+    texte_signaux_disparus_produit = None
+    if comparaison_disponible:
+        # Le set d'exclusion doit couvrir TOUS les signaux qualifiés de A, pas seulement les
+        # signaux_prioritaires/signaux_a_surveiller déjà plafonnés à l'affichage (NOMBRE_MAX_SIGNAUX_
+        # VOIE_A) -- sinon un signal réellement qualifié sur A mais non affiché serait signalé à tort
+        # comme "ne ressort plus". Même plafond purement UI que côté B, mêmes règles métier.
+        resultats_voie_a_complet_produit = moteur_produit_voie_a(
+            tickets_sav_produit_s2, historique_sav_produit_par_fichier, commandes, couts_produits,
+            PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        cles_a_produit = set()
+        for signal_a_produit in (
+            resultats_voie_a_complet_produit["prioritaires"] + resultats_voie_a_complet_produit["a_surveiller"]
+        ):
+            cle_a_produit, grain_a_produit = cle_signal_produit(signal_a_produit)
+            if cle_a_produit is not None:
+                cles_a_produit.add((cle_a_produit, grain_a_produit))
+
+        signaux_disparus_produit = []
+        for signal_b_produit in signaux_prioritaires_b_produit + signaux_a_surveiller_b_produit:
+            cle_b_produit, grain_b_produit = cle_signal_produit(signal_b_produit)
+            if cle_b_produit is not None and (cle_b_produit, grain_b_produit) not in cles_a_produit:
+                signaux_disparus_produit.append(signal_b_produit)
+
+        if len(signaux_disparus_produit) > 0:
+            def _rang_disparu_produit(signal):
+                return -RANG_NIVEAU_PRIORITE.get(signal["niveau_priorite"], 0)
+
+            signaux_disparus_produit_tries = sorted(signaux_disparus_produit, key=_rang_disparu_produit)
+            noms_disparus_produit = []
+            for signal_disparu_produit in signaux_disparus_produit_tries[:2]:
+                noms_disparus_produit.append(titre_signal_produit(signal_disparu_produit))
+            verbe_disparu_produit = accorder(len(noms_disparus_produit), "ne ressort plus", "ne ressortent plus")
+            texte_signaux_disparus_produit = (
+                " · ".join(noms_disparus_produit) + " " + verbe_disparu_produit + " parmi les signaux de A."
+            )
+
+    # ------------------------------------------------------------------
     # A. Lecture Produit -- dérivée uniquement des sorties déjà produites par 4A (Étape 5F.1).
     # ------------------------------------------------------------------
 
     st.markdown(titre_section_principale("Lecture Produit"), unsafe_allow_html=True)
-    st.markdown(
-        construire_bandeau_info(
-            construire_lecture_produit(
-                signaux_prioritaires, resultats_voie_a["nb_prioritaires_avant_plafond"],
-                signaux_a_surveiller, resultats_voie_a["nb_a_surveiller_avant_plafond"],
-                len(signaux_voie_b), part_sav_pct,
-            )
-        ),
-        unsafe_allow_html=True,
+    texte_lecture_produit = construire_lecture_produit(
+        signaux_prioritaires, resultats_voie_a["nb_prioritaires_avant_plafond"],
+        signaux_a_surveiller, resultats_voie_a["nb_a_surveiller_avant_plafond"],
+        len(signaux_voie_b), part_sav_pct,
     )
+    if texte_signaux_disparus_produit is not None:
+        texte_lecture_produit = texte_lecture_produit + " " + texte_signaux_disparus_produit
+    st.markdown(construire_bandeau_info(texte_lecture_produit), unsafe_allow_html=True)
 
     # ------------------------------------------------------------------
     # B. Contexte SAV compact -- 4 informations, jamais un coût global (Étape 5F.1, section 11).
@@ -3561,30 +3667,71 @@ with onglet_produit:
     # ------------------------------------------------------------------
 
     colonne_ctx1, colonne_ctx2, colonne_ctx3, colonne_ctx4 = st.columns(4)
+
+    delta_dossiers_produit = None
+    sous_texte_dossiers_produit = None
+    if comparaison_disponible:
+        if produit_duree_comparable:
+            delta_dossiers_produit = formater_delta_nombre(len(tickets_sav_produit_s2) - len(tickets_sav_produit_s1))
+        else:
+            sous_texte_dossiers_produit = (
+                "B : " + formater_nombre_espace(len(tickets_sav_produit_s1)) + " (durées non comparables)"
+            )
     colonne_ctx1.markdown(
-        construire_carte_kpi("Dossiers SAV Produit", formater_nombre_espace(len(tickets_sav_produit_s2))),
+        construire_carte_kpi(
+            "Dossiers SAV Produit", formater_nombre_espace(len(tickets_sav_produit_s2)),
+            delta=delta_dossiers_produit, delta_couleur="off", sous_texte=sous_texte_dossiers_produit,
+        ),
         unsafe_allow_html=True,
     )
+
     if part_sav_pct is not None:
+        delta_part_sav_produit = None
+        if comparaison_disponible and part_sav_pct_s1 is not None:
+            delta_part_sav_produit = formater_delta_points(part_sav_pct - part_sav_pct_s1)
         colonne_ctx2.markdown(
-            construire_carte_kpi("Part du total", formater_pourcentage(part_sav_pct)), unsafe_allow_html=True,
+            construire_carte_kpi(
+                "Part du total", formater_pourcentage(part_sav_pct),
+                delta=delta_part_sav_produit, delta_couleur="off",
+            ),
+            unsafe_allow_html=True,
         )
+
     csat_sav_global = moyenne(tickets_sav_produit_s2, "csat")
     n_csat_sav_global = 0
     for ticket_sav_ctx in tickets_sav_produit_s2:
         if ticket_sav_ctx["csat"] is not None:
             n_csat_sav_global = n_csat_sav_global + 1
     if csat_sav_global is not None:
+        sous_texte_csat_produit = "n=" + str(n_csat_sav_global)
+        delta_csat_produit = None
+        if comparaison_disponible:
+            if csat_sav_global_s1 is not None:
+                delta_csat_produit = formater_delta_nombre(csat_sav_global - csat_sav_global_s1, decimales=2)
+                sous_texte_csat_produit = (
+                    sous_texte_csat_produit + " · B : " + formater_csat(csat_sav_global_s1)
+                    + " (n=" + str(n_csat_sav_global_s1) + ")"
+                )
+            else:
+                sous_texte_csat_produit = sous_texte_csat_produit + " · B : N/A"
         colonne_ctx3.markdown(
             construire_carte_kpi(
-                "CSAT SAV Produit", formater_csat(csat_sav_global), sous_texte="n=" + str(n_csat_sav_global),
+                "CSAT SAV Produit", formater_csat(csat_sav_global), sous_texte=sous_texte_csat_produit,
+                delta=delta_csat_produit, delta_couleur="normal",
             ),
             unsafe_allow_html=True,
         )
+
     resolution_sav_global = moyenne(tickets_sav_produit_s2, "full_resolution_time_hours")
     if resolution_sav_global is not None:
+        delta_resolution_produit = None
+        if comparaison_disponible and resolution_sav_global_s1 is not None:
+            delta_resolution_produit = formater_delta_duree((resolution_sav_global - resolution_sav_global_s1) * 60)
         colonne_ctx4.markdown(
-            construire_carte_kpi("Résolution moyenne", formater_duree(resolution_sav_global * 60)),
+            construire_carte_kpi(
+                "Résolution moyenne", formater_duree(resolution_sav_global * 60),
+                delta=delta_resolution_produit, delta_couleur="inverse",
+            ),
             unsafe_allow_html=True,
         )
 
@@ -3626,6 +3773,16 @@ with onglet_produit:
                 statut_signal_produit = None
 
             corps_produit_html = signal_produit["observation_principale"]
+
+            # Étape 7B -- tag de comparaison A/B, ajouté hors du plafond des 2-3 preuves (Phase 4) :
+            # c'est un repère d'identité/évolution, pas une preuve du signal lui-même.
+            if comparaison_disponible:
+                texte_evolution_produit = _evolution_signal_produit_vs_b(signal_produit)
+                if texte_evolution_produit is not None:
+                    corps_produit_html = corps_produit_html + (
+                        '<br><span style="font-size:12px; font-weight:600; color:' + COULEUR_TEXTE_MUTED + ';">'
+                        + texte_evolution_produit + "</span>"
+                    )
 
             # Phase 4 (passe finale, mini-histoires) : constat -> 2-3 preuves principales
             # sélectionnées pour CE signal (jamais le même trio imposé partout) -> détail/
@@ -3752,9 +3909,15 @@ with onglet_produit:
         if len(signaux_a_surveiller) > 0:
             texte_a_surveiller = []
             for signal_surveillance in signaux_a_surveiller:
+                texte_tag_surveillance_produit = ""
+                if comparaison_disponible:
+                    texte_evolution_surveillance_produit = _evolution_signal_produit_vs_b(signal_surveillance)
+                    if texte_evolution_surveillance_produit is not None:
+                        texte_tag_surveillance_produit = " — " + texte_evolution_surveillance_produit
                 texte_a_surveiller.append(
                     titre_signal_produit(signal_surveillance) + " (" + str(signal_surveillance["volume"]["n"])
                     + " tickets — " + signal_surveillance["observation_principale"].rstrip(".") + ")"
+                    + texte_tag_surveillance_produit
                 )
             st.markdown("**À surveiller**")
             st.caption(
@@ -3798,11 +3961,23 @@ with onglet_produit:
     par_composant_s1 = grouper_par(tickets_sav_produit_s1, "component")
 
     par_issue = grouper_par(tickets_sav_produit_s2, "issue_type")
+    par_issue_s1 = grouper_par(tickets_sav_produit_s1, "issue_type")
+    issues_produit_evolution_active = comparaison_disponible and produit_duree_comparable
+
+    issues_a_afficher_produit = list(par_issue.keys())
+    if issues_produit_evolution_active:
+        issues_a_afficher_produit = cles_combinees(par_issue, par_issue_s1)
+
     lignes_issue = []
-    for issue, tickets_issue in par_issue.items():
+    for issue in issues_a_afficher_produit:
         if issue is None:
             continue
-        lignes_issue.append({"Nature du problème": issue, "Tickets": len(tickets_issue)})
+        tickets_issue = par_issue.get(issue, [])
+        ligne_issue = {"Nature du problème": issue, "Tickets": len(tickets_issue)}
+        if issues_produit_evolution_active:
+            tickets_issue_s1 = par_issue_s1.get(issue, [])
+            ligne_issue["Évolution"] = formater_delta_nombre(len(tickets_issue) - len(tickets_issue_s1))
+        lignes_issue.append(ligne_issue)
     lignes_issue_triees = sorted(lignes_issue, key=obtenir_tickets, reverse=True)
 
     par_composant_issue = {}
@@ -3817,9 +3992,30 @@ with onglet_produit:
         else:
             par_composant_issue[cle] = 1
 
+    par_composant_issue_s1 = {}
+    for ticket in tickets_sav_produit_s1:
+        composant = ticket["component"]
+        issue = ticket["issue_type"]
+        if composant is None or issue is None:
+            continue
+        cle = (composant, issue)
+        if cle in par_composant_issue_s1:
+            par_composant_issue_s1[cle] = par_composant_issue_s1[cle] + 1
+        else:
+            par_composant_issue_s1[cle] = 1
+
+    cles_composant_issue_a_afficher = list(par_composant_issue.keys())
+    if issues_produit_evolution_active:
+        cles_composant_issue_a_afficher = cles_combinees(par_composant_issue, par_composant_issue_s1)
+
     lignes_composant_issue = []
-    for cle, nombre in par_composant_issue.items():
-        lignes_composant_issue.append({"Composant": cle[0], "Nature du problème": cle[1], "Tickets": nombre})
+    for cle in cles_composant_issue_a_afficher:
+        nombre = par_composant_issue.get(cle, 0)
+        ligne_composant_issue = {"Composant": cle[0], "Nature du problème": cle[1], "Tickets": nombre}
+        if issues_produit_evolution_active:
+            nombre_s1 = par_composant_issue_s1.get(cle, 0)
+            ligne_composant_issue["Évolution"] = formater_delta_nombre(nombre - nombre_s1)
+        lignes_composant_issue.append(ligne_composant_issue)
     lignes_composant_issue_triees = sorted(lignes_composant_issue, key=obtenir_tickets, reverse=True)
 
     lignes_composant_issue_significatives = []
