@@ -2376,10 +2376,56 @@ with onglet_agents:
             + " cette période (non inclus ci-dessous)."
         )
 
+    # ------------------------------------------------------------------
+    # Étape 7E -- comparaison A/B Agents. Domaine structurellement différent de Produit/Livraison/
+    # Avant-vente : le roster n'a pas de notion de signal/tier, donc RANG_NIVEAU_PRIORITE /
+    # evaluer_evolution_signal_vs_b / PLAFOND_SIGNAUX_COMPARAISON_B ne s'appliquent pas ici. Seul
+    # periodes_comparables_en_duree et formater_delta_nombre sont réutilisés ; construire_roster_
+    # agents (existant, inchangé) est simplement rappelé pour B.
+    # ------------------------------------------------------------------
+
+    roster_agents_b = []
+    agents_duree_comparable = False
+    if comparaison_disponible:
+        agents_duree_comparable = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+        roster_agents_b = construire_roster_agents(
+            tickets_s1, planning_s1, evenements_calendrier, date_b_debut, date_b_fin
+        )
+
+    roster_b_par_agent = {}
+    for ligne_roster_b in roster_agents_b:
+        roster_b_par_agent[ligne_roster_b["agent"]] = ligne_roster_b
+
+    # "Non présent dans l'équipe sur cette période" (absent des 3 sources du roster) est
+    # STRICTEMENT distinct de STATUT_AGENT_ABSENT ("Absent" -- connu du roster, ex. congé nommé par
+    # un événement Staffing). Jamais confondus, jamais un delta ou un "B : 0" fabriqué pour le
+    # premier cas.
+    noms_agents_a = set()
+    for ligne_roster_a in roster_agents:
+        noms_agents_a.add(ligne_roster_a["agent"])
+
+    texte_agents_nouveaux_b = None
+    if comparaison_disponible:
+        noms_agents_b_absents_de_a = []
+        for ligne_roster_b in roster_agents_b:
+            if ligne_roster_b["agent"] not in noms_agents_a:
+                noms_agents_b_absents_de_a.append(ligne_roster_b["agent"])
+        noms_agents_b_absents_de_a_tries = sorted(noms_agents_b_absents_de_a)
+        if len(noms_agents_b_absents_de_a_tries) > 0:
+            n_agents_nouveaux_b = len(noms_agents_b_absents_de_a_tries)
+            texte_agents_nouveaux_b = (
+                str(n_agents_nouveaux_b) + " " + accorder(n_agents_nouveaux_b, "agent présent", "agents présents")
+                + " sur B " + accorder(n_agents_nouveaux_b, "n'est pas présent", "ne sont pas présents")
+                + " dans l'équipe sur A : " + ", ".join(noms_agents_b_absents_de_a_tries) + "."
+            )
+
     # ---- Lecture de l'équipe (factuelle, jamais un classement -- Étape 5C.1) ----
     # Étape 6E, section 15 : panneau éditorial 6D, texte inchangé, aucun jugement ajouté.
     st.markdown(titre_section_principale("Lecture de l'équipe"), unsafe_allow_html=True)
-    st.markdown(construire_bandeau_info(construire_lecture_equipe_agents(roster_agents)), unsafe_allow_html=True)
+    texte_lecture_equipe = construire_lecture_equipe_agents(roster_agents)
+    if texte_agents_nouveaux_b is not None:
+        texte_lecture_equipe = texte_lecture_equipe + " " + texte_agents_nouveaux_b
+    st.markdown(construire_bandeau_info(texte_lecture_equipe), unsafe_allow_html=True)
 
     # ---- Table principale : 6 colonnes, ordre alphabétique (jamais par volume/CSAT), aucune
     # couleur bon/mauvais -- la charge relative et le CSAT+n remplacent le champ "Profil" supprimé.
@@ -2403,7 +2449,7 @@ with onglet_agents:
 
         charge_ligne = charge_relative_agent(nb_tickets_ligne, heures_ligne)
         if charge_ligne is not None:
-            texte_charge = str(round(charge_ligne, 1))
+            texte_charge = str(round(charge_ligne, 1)).replace(".", ",")
         else:
             texte_charge = "N/A"
 
@@ -2423,14 +2469,59 @@ with onglet_agents:
         else:
             texte_csat_ligne = "N/A"
 
-        lignes_table_agents.append({
+        # Étape 7E -- B en secondaire dans la cellule existante (pas de nouvelle colonne, ratio
+        # rapporté aux heures planifiées donc pas de gate de durée). Jamais de zéro fabriqué : si
+        # l'agent n'a pas de charge calculable sur B (0h planifiée, ou absent du roster B),
+        # charge_relative_agent renvoie déjà None -- on ne rajoute simplement pas de ligne B.
+        ligne_roster_b_agent = roster_b_par_agent.get(agent_ligne)
+        if comparaison_disponible and ligne_roster_b_agent is not None:
+            charge_b_ligne = charge_relative_agent(
+                len(ligne_roster_b_agent["tickets"]), ligne_roster_b_agent["heures_planifiees"]
+            )
+            if charge_b_ligne is not None:
+                # st.dataframe n'affiche pas de saut de ligne réel dans une cellule -- reste
+                # volontairement sur une seule ligne compacte plutôt que de compter sur un "\n"
+                # qui s'effondre silencieusement en espace (vérifié en direct). Le delta n'est
+                # ajouté que si A a aussi une charge calculable (ex. agent en renfort non planifié
+                # sur A, 0h -- N/A côté A, mais la valeur B reste montrée sans delta fabriqué).
+                texte_b_charge_ligne = str(round(charge_b_ligne, 1)).replace(".", ",")
+                if charge_ligne is not None:
+                    texte_charge = texte_charge + (
+                        " · B : " + texte_b_charge_ligne + " · "
+                        + formater_delta_nombre(charge_ligne - charge_b_ligne, decimales=1)
+                    )
+                else:
+                    texte_charge = texte_charge + " · B : " + texte_b_charge_ligne
+
+        texte_evolution_ligne = ""
+        texte_evolution_csat_ligne = ""
+        if comparaison_disponible:
+            if ligne_roster_b_agent is None:
+                texte_evolution_ligne = "Non présent dans l'équipe sur B"
+            elif not agents_duree_comparable:
+                texte_evolution_ligne = "Non comparable"
+            else:
+                texte_evolution_ligne = formater_delta_nombre(nb_tickets_ligne - len(ligne_roster_b_agent["tickets"]))
+
+            if ligne_roster_b_agent is not None:
+                csat_b_agent_ligne = moyenne(ligne_roster_b_agent["tickets"], "csat")
+                if csat_agent_ligne is not None and csat_b_agent_ligne is not None:
+                    texte_evolution_csat_ligne = formater_delta_nombre(
+                        csat_agent_ligne - csat_b_agent_ligne, decimales=2
+                    )
+
+        ligne_table_agent = {
             "Agent": agent_ligne,
             "Présence": texte_presence,
             "Tickets": nb_tickets_ligne,
             "Tickets / h planifiée": texte_charge,
             "Mix principal": mix_principal_ligne,
             "CSAT (n)": texte_csat_ligne,
-        })
+        }
+        if comparaison_disponible:
+            ligne_table_agent["Évolution"] = texte_evolution_ligne
+            ligne_table_agent["Évolution CSAT"] = texte_evolution_csat_ligne
+        lignes_table_agents.append(ligne_table_agent)
 
     with st.container(border=True):
         afficher_tableau_colore(lignes_table_agents, colonne_figee="Agent")
@@ -2460,7 +2551,7 @@ with onglet_agents:
 
             texte_resume_detail = role_detail + " · " + str(len(tickets_agent_detail)) + " tickets"
             if charge_detail is not None:
-                texte_resume_detail = texte_resume_detail + " · " + str(round(charge_detail, 1)) + " tickets/h planifiée"
+                texte_resume_detail = texte_resume_detail + " · " + str(round(charge_detail, 1)).replace(".", ",") + " tickets/h planifiée"
             if csat_detail is not None:
                 texte_resume_detail = texte_resume_detail + " · CSAT " + formater_csat(csat_detail) + " (n=" + str(n_csat_detail) + ")"
             if resolution_detail is not None:
@@ -2472,6 +2563,43 @@ with onglet_agents:
                 "Les temps de résolution dépendent fortement du type de demande : SAV et dossiers "
                 "impliquant des tiers peuvent rester ouverts plusieurs jours."
             )
+
+            # Étape 7E -- référence B compacte, jamais confondue entre "absent des 3 sources du
+            # roster B" (agent inconnu sur B) et STATUT_AGENT_ABSENT (agent connu du roster B,
+            # congé/non planifié).
+            if comparaison_disponible:
+                ligne_roster_b_detail = roster_b_par_agent.get(agent_detail)
+                if ligne_roster_b_detail is None:
+                    st.caption("Référence B : non présent dans l'équipe sur cette période.")
+                elif ligne_roster_b_detail["statut"] == STATUT_AGENT_ABSENT:
+                    st.caption("Référence B : absent sur la période.")
+                else:
+                    tickets_b_detail = ligne_roster_b_detail["tickets"]
+                    elements_reference_b = [str(len(tickets_b_detail)) + " tickets"]
+
+                    charge_b_detail = charge_relative_agent(
+                        len(tickets_b_detail), ligne_roster_b_detail["heures_planifiees"]
+                    )
+                    if charge_b_detail is not None:
+                        elements_reference_b.append(
+                            str(round(charge_b_detail, 1)).replace(".", ",") + " tickets/h planifiée"
+                        )
+
+                    csat_b_detail = moyenne(tickets_b_detail, "csat")
+                    n_csat_b_detail = 0
+                    for ticket_csat_b_detail in tickets_b_detail:
+                        if ticket_csat_b_detail["csat"] is not None:
+                            n_csat_b_detail = n_csat_b_detail + 1
+                    if csat_b_detail is not None:
+                        elements_reference_b.append(
+                            "CSAT " + formater_csat(csat_b_detail) + " (n=" + str(n_csat_b_detail) + ")"
+                        )
+
+                    resolution_b_detail = moyenne(tickets_b_detail, "full_resolution_time_hours")
+                    if resolution_b_detail is not None:
+                        elements_reference_b.append("résolution moyenne " + formater_duree(resolution_b_detail * 60))
+
+                    st.caption("Référence B : " + " · ".join(elements_reference_b) + ".")
 
             categories_agent = grouper_par_categorie(tickets_agent_detail)
 
