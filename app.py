@@ -2746,17 +2746,26 @@ with onglet_agents:
 # prescriptive (section 27). Une piste n'est pas un signal -- jamais construire_carte_signal avec
 # un statut coloré ici (Étape 6E, section 23) ; tokens 6C alignés sur RADIUS_CARTE/ESPACE_M/ESPACE_S
 # en 6E, sans changer le langage visuel déjà validé en 5D.1.
-def construire_carte_piste_actions(piste, quoi, pourquoi):
-    return (
+def construire_carte_piste_actions(piste, quoi, pourquoi, tag=None):
+    html = (
         '<div style="background-color:' + COULEUR_FOND_CARTE + "; border:1px solid " + COULEUR_BORDURE_CARTE + "; "
         "border-radius:" + RADIUS_CARTE + "; padding:14px " + ESPACE_M + "; margin-bottom:" + ESPACE_S + ';">'
         '<div style="font-size:13px; font-weight:700; color:' + COULEUR_TEXTE_VALEUR + ';">' + quoi + "</div>"
+    )
+    # Étape 7F -- tag de comparaison A/B optionnel, jamais un badge de sévérité (réservé aux Signal
+    # cards ailleurs) : une simple ligne muted, cohérente avec le reste de la carte.
+    if tag is not None:
+        html = html + (
+            '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:3px;">' + tag + "</div>"
+        )
+    html = html + (
         '<div style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + '; margin-top:5px;"><b>Observé</b> : '
         + pourquoi + "</div>"
         '<div style="font-size:12px; font-weight:600; color:' + COULEUR_PRIMAIRE + '; margin-top:5px;">'
         + piste["piste"] + "</div>"
         "</div>"
     )
+    return html
 
 
 # Étape 6E, section 24 : évite le "top arbitraire" identifié comme problème UX en 5D.1 (une
@@ -2810,6 +2819,35 @@ with onglet_alertes:
         tickets_s2, SEUIL_CSAT_VERBATIM_ACTIONS, SEUIL_VERBATIMS_GROUPE_ACTIONS
     )
 
+    # ------------------------------------------------------------------
+    # Étape 7F -- comparaison A/B des Pistes d'amélioration UNIQUEMENT (exception assumée : Actions
+    # déjà menées garde son propre axe avant/action/après, jamais Période B -- voir plus bas). Les
+    # 3 mécanismes existants sont rappelés tels quels sur B, avec EXACTEMENT le même suivi_suggestions
+    # (période-indépendant, chargé une seule fois) -- B bénéficie donc des mêmes exclusions "Fait"
+    # que A, jamais une fausse "nouveauté" due à un univers différent. Clé d'identité = "sujet"
+    # (grain unique par famille, déjà la clé de regroupement utilisée par ces 3 fonctions elles-
+    # mêmes) -- pas de RANG_NIVEAU_PRIORITE/tier ici, ces pistes n'en ont pas.
+    # ------------------------------------------------------------------
+
+    sujets_standardisation_b = set()
+    sujets_self_service_b = set()
+    sujets_retours_clients_b = set()
+    if comparaison_disponible:
+        for piste_b in identifier_pistes_standardisation(
+            tickets_s1, suivi_suggestions, SEUIL_MINIMUM_SUJET, SEUIL_CSAT_INSATISFAISANT
+        ):
+            sujets_standardisation_b.add(piste_b["sujet"])
+        for piste_b in identifier_pistes_self_service(
+            tickets_s1, suivi_suggestions, SEUIL_MINIMUM_SUJET, SEUIL_REPLIES_FAQ_ACTIONS
+        ):
+            sujets_self_service_b.add(piste_b["sujet"])
+        for groupe_b in identifier_retours_clients_a_explorer(
+            tickets_s1, SEUIL_CSAT_VERBATIM_ACTIONS, SEUIL_VERBATIMS_GROUPE_ACTIONS
+        ):
+            sujets_retours_clients_b.add(groupe_b["sujet"])
+
+    TAG_NOUVEAU_PISTE_VS_B = "Nouveau parmi les pistes vs B"
+
     st.markdown(titre_section_principale("Pistes d'amélioration"), unsafe_allow_html=True)
 
     with st.expander("Comment les pistes sont identifiées"):
@@ -2847,7 +2885,12 @@ with onglet_alertes:
                     "CSAT " + formater_csat(piste["csat"]) + ", usage macro "
                     + formater_pourcentage(piste["usage_macro_pct"])
                 )
-                cartes_standardisation.append(construire_carte_piste_actions(piste, quoi, pourquoi))
+                tag_piste_standardisation = None
+                if comparaison_disponible and piste["sujet"] not in sujets_standardisation_b:
+                    tag_piste_standardisation = TAG_NOUVEAU_PISTE_VS_B
+                cartes_standardisation.append(
+                    construire_carte_piste_actions(piste, quoi, pourquoi, tag=tag_piste_standardisation)
+                )
             afficher_cartes_avec_apercu(
                 cartes_standardisation, NOMBRE_PISTES_APERCU_ACTIONS,
                 "piste de standardisation", "pistes de standardisation",
@@ -2864,7 +2907,12 @@ with onglet_alertes:
                 pourquoi = str(round(piste["echanges_moyens"], 1)) + " échanges en moyenne"
                 if piste["csat"] is not None:
                     pourquoi = pourquoi + ", CSAT " + formater_csat(piste["csat"])
-                cartes_self_service.append(construire_carte_piste_actions(piste, quoi, pourquoi))
+                tag_piste_self_service = None
+                if comparaison_disponible and piste["sujet"] not in sujets_self_service_b:
+                    tag_piste_self_service = TAG_NOUVEAU_PISTE_VS_B
+                cartes_self_service.append(
+                    construire_carte_piste_actions(piste, quoi, pourquoi, tag=tag_piste_self_service)
+                )
             afficher_cartes_avec_apercu(
                 cartes_self_service, NOMBRE_PISTES_APERCU_ACTIONS,
                 "piste de self-service", "pistes de self-service",
@@ -2883,6 +2931,11 @@ with onglet_alertes:
                     + " " + accorder(groupe["volume"], "commentaire", "commentaires")
                 )
                 corps_retour = "CSAT moyen sur ces retours : " + formater_csat(groupe["csat"])
+                if comparaison_disponible and groupe["sujet"] not in sujets_retours_clients_b:
+                    corps_retour = corps_retour + (
+                        '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_LABEL + ';">'
+                        + TAG_NOUVEAU_PISTE_VS_B + "</span>"
+                    )
                 cartes_retours_clients.append(construire_carte_signal(titre_retour, None, corps_retour))
             afficher_cartes_avec_apercu(
                 cartes_retours_clients, NOMBRE_PISTES_APERCU_ACTIONS,
