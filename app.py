@@ -160,6 +160,7 @@ from outils import (
     evaluer_evolution_signal_vs_b,
     texte_evolution_signal_vs_b,
     RANG_NIVEAU_PRIORITE,
+    PLAFOND_SIGNAUX_COMPARAISON_B,
     construire_texte_resolution_produit,
     construire_texte_sav_recurrents_produit,
     TEXTE_PRUDENCE_CAUSALE,
@@ -3555,8 +3556,6 @@ with onglet_produit:
     # affiché comme une seconde liste de signaux.
     # ------------------------------------------------------------------
 
-    PLAFOND_SIGNAUX_COMPARAISON_B = 999
-
     signaux_prioritaires_b_produit = []
     signaux_a_surveiller_b_produit = []
     part_sav_pct_s1 = None
@@ -4346,6 +4345,92 @@ with onglet_livraison:
     signaux_prioritaires_livraison = resultats_livraison["prioritaires"]
     signaux_a_surveiller_livraison = resultats_livraison["a_surveiller"]
 
+    # ------------------------------------------------------------------
+    # Étape 7C -- comparaison A/B Livraison. Réutilise exactement la grammaire Produit (Étape 7B) :
+    # RANG_NIVEAU_PRIORITE / evaluer_evolution_signal_vs_b / texte_evolution_signal_vs_b, aucune
+    # nouvelle logique de tier. La clé d'identité est directement signal["sujet"] -- Livraison n'a
+    # qu'un seul grain (subject_cluster), pas besoin d'un équivalent à cle_signal_produit. B hérite
+    # automatiquement du segment transporteur actif : tickets_livraison_s1 est déjà filtré par
+    # segment_livraison plus haut, donc Tous/Noria/Velox sont respectés sans logique spéciale ici.
+    # ------------------------------------------------------------------
+
+    livraison_duree_comparable = False
+    csat_livraison_s1 = None
+    n_csat_livraison_s1 = 0
+    resolution_livraison_s1 = None
+    signaux_prioritaires_b_livraison = []
+    signaux_a_surveiller_b_livraison = []
+
+    if comparaison_disponible:
+        livraison_duree_comparable = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+
+        csat_livraison_s1 = moyenne(tickets_livraison_s1, "csat")
+        for ticket_liv_ctx_s1 in tickets_livraison_s1:
+            if ticket_liv_ctx_s1["csat"] is not None:
+                n_csat_livraison_s1 = n_csat_livraison_s1 + 1
+        resolution_livraison_s1 = moyenne(tickets_livraison_s1, "full_resolution_time_hours")
+
+        historique_livraison_par_fichier_b = []
+        for date_export_historique_liv_b, chemin_historique_liv_b in exports_disponibles:
+            if date_export_historique_liv_b < date_b_debut:
+                tickets_fichier_historique_liv_b = charger_tickets(chemin_historique_liv_b)
+                tickets_livraison_fichier_historique_b = []
+                for ticket_historique_liv_b in tickets_fichier_historique_liv_b:
+                    if categoriser(ticket_historique_liv_b) == "Livraison":
+                        tickets_livraison_fichier_historique_b.append(ticket_historique_liv_b)
+                historique_livraison_par_fichier_b.append(
+                    filtrer_tickets_par_segment_transporteur(tickets_livraison_fichier_historique_b, segment_livraison)
+                )
+
+        resultats_livraison_b = moteur_livraison_voie_a(
+            tickets_livraison_s1, historique_livraison_par_fichier_b, PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        signaux_prioritaires_b_livraison = resultats_livraison_b["prioritaires"]
+        signaux_a_surveiller_b_livraison = resultats_livraison_b["a_surveiller"]
+
+    niveau_priorite_par_sujet_b_livraison = {}
+    concentration_par_sujet_b_livraison = {}
+    for signal_b_livraison in signaux_prioritaires_b_livraison + signaux_a_surveiller_b_livraison:
+        niveau_priorite_par_sujet_b_livraison[signal_b_livraison["sujet"]] = signal_b_livraison["niveau_priorite"]
+        concentration_par_sujet_b_livraison[signal_b_livraison["sujet"]] = signal_b_livraison["concentration_transporteur"]
+
+    def _evolution_signal_livraison_vs_b(signal):
+        niveau_b_livraison = niveau_priorite_par_sujet_b_livraison.get(signal["sujet"])
+        qualification_livraison = evaluer_evolution_signal_vs_b(signal["niveau_priorite"], niveau_b_livraison)
+        return texte_evolution_signal_vs_b(qualification_livraison)
+
+    # "Ne ressort plus parmi les signaux de A" -- même règle que Produit : le set d'exclusion
+    # utilise TOUS les signaux qualifiés de A (plafond retiré), jamais la liste plafonnée à
+    # l'affichage, pour ne jamais signaler à tort un motif encore qualifié mais non affiché.
+    texte_signaux_disparus_livraison = None
+    if comparaison_disponible:
+        resultats_livraison_complet = moteur_livraison_voie_a(
+            tickets_livraison_s2, historique_livraison_par_fichier, PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        sujets_a_livraison = set()
+        for signal_a_livraison in (
+            resultats_livraison_complet["prioritaires"] + resultats_livraison_complet["a_surveiller"]
+        ):
+            sujets_a_livraison.add(signal_a_livraison["sujet"])
+
+        signaux_disparus_livraison = []
+        for signal_b_livraison in signaux_prioritaires_b_livraison + signaux_a_surveiller_b_livraison:
+            if signal_b_livraison["sujet"] not in sujets_a_livraison:
+                signaux_disparus_livraison.append(signal_b_livraison)
+
+        if len(signaux_disparus_livraison) > 0:
+            def _rang_disparu_livraison(signal):
+                return -RANG_NIVEAU_PRIORITE.get(signal["niveau_priorite"], 0)
+
+            signaux_disparus_livraison_tries = sorted(signaux_disparus_livraison, key=_rang_disparu_livraison)
+            noms_disparus_livraison = []
+            for signal_disparu_livraison in signaux_disparus_livraison_tries[:2]:
+                noms_disparus_livraison.append(signal_disparu_livraison["sujet"])
+            verbe_disparu_livraison = accorder(len(noms_disparus_livraison), "ne ressort plus", "ne ressortent plus")
+            texte_signaux_disparus_livraison = (
+                " · ".join(noms_disparus_livraison) + " " + verbe_disparu_livraison + " parmi les signaux de A."
+            )
+
     # ---- A. Lecture Livraison : juxtapose ACTIVITÉ (poids de Livraison sur la période) et SIGNAL
     # (compteurs 4C), sans jamais fusionner les deux en une seule affirmation causale. ----
     st.markdown(titre_section_principale("Lecture Livraison"), unsafe_allow_html=True)
@@ -4354,6 +4439,8 @@ with onglet_livraison:
         resultats_livraison["nb_prioritaires_avant_plafond"],
         resultats_livraison["nb_a_surveiller_avant_plafond"],
     )
+    if texte_signaux_disparus_livraison is not None:
+        texte_lecture_livraison = texte_lecture_livraison + " " + texte_signaux_disparus_livraison
     if lecture_activite_livraison["contexte"] is not None:
         texte_lecture_livraison_html = texte_lecture_livraison + (
             '<br><span style="font-size:12px; color:' + COULEUR_TEXTE_MUTED + ';">'
@@ -4371,20 +4458,60 @@ with onglet_livraison:
 
     with st.container(border=True):
         colonne_liv_a, colonne_liv_b, colonne_liv_c = st.columns(3)
+
+        delta_volume_livraison = None
+        sous_texte_volume_livraison = formater_pourcentage(pct_livraison_global) + " du volume global"
+        if comparaison_disponible:
+            if livraison_duree_comparable:
+                delta_volume_livraison = formater_delta_nombre(volume_livraison_s2 - len(tickets_livraison_s1))
+            else:
+                sous_texte_volume_livraison = (
+                    sous_texte_volume_livraison + " · B : " + formater_nombre_espace(len(tickets_livraison_s1))
+                    + " (durées non comparables)"
+                )
         colonne_liv_a.markdown(
             construire_carte_kpi(
                 "Tickets livraison", formater_nombre_espace(volume_livraison_s2),
-                sous_texte=formater_pourcentage(pct_livraison_global) + " du volume global",
+                delta=delta_volume_livraison, delta_couleur="off", sous_texte=sous_texte_volume_livraison,
             ),
             unsafe_allow_html=True,
         )
+
         if csat_livraison_s2 is not None:
+            n_csat_livraison_s2 = 0
+            for ticket_liv_ctx_s2 in tickets_livraison_s2:
+                if ticket_liv_ctx_s2["csat"] is not None:
+                    n_csat_livraison_s2 = n_csat_livraison_s2 + 1
+            sous_texte_csat_livraison = "n=" + str(n_csat_livraison_s2)
+            delta_csat_livraison = None
+            if comparaison_disponible:
+                if csat_livraison_s1 is not None:
+                    delta_csat_livraison = formater_delta_nombre(csat_livraison_s2 - csat_livraison_s1, decimales=2)
+                    sous_texte_csat_livraison = (
+                        sous_texte_csat_livraison + " · B : " + formater_csat(csat_livraison_s1)
+                        + " (n=" + str(n_csat_livraison_s1) + ")"
+                    )
+                else:
+                    sous_texte_csat_livraison = sous_texte_csat_livraison + " · B : N/A"
             colonne_liv_b.markdown(
-                construire_carte_kpi("CSAT livraison", formater_csat(csat_livraison_s2)), unsafe_allow_html=True
+                construire_carte_kpi(
+                    "CSAT livraison", formater_csat(csat_livraison_s2), sous_texte=sous_texte_csat_livraison,
+                    delta=delta_csat_livraison, delta_couleur="normal",
+                ),
+                unsafe_allow_html=True,
             )
+
         if resolution_livraison_s2 is not None:
+            delta_resolution_livraison = None
+            if comparaison_disponible and resolution_livraison_s1 is not None:
+                delta_resolution_livraison = formater_delta_duree(
+                    (resolution_livraison_s2 - resolution_livraison_s1) * 60
+                )
             colonne_liv_c.markdown(
-                construire_carte_kpi("Résolution moyenne", formater_duree(resolution_livraison_s2 * 60)),
+                construire_carte_kpi(
+                    "Résolution moyenne", formater_duree(resolution_livraison_s2 * 60),
+                    delta=delta_resolution_livraison, delta_couleur="inverse",
+                ),
                 unsafe_allow_html=True,
             )
     st.caption(TEXTE_COUT_INDISPONIBLE_LIVRAISON)
@@ -4407,6 +4534,16 @@ with onglet_livraison:
                 statut_signal_livraison = None
 
             corps_livraison_html = signal_livraison["observation_principale"]
+
+            # Étape 7C -- tag de comparaison A/B, même grammaire que Produit, jamais reformulé en
+            # termes de transporteur (le motif est comparé, pas le transporteur).
+            if comparaison_disponible:
+                texte_evolution_livraison = _evolution_signal_livraison_vs_b(signal_livraison)
+                if texte_evolution_livraison is not None:
+                    corps_livraison_html = corps_livraison_html + (
+                        '<br><span style="font-size:12px; font-weight:600; color:' + COULEUR_TEXTE_MUTED + ';">'
+                        + texte_evolution_livraison + "</span>"
+                    )
 
             if signal_livraison["relances"]["moyen"] is not None:
                 corps_livraison_html = corps_livraison_html + (
@@ -4463,6 +4600,34 @@ with onglet_livraison:
                 )
                 texte_prudence_transporteur_livraison = signal_livraison["concentration_transporteur"]["prudence_echantillon"]
 
+            # Étape 7C -- comparaison A/B FACTUELLE de la piste transporteur, uniquement en vue
+            # "Tous" et uniquement dans le détail (jamais dans le corps principal de la carte,
+            # jamais un badge). Purement descriptive (transporteur + part + n de chaque côté) --
+            # aucun verdict "renforcé/atténué/dégradé" n'est appliqué à la piste transporteur, cette
+            # grammaire reste réservée à l'évolution du signal/motif lui-même. En vue mono-
+            # transporteur, concentration_transporteur est déjà None par construction (rien à faire).
+            texte_transporteur_ab_livraison = None
+            if (
+                comparaison_disponible and segment_livraison == SEGMENT_LIVRAISON_TOUS
+                and signal_livraison["concentration_transporteur"] is not None
+            ):
+                concentration_a_livraison = signal_livraison["concentration_transporteur"]
+                concentration_b_livraison = concentration_par_sujet_b_livraison.get(signal_livraison["sujet"])
+                ligne_transporteur_a_livraison = (
+                    "Piste transporteur sur A : " + concentration_a_livraison["transporteur"] + ", "
+                    + formater_pourcentage(concentration_a_livraison["part_du_motif_pct"])
+                    + " (n=" + str(concentration_a_livraison["n"]) + ")."
+                )
+                if concentration_b_livraison is not None:
+                    ligne_transporteur_b_livraison = (
+                        "B : " + concentration_b_livraison["transporteur"] + ", "
+                        + formater_pourcentage(concentration_b_livraison["part_du_motif_pct"])
+                        + " (n=" + str(concentration_b_livraison["n"]) + ")."
+                    )
+                else:
+                    ligne_transporteur_b_livraison = "Aucune concentration transporteur comparable ne ressort sur B."
+                texte_transporteur_ab_livraison = ligne_transporteur_a_livraison + " " + ligne_transporteur_b_livraison
+
             lignes_meta_livraison_principales = [texte_volume_livraison]
             candidats_preuve_livraison = [texte_resolution_livraison, texte_csat_livraison]
             for candidat_preuve_livraison in candidats_preuve_livraison:
@@ -4473,6 +4638,7 @@ with onglet_livraison:
             for texte_champ_livraison in (
                 texte_temporalite_livraison, texte_resolution_livraison, texte_csat_livraison,
                 texte_issues_livraison, texte_transporteur_livraison, texte_prudence_transporteur_livraison,
+                texte_transporteur_ab_livraison,
             ):
                 if texte_champ_livraison is not None and texte_champ_livraison not in lignes_meta_livraison_principales:
                     lignes_meta_livraison_detail.append(texte_champ_livraison)
@@ -4542,9 +4708,15 @@ with onglet_livraison:
     if len(signaux_a_surveiller_livraison) > 0:
         texte_a_surveiller_livraison = []
         for signal_surveillance_livraison in signaux_a_surveiller_livraison:
+            texte_tag_surveillance_livraison = ""
+            if comparaison_disponible:
+                texte_evolution_surveillance_livraison = _evolution_signal_livraison_vs_b(signal_surveillance_livraison)
+                if texte_evolution_surveillance_livraison is not None:
+                    texte_tag_surveillance_livraison = " — " + texte_evolution_surveillance_livraison
             texte_a_surveiller_livraison.append(
                 signal_surveillance_livraison["sujet"] + " (" + str(signal_surveillance_livraison["volume"]["n"])
                 + " tickets — " + signal_surveillance_livraison["observation_principale"].rstrip(".") + ")"
+                + texte_tag_surveillance_livraison
             )
         st.caption("À surveiller (preuve encore partielle) : " + " · ".join(texte_a_surveiller_livraison))
 
@@ -4576,21 +4748,42 @@ with onglet_livraison:
         st.caption("Issues finales sur l'ensemble de Livraison : " + " · ".join(texte_issues_globales))
 
     croisement_motif_issue_livraison = construire_croisement_motif_issue_livraison(tickets_livraison_s2)
+    dict_croisement_a_livraison = {}
+    for ligne_a_croisement in croisement_motif_issue_livraison:
+        dict_croisement_a_livraison[ligne_a_croisement["sujet"]] = ligne_a_croisement
+
+    croisement_evolution_active_livraison = comparaison_disponible and livraison_duree_comparable
+    dict_croisement_b_livraison = {}
+    if croisement_evolution_active_livraison:
+        for ligne_b_croisement in construire_croisement_motif_issue_livraison(tickets_livraison_s1):
+            dict_croisement_b_livraison[ligne_b_croisement["sujet"]] = ligne_b_croisement
+
+    sujets_croisement_a_afficher = list(dict_croisement_a_livraison.keys())
+    if croisement_evolution_active_livraison:
+        sujets_croisement_a_afficher = cles_combinees(dict_croisement_a_livraison, dict_croisement_b_livraison)
+
     lignes_croisement_livraison = []
-    for ligne_croisement in croisement_motif_issue_livraison:
+    for sujet_croisement in sujets_croisement_a_afficher:
+        ligne_croisement = dict_croisement_a_livraison.get(sujet_croisement)
+        n_a_croisement = ligne_croisement["n"] if ligne_croisement is not None else 0
         ligne_croisement_affichee = {
-            "Sujet": ligne_croisement["sujet"],
-            "Tickets": ligne_croisement["n"],
+            "Sujet": sujet_croisement,
+            "Tickets": n_a_croisement,
             "Relances moyennes": "N/A",
             "Issue principale": "N/A",
         }
-        if ligne_croisement["relances_moyennes"] is not None:
-            ligne_croisement_affichee["Relances moyennes"] = str(round(ligne_croisement["relances_moyennes"], 2))
-        if ligne_croisement["issue_principale"] is not None:
-            ligne_croisement_affichee["Issue principale"] = (
-                ligne_croisement["issue_principale"]
-                + " (" + formater_pourcentage(ligne_croisement["part_issue_principale_pct"]) + ")"
-            )
+        if ligne_croisement is not None:
+            if ligne_croisement["relances_moyennes"] is not None:
+                ligne_croisement_affichee["Relances moyennes"] = str(round(ligne_croisement["relances_moyennes"], 2))
+            if ligne_croisement["issue_principale"] is not None:
+                ligne_croisement_affichee["Issue principale"] = (
+                    ligne_croisement["issue_principale"]
+                    + " (" + formater_pourcentage(ligne_croisement["part_issue_principale_pct"]) + ")"
+                )
+        if croisement_evolution_active_livraison:
+            ligne_b_croisement = dict_croisement_b_livraison.get(sujet_croisement)
+            n_b_croisement = ligne_b_croisement["n"] if ligne_b_croisement is not None else 0
+            ligne_croisement_affichee["Évolution"] = formater_delta_nombre(n_a_croisement - n_b_croisement)
         lignes_croisement_livraison.append(ligne_croisement_affichee)
 
     lignes_croisement_livraison_triees = sorted(lignes_croisement_livraison, key=obtenir_tickets, reverse=True)
@@ -4632,12 +4825,11 @@ with onglet_livraison:
             ligne["Résolution moyenne"] = formater_duree(resolution_sujet * 60)
 
         if comparaison_disponible:
-            volume_s1 = len(sujets_livraison_s1.get(sujet, []))
-            delta = volume_s2 - volume_s1
-            if delta >= 0:
-                ligne["Évolution"] = "+" + str(delta)
+            if livraison_duree_comparable:
+                volume_s1 = len(sujets_livraison_s1.get(sujet, []))
+                ligne["Évolution"] = formater_delta_nombre(volume_s2 - volume_s1)
             else:
-                ligne["Évolution"] = str(delta)
+                ligne["Évolution"] = "Non comparable"
 
         lignes_livraison.append(ligne)
 

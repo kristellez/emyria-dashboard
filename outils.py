@@ -1223,6 +1223,13 @@ def texte_reference_b(valeur_b_formattee, delta_formatte=None):
     return texte
 
 
+# Plafond volontairement large pour re-exécuter un moteur voie A côté comparaison B (ou pour
+# obtenir le set complet des signaux qualifiés de A, au-delà du plafond d'affichage habituel) --
+# purement un plafond d'affichage retiré, jamais un critère ou un seuil du moteur lui-même. Partagé
+# entre les onglets Produit/Livraison/Avant-vente pour éviter une redéfinition locale par onglet.
+PLAFOND_SIGNAUX_COMPARAISON_B = 999
+
+
 # Ordre relatif des niveaux de priorité déjà produits par les moteurs voie A -- Produit et
 # Livraison partagent exactement ce vocabulaire à 3 paliers (voir VOCABULAIRE_ECART_* pour le
 # vocabulaire d'écart, distinct de celui-ci). Sert UNIQUEMENT à comparer le tier d'un même signal
