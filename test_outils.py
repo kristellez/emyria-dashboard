@@ -220,6 +220,7 @@ from outils import (
     formater_delta_duree,
     formater_delta_montant,
     texte_reference_b,
+    identifier_marqueurs_ab_periode,
     evaluer_evolution_signal_vs_b,
     texte_evolution_signal_vs_b,
     QUALIFICATION_EVOLUTION_SIGNAL_NOUVEAU,
@@ -5821,6 +5822,47 @@ class TestTexteReferenceB7A(unittest.TestCase):
 
     def test_c_valeur_b_none_renvoie_none(self):
         self.assertIsNone(texte_reference_b(None, "+0,18"))
+
+
+class TestIdentifierMarqueursAbPeriode7I(unittest.TestCase):
+    def setUp(self):
+        self.dates = [
+            datetime.date(2026, 1, 12), datetime.date(2026, 2, 9), datetime.date(2026, 3, 9),
+        ]
+
+    def test_a_seul_b_absent(self):
+        marqueurs = identifier_marqueurs_ab_periode(self.dates, datetime.date(2026, 3, 9), None)
+        self.assertEqual(marqueurs, [{"date": datetime.date(2026, 3, 9), "label": "A"}])
+
+    def test_b_a_et_b_distincts_dans_lhistorique(self):
+        marqueurs = identifier_marqueurs_ab_periode(
+            self.dates, datetime.date(2026, 3, 9), datetime.date(2026, 1, 12)
+        )
+        self.assertEqual(
+            marqueurs,
+            [
+                {"date": datetime.date(2026, 3, 9), "label": "A"},
+                {"date": datetime.date(2026, 1, 12), "label": "B"},
+            ],
+        )
+
+    def test_c_b_absent_de_lhistorique_naffiche_rien_pour_b(self):
+        # B postérieur à A (ou simplement absent des dates déjà affichées) -- jamais de fuite du
+        # futur, jamais de repère fabriqué pour une date qui n'est pas déjà tracée.
+        marqueurs = identifier_marqueurs_ab_periode(
+            self.dates, datetime.date(2026, 3, 9), datetime.date(2026, 6, 15)
+        )
+        self.assertEqual(marqueurs, [{"date": datetime.date(2026, 3, 9), "label": "A"}])
+
+    def test_d_meme_semaine_fusionne_en_un_seul_repere_ab(self):
+        marqueurs = identifier_marqueurs_ab_periode(
+            self.dates, datetime.date(2026, 3, 9), datetime.date(2026, 3, 9)
+        )
+        self.assertEqual(marqueurs, [{"date": datetime.date(2026, 3, 9), "label": "A/B"}])
+
+    def test_e_a_absent_de_lhistorique_naffiche_rien_du_tout(self):
+        marqueurs = identifier_marqueurs_ab_periode(self.dates, datetime.date(2025, 1, 1), None)
+        self.assertEqual(marqueurs, [])
 
 
 class TestEvaluerEvolutionSignalVsB7A(unittest.TestCase):

@@ -1382,6 +1382,24 @@ def texte_reference_b(valeur_b_formattee, delta_formatte=None):
     return texte
 
 
+# Repères A/B sur une série déjà tracée (Étape 7I, Tendances) -- généralise le motif validé sur
+# l'Historique NPS : ne renvoie un repère QUE si la date correspondante est déjà présente dans
+# dates_disponibles (jamais de fuite du futur, jamais de prolongation de la fenêtre affichée pour
+# aller chercher B). Un seul repère "A/B" si les deux dates coïncident, jamais deux marqueurs
+# superposés. Ne porte aucune valeur (y) -- l'appelant la lit dans sa propre série déjà construite,
+# ce helper ne fait que dire QUELS points méritent un repère et LEQUEL.
+def identifier_marqueurs_ab_periode(dates_disponibles, date_a, date_b):
+    marqueurs = []
+    if date_a in dates_disponibles:
+        marqueurs.append({"date": date_a, "label": "A"})
+    if date_b is not None and date_b in dates_disponibles:
+        if len(marqueurs) > 0 and marqueurs[0]["date"] == date_b:
+            marqueurs[0]["label"] = "A/B"
+        else:
+            marqueurs.append({"date": date_b, "label": "B"})
+    return marqueurs
+
+
 # Plafond volontairement large pour re-exécuter un moteur voie A côté comparaison B (ou pour
 # obtenir le set complet des signaux qualifiés de A, au-delà du plafond d'affichage habituel) --
 # purement un plafond d'affichage retiré, jamais un critère ou un seuil du moteur lui-même. Partagé

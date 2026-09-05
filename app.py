@@ -159,6 +159,7 @@ from outils import (
     formater_delta_nombre,
     formater_delta_points,
     formater_delta_montant,
+    identifier_marqueurs_ab_periode,
     evaluer_robustesse_comparaison_nps,
     texte_robustesse_comparaison_nps,
     formater_delta_duree,
@@ -736,6 +737,41 @@ def configurer_apparence_graphique(graphique):
             labelFont="Inter, -apple-system, BlinkMacSystemFont, sans-serif", labelFontSize=11,
         )
     )
+
+
+# Étape 7I -- couche de repères A/B superposée à un graphique de tendance déjà tracé (ligne de base
+# à couleur fixe, jamais concernée par ce helper). Toujours COULEUR_PRIMAIRE quelle que soit la
+# couleur propre du graphique (même convention que la couche A/B de l'Historique NPS, Étape 7H) --
+# un repère se reconnaît visuellement de la même façon partout dans l'application. Retourne None
+# si aucun repère n'a de valeur exploitable sur cette métrique (jamais un point sans donnée réelle).
+def construire_couche_marqueurs_ab_tendance(marqueurs_ab, lignes_par_date, cle_valeur):
+    lignes_marqueurs = []
+    for marqueur in marqueurs_ab:
+        ligne_associee = lignes_par_date.get(marqueur["date"])
+        if ligne_associee is None:
+            continue
+        valeur = ligne_associee[cle_valeur]
+        if valeur is None:
+            continue
+        lignes_marqueurs.append({
+            "Date": marqueur["date"], "Valeur": valeur, "Repère": marqueur["label"],
+            "Événement": ligne_associee["Événement"],
+        })
+
+    if len(lignes_marqueurs) == 0:
+        return None
+
+    # Le repère est un MARK séparé posé au-dessus de la ligne de base -- au survol exact du point,
+    # c'est son tooltip qui s'affiche (pas celui de la ligne) : "Événement" y est donc repris tel
+    # quel, pour ne jamais perdre cette information au point précis où un repère A/B est posé.
+    tableau_marqueurs = pd.DataFrame(lignes_marqueurs)
+    couche_points = alt.Chart(tableau_marqueurs).mark_point(
+        size=130, filled=True, color=COULEUR_PRIMAIRE, shape="diamond"
+    ).encode(x=alt.X("Date:T"), y=alt.Y("Valeur:Q"), tooltip=["Date:T", "Valeur:Q", "Repère:N", "Événement:N"])
+    couche_texte = alt.Chart(tableau_marqueurs).mark_text(
+        dy=-16, color=COULEUR_PRIMAIRE, fontWeight="bold"
+    ).encode(x=alt.X("Date:T"), y=alt.Y("Valeur:Q"), text="Repère:N")
+    return couche_points + couche_texte
 
 
 # Étape 5E.1 : la couleur de cellule encode désormais une PRESSION DE CHARGE relative à
@@ -2240,26 +2276,33 @@ with onglet_tendances:
 
     tableau_tendance = pd.DataFrame(lignes_graphique)
 
+    # Étape 7I -- correction du "point suspendu" : une couleur CATÉGORIELLE (liée à un champ, ex.
+    # l'ancien "Sélection") posée sur un mark_line force Vega-Lite à scinder la ligne en autant de
+    # séries que de valeurs du champ -- la "Période analysée", seule dans sa catégorie, ne pouvait
+    # tracer aucun segment et apparaissait détachée du reste de la courbe. La ligne de base garde
+    # désormais une couleur FIXE (alt.value, jamais un champ) en toute circonstance ; la mise en
+    # évidence de A (et, si disponible, de B) est portée par une couche de points séparée
+    # (construire_couche_marqueurs_ab_tendance), superposée à une ligne historique qui, elle, reste
+    # toujours continue.
     encodage_couleur_volume = alt.value(COULEUR_PRIMAIRE)
     encodage_couleur_csat = alt.value(COULEUR_SECONDAIRE)
     encodage_couleur_effort = alt.value(COULEUR_ACCENT_FONCE)
-    colonnes_tooltip_supplementaires = []
 
-    if date_semaine_analysee is not None and len(tableau_tendance) > 0:
-        valeurs_selection = []
-        for date_valeur in tableau_tendance["Date"]:
-            if date_valeur == date_semaine_analysee:
-                valeurs_selection.append("Période analysée")
-            else:
-                valeurs_selection.append("Historique")
-        tableau_tendance["Sélection"] = valeurs_selection
-        echelle_selection = alt.Scale(
-            domain=["Historique", "Période analysée"], range=[COULEUR_TEXTE_LABEL, COULEUR_PRIMAIRE],
+    # Repères A/B (Étape 7I) -- UNIQUEMENT en mode observation unique (date_semaine_analysee n'est
+    # jamais renseigné dans les autres modes, voir plus haut) : en mode période étendue/historique
+    # complet, lignes_graphique est déjà tronqué à la seule fenêtre de A, B n'y figure quasiment
+    # jamais et l'étendre artificiellement pour l'y faire apparaître est explicitement exclu.
+    lignes_tendance_par_date = {}
+    for ligne_par_date in lignes_tendance:
+        lignes_tendance_par_date[ligne_par_date["Date"]] = ligne_par_date
+
+    marqueurs_ab_tendances = []
+    if date_semaine_analysee is not None:
+        dates_disponibles_tendance = list(lignes_tendance_par_date.keys())
+        date_b_pour_marqueur = date_b_debut if comparaison_disponible else None
+        marqueurs_ab_tendances = identifier_marqueurs_ab_periode(
+            dates_disponibles_tendance, date_semaine_analysee, date_b_pour_marqueur
         )
-        encodage_couleur_volume = alt.Color("Sélection:N", scale=echelle_selection, legend=alt.Legend(title=None))
-        encodage_couleur_csat = encodage_couleur_volume
-        encodage_couleur_effort = encodage_couleur_volume
-        colonnes_tooltip_supplementaires = ["Sélection:N"]
 
     # Étape 5B -- 4 graphiques principaux maximum, chacun répondant à une question distincte
     # (section 34/40) : Activité (volume), Expérience (CSAT), Effort/complexité (résolution --
@@ -2270,40 +2313,48 @@ with onglet_tendances:
     with st.expander(titre_expander_tendance):
         st.markdown(titre_section_principale("Activité"), unsafe_allow_html=True)
         st.caption("Comment le niveau d'activité évolue-t-il entre les observations disponibles ?")
-        graphique_volume = configurer_apparence_graphique(
-            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
-                x=alt.X("Date:T", title=None),
-                y=alt.Y("Tickets:Q"),
-                color=encodage_couleur_volume,
-                tooltip=["Date:T", "Tickets:Q", "Événement:N"] + colonnes_tooltip_supplementaires,
-            ).properties(height=260)
-        )
+        graphique_volume_complet = alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+            x=alt.X("Date:T", title=None),
+            y=alt.Y("Tickets:Q"),
+            color=encodage_couleur_volume,
+            tooltip=["Date:T", "Tickets:Q", "Événement:N"],
+        ).properties(height=260)
+        couche_ab_volume = construire_couche_marqueurs_ab_tendance(marqueurs_ab_tendances, lignes_tendance_par_date, "Tickets")
+        if couche_ab_volume is not None:
+            graphique_volume_complet = graphique_volume_complet + couche_ab_volume
+        graphique_volume = configurer_apparence_graphique(graphique_volume_complet)
         with st.container(border=True):
             st.altair_chart(graphique_volume, width="stretch")
 
         st.markdown(titre_section_principale("Expérience (CSAT)"), unsafe_allow_html=True)
         st.caption("La satisfaction se dégrade-t-elle ou se maintient-elle entre les observations ?")
-        graphique_csat = configurer_apparence_graphique(
-            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
-                x=alt.X("Date:T", title=None),
-                y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
-                color=encodage_couleur_csat,
-                tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"] + colonnes_tooltip_supplementaires,
-            ).properties(height=260)
-        )
+        graphique_csat_complet = alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+            x=alt.X("Date:T", title=None),
+            y=alt.Y("CSAT:Q", scale=alt.Scale(domain=[1, 5])),
+            color=encodage_couleur_csat,
+            tooltip=["Date:T", alt.Tooltip("CSAT:Q", format=".2f"), "Événement:N"],
+        ).properties(height=260)
+        couche_ab_csat = construire_couche_marqueurs_ab_tendance(marqueurs_ab_tendances, lignes_tendance_par_date, "CSAT")
+        if couche_ab_csat is not None:
+            graphique_csat_complet = graphique_csat_complet + couche_ab_csat
+        graphique_csat = configurer_apparence_graphique(graphique_csat_complet)
         with st.container(border=True):
             st.altair_chart(graphique_csat, width="stretch")
 
         st.markdown(titre_section_principale("Effort / complexité (résolution)"), unsafe_allow_html=True)
         st.caption("Les dossiers demandent-ils plus de temps à clôturer d'une observation à l'autre ?")
-        graphique_resolution = configurer_apparence_graphique(
-            alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
-                x=alt.X("Date:T", title=None),
-                y=alt.Y("Resolution (h):Q", title="Heures"),
-                color=encodage_couleur_effort,
-                tooltip=["Date:T", alt.Tooltip("Resolution (h):Q", format=".1f"), "Événement:N"] + colonnes_tooltip_supplementaires,
-            ).properties(height=260)
+        graphique_resolution_complet = alt.Chart(tableau_tendance).mark_line(point=True, strokeDash=[4, 4]).encode(
+            x=alt.X("Date:T", title=None),
+            y=alt.Y("Resolution (h):Q", title="Heures"),
+            color=encodage_couleur_effort,
+            tooltip=["Date:T", alt.Tooltip("Resolution (h):Q", format=".1f"), "Événement:N"],
+        ).properties(height=260)
+        couche_ab_resolution = construire_couche_marqueurs_ab_tendance(
+            marqueurs_ab_tendances, lignes_tendance_par_date, "Resolution (h)"
         )
+        if couche_ab_resolution is not None:
+            graphique_resolution_complet = graphique_resolution_complet + couche_ab_resolution
+        graphique_resolution = configurer_apparence_graphique(graphique_resolution_complet)
         with st.container(border=True):
             st.altair_chart(graphique_resolution, width="stretch")
 
