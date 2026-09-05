@@ -3434,13 +3434,27 @@ with onglet_creneaux:
     colonne_s1, colonne_s2, colonne_s3, colonne_s4 = st.columns(4)
 
     if comparaison_disponible:
-        colonne_s1.markdown(
-            construire_carte_kpi(
-                "Demandes reçues", formater_nombre_espace(volume_total_creneaux),
-                delta=volume_total_creneaux - len(tickets_s1), delta_couleur="off",
-            ),
-            unsafe_allow_html=True,
-        )
+        # Étape 7K -- seule métrique de volume brut de l'onglet (contrairement aux ratios/moyennes
+        # ci-dessous, déjà sans risque de durée) : même garde-fou que sur Impact & confiance
+        # (periodes_comparables_en_duree déjà validé, aucun nouveau helper) -- un delta brut entre
+        # une semaine et une période étendue serait trompeur.
+        duree_comparable_couverture = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+        if duree_comparable_couverture:
+            colonne_s1.markdown(
+                construire_carte_kpi(
+                    "Demandes reçues", formater_nombre_espace(volume_total_creneaux),
+                    delta=volume_total_creneaux - len(tickets_s1), delta_couleur="off",
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            colonne_s1.markdown(
+                construire_carte_kpi(
+                    "Demandes reçues", formater_nombre_espace(volume_total_creneaux),
+                    sous_texte="B : " + formater_nombre_espace(len(tickets_s1)) + " (durées non comparables)",
+                ),
+                unsafe_allow_html=True,
+            )
     else:
         colonne_s1.markdown(
             construire_carte_kpi("Demandes reçues", formater_nombre_espace(volume_total_creneaux)),
@@ -3679,13 +3693,27 @@ with onglet_creneaux:
     st.caption("La demande reçue hors couverture justifie-t-elle une adaptation des horaires ?")
 
     colonne_h1, colonne_h2 = st.columns(2)
-    colonne_h1.markdown(
-        construire_carte_kpi(
+
+    # Étape 7K -- delta symétrique à "Reçus hors couverture" ci-dessous (même ratio, juste son
+    # complément à 100 -- aucun nouveau calcul, pct_en_creneau_s1 est directement dérivé de
+    # part_hors_couverture_s1 déjà calculée plus haut) : la carte sœur avait un delta, celle-ci non.
+    delta_pct_en_creneau = None
+    if part_hors_couverture_s1 is not None:
+        pct_en_creneau_s1 = 100 - part_hors_couverture_s1
+        delta_pct_en_creneau = round(pct_en_creneau - pct_en_creneau_s1, 1)
+
+    if delta_pct_en_creneau is not None:
+        html_carte_en_creneau = construire_carte_kpi(
+            "Reçus pendant la couverture", formater_nombre_espace(len(en_creneau)),
+            delta=delta_pct_en_creneau, delta_couleur="normal",
+            sous_texte=formater_pourcentage(pct_en_creneau) + " du volume",
+        )
+    else:
+        html_carte_en_creneau = construire_carte_kpi(
             "Reçus pendant la couverture", formater_nombre_espace(len(en_creneau)),
             sous_texte=formater_pourcentage(pct_en_creneau) + " du volume",
-        ),
-        unsafe_allow_html=True,
-    )
+        )
+    colonne_h1.markdown(html_carte_en_creneau, unsafe_allow_html=True)
 
     delta_part_hors_couverture = None
     if part_hors_couverture_s1 is not None:
