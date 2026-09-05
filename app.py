@@ -533,22 +533,32 @@ COULEUR_HEATMAP_HORS_COUVERTURE = "#F4F2EE"
 
 
 def formater_delta_kpi(delta, delta_couleur):
+    # Étape 7L -- un delta affiché comme "0" (numérique exact, ou chaîne pré-formatée du type
+    # "0 min" -- déjà arrondi par l'appelant, donc déjà présenté comme un "0" au lecteur) obtient
+    # un état neutre dédié (flèche "→", couleur neutre) plutôt que la flèche montante par défaut,
+    # qui suggérait à tort une hausse à côté d'un chiffre qui dit "aucun changement".
     if isinstance(delta, str):
         texte_signe = delta
         est_negatif = texte_signe.startswith("-")
+        est_nul = texte_signe.split(" ")[0].lstrip("+-") == "0"
     else:
         est_negatif = delta < 0
+        est_nul = delta == 0
         if delta >= 0:
             texte_signe = "+" + str(delta)
         else:
             texte_signe = str(delta)
 
-    if est_negatif:
+    if est_nul:
+        fleche = "→"
+    elif est_negatif:
         fleche = "↓"
     else:
         fleche = "↑"
 
-    if delta_couleur == "off":
+    if est_nul:
+        fond, texte_couleur = COULEUR_NEUTRE_FOND, COULEUR_NEUTRE_TEXTE
+    elif delta_couleur == "off":
         fond, texte_couleur = COULEUR_NEUTRE_FOND, COULEUR_NEUTRE_TEXTE
     elif delta_couleur == "inverse":
         if est_negatif:
@@ -1921,14 +1931,28 @@ with onglet_vue:
             colonnes_kpi_ve = st.columns(4)
 
         if comparaison_disponible:
-            colonnes_kpi_ve[0].markdown(
-                construire_carte_kpi(
-                    "Tickets reçus", formater_nombre_espace(nombre_s2),
-                    delta=nombre_s2 - nombre_s1, delta_couleur="off",
-                    sous_texte="vs période de comparaison",
-                ),
-                unsafe_allow_html=True,
-            )
+            # Étape 7L -- même garde-fou que Couverture (Étape 7K) : seule métrique de volume brut
+            # de ce bloc, jamais gatée jusqu'ici alors que Produit/Livraison/Avant-vente/Impact/
+            # Couverture le font déjà -- un delta brut entre une semaine et une période étendue
+            # serait trompeur. periodes_comparables_en_duree déjà validé, aucun nouveau helper.
+            duree_comparable_ve = periodes_comparables_en_duree(date_a_debut, date_a_fin, date_b_debut, date_b_fin)
+            if duree_comparable_ve:
+                colonnes_kpi_ve[0].markdown(
+                    construire_carte_kpi(
+                        "Tickets reçus", formater_nombre_espace(nombre_s2),
+                        delta=nombre_s2 - nombre_s1, delta_couleur="off",
+                        sous_texte="vs période de comparaison",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                colonnes_kpi_ve[0].markdown(
+                    construire_carte_kpi(
+                        "Tickets reçus", formater_nombre_espace(nombre_s2),
+                        sous_texte="B : " + formater_nombre_espace(nombre_s1) + " (durées non comparables)",
+                    ),
+                    unsafe_allow_html=True,
+                )
             if csat_s2 is not None and csat_s1 is not None:
                 colonnes_kpi_ve[1].markdown(
                     construire_carte_kpi("CSAT moyen", formater_csat(csat_s2), delta=round(csat_s2 - csat_s1, 2)),
