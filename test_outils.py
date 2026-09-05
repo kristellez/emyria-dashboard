@@ -4100,23 +4100,28 @@ class TestImpactConfianceNPS(unittest.TestCase):
         self.assertIsNone(construire_profil_care_mensuel([]))
 
 
-def signal_categoriel_test(sujet="Sujet test", niveau_priorite="Priorité principale", familles_actives=None, n=20, part_univers_pct=10.0):
+def signal_categoriel_test(
+    sujet="Sujet test", niveau_priorite="Priorité principale", familles_actives=None, n=20,
+    part_univers_pct=10.0, grain=None,
+):
     if familles_actives is None:
         familles_actives = ["A", "B"]
     return {
         "sujet": sujet, "niveau_priorite": niveau_priorite, "familles_actives": familles_actives,
         "observation_principale": "Observation test pour " + sujet + ".",
         "volume": {"n": n, "part_univers_pct": part_univers_pct, "univers": 200},
+        "grain": grain,
     }
 
 
-def signal_av_test(sujet="Motif test", familles_actives=None, n=15, part_univers_pct=10.0):
+def signal_av_test(sujet="Motif test", familles_actives=None, n=15, part_univers_pct=10.0, niveau="Opportunité à investiguer"):
     if familles_actives is None:
         familles_actives = ["A", "C"]
     return {
         "sujet": sujet, "familles_actives": familles_actives,
         "observation_principale": "Observation test avant-vente pour " + sujet + ".",
         "volume": {"n": n, "part_univers_pct": part_univers_pct, "univers": 100},
+        "niveau": niveau,
     }
 
 
@@ -4438,6 +4443,82 @@ class TestCompositionVueEnsemble(unittest.TestCase):
             texte_minuscule = regroupe["texte"].lower()
             for mot in MOTS_PRESCRIPTIFS_INTERDITS_VUE_ENSEMBLE:
                 self.assertNotIn(mot, texte_minuscule)
+
+
+# Étape 7J -- tag "évolution vs B" sur les cartes attention (Option B validée) : signal unique et
+# identité structurelle non ambiguë seulement, jamais un tag forcé ni un vocabulaire propre à la
+# Vue d'ensemble (réutilise strictement evaluer_evolution_signal_vs_b/texte_evolution_signal_vs_b).
+class TestCandidatsVueEnsembleEvolutionVsB7J(unittest.TestCase):
+    # ---- A. Pas de lookup B (comparaison indisponible) -> jamais de tag ----
+    def test_a_sans_lookup_b_aucun_tag(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain=GRAIN_COMPOSANT)], [], [],
+        )
+        self.assertIsNone(candidats[0]["evolution_texte"])
+
+    # ---- B. Produit, identité résolue (grain reconnu) -> tag calculé ----
+    def test_b_produit_identite_resolue_tag_calcule(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain=GRAIN_COMPOSANT)], [], [],
+            niveau_priorite_par_cle_b_produit={("Batterie", GRAIN_COMPOSANT): "Priorité secondaire"},
+        )
+        self.assertEqual(candidats[0]["evolution_texte"], "Renforcé vs B")
+
+    # ---- C. Produit, grain non reconnu (identité ambiguë) -> aucun tag, même avec un lookup fourni ----
+    def test_c_produit_identite_ambigue_aucun_tag(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain="grain_inconnu")], [], [],
+            niveau_priorite_par_cle_b_produit={("Batterie", GRAIN_COMPOSANT): "Priorité secondaire"},
+        )
+        self.assertIsNone(candidats[0]["evolution_texte"])
+
+    # ---- D. Produit, lookup fourni mais B absent pour ce signal -> "Nouveau signal vs B" ----
+    def test_d_produit_absent_de_b_nouveau_signal(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain=GRAIN_COMPOSANT)], [], [],
+            niveau_priorite_par_cle_b_produit={},
+        )
+        self.assertEqual(candidats[0]["evolution_texte"], "Nouveau signal vs B")
+
+    # ---- E. Livraison, identité = sujet (toujours déterminée) -> tag calculé ----
+    def test_e_livraison_tag_calcule(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [], [signal_categoriel_test(sujet="Colis annoncé livré non reçu", familles_actives=["A", "B"])], [],
+            niveau_priorite_par_sujet_b_livraison={"Colis annoncé livré non reçu": "Priorité principale"},
+        )
+        self.assertEqual(candidats[0]["evolution_texte"], "Déjà présent sur B")
+
+    # ---- F. Avant-vente, identité = sujet -> tag calculé (clé "niveau", pas "niveau_priorite") ----
+    def test_f_avant_vente_tag_calcule(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [], [], [signal_av_test(sujet="Sable")],
+            niveau_priorite_par_sujet_b_av={},
+        )
+        self.assertEqual(candidats[0]["evolution_texte"], "Nouveau signal vs B")
+
+    # ---- G. Regroupement : signal UNIQUE conserve son tag ----
+    def test_g_regroupement_signal_unique_conserve_le_tag(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain=GRAIN_COMPOSANT)], [], [],
+            niveau_priorite_par_cle_b_produit={("Batterie", GRAIN_COMPOSANT): "Priorité secondaire"},
+        )
+        regroupes = regrouper_candidats_par_categorie_vue_ensemble(candidats)
+        self.assertEqual(len(regroupes), 1)
+        self.assertEqual(regroupes[0]["evolution_texte"], "Renforcé vs B")
+
+    # ---- H. Regroupement : "plusieurs signaux" ne porte jamais de tag, même si les deux en ont un ----
+    def test_h_regroupement_plusieurs_signaux_jamais_de_tag(self):
+        candidats = extraire_candidats_categoriels_vue_ensemble(
+            [signal_categoriel_test(sujet="Batterie", grain=GRAIN_COMPOSANT, familles_actives=["B", "C"]),
+             signal_categoriel_test(sujet="Douceur", grain=GRAIN_COMPOSANT, familles_actives=["B", "C"])],
+            [], [],
+            niveau_priorite_par_cle_b_produit={
+                ("Batterie", GRAIN_COMPOSANT): "Priorité secondaire", ("Douceur", GRAIN_COMPOSANT): "À surveiller",
+            },
+        )
+        regroupes = regrouper_candidats_par_categorie_vue_ensemble(candidats)
+        self.assertEqual(len(regroupes), 1)
+        self.assertIsNone(regroupes[0].get("evolution_texte"))
 
 
 def historique_nps_test(valeurs_nps):

@@ -5391,32 +5391,60 @@ _PHRASES_FAMILLE_COMMUNE_VUE_ENSEMBLE = {
 # Avant-vente) -- les tiers secondaires/à surveiller restent la propriété des onglets spécialisés,
 # jamais remontés ici (évite que la Vue d'ensemble affiche systématiquement les mêmes signaux de
 # fond à chaque période, quel que soit le contexte réel).
+# Étape 7J -- tag "évolution vs B" optionnel par candidat (Option B validée : signal UNIQUE et
+# identité structurelle non ambiguë seulement -- jamais un tag forcé). Les 3 lookups B sont None
+# quand la comparaison n'est pas active (aucun tag calculé) ; sinon ils reprennent exactement la
+# même grammaire déjà validée sur Produit/Livraison/Avant-vente (evaluer_evolution_signal_vs_b /
+# texte_evolution_signal_vs_b), jamais un nouveau vocabulaire propre à la Vue d'ensemble. Pour
+# Produit, cle_signal_produit peut renvoyer une clé None (grain non résolu) : c'est précisément le
+# cas "identité ambiguë" -- evolution_texte reste None, aucun tag. Pour Livraison/Avant-vente,
+# l'identité est directement signal["sujet"] (toujours déterminée, jamais ambiguë).
 def extraire_candidats_categoriels_vue_ensemble(
     signaux_produit_prioritaires, signaux_livraison_prioritaires, signaux_av_opportunites,
+    niveau_priorite_par_cle_b_produit=None, niveau_priorite_par_sujet_b_livraison=None,
+    niveau_priorite_par_sujet_b_av=None,
 ):
     candidats = []
     for signal in signaux_produit_prioritaires:
         if signal["niveau_priorite"] == "Priorité principale":
+            evolution_texte = None
+            if niveau_priorite_par_cle_b_produit is not None:
+                cle_produit, grain_produit = cle_signal_produit(signal)
+                if cle_produit is not None:
+                    niveau_b_produit = niveau_priorite_par_cle_b_produit.get((cle_produit, grain_produit))
+                    evolution_texte = texte_evolution_signal_vs_b(
+                        evaluer_evolution_signal_vs_b(signal["niveau_priorite"], niveau_b_produit)
+                    )
             candidats.append({
                 "categorie": CATEGORIE_SAV_PRODUIT, "onglet_cible": "Produit",
                 "sujet": signal["sujet"], "observation_principale": signal["observation_principale"],
                 "familles_actives": signal["familles_actives"], "volume_n": signal["volume"]["n"],
-                "part_univers_pct": signal["volume"]["part_univers_pct"],
+                "part_univers_pct": signal["volume"]["part_univers_pct"], "evolution_texte": evolution_texte,
             })
     for signal in signaux_livraison_prioritaires:
         if signal["niveau_priorite"] == "Priorité principale":
+            evolution_texte = None
+            if niveau_priorite_par_sujet_b_livraison is not None:
+                niveau_b_livraison = niveau_priorite_par_sujet_b_livraison.get(signal["sujet"])
+                evolution_texte = texte_evolution_signal_vs_b(
+                    evaluer_evolution_signal_vs_b(signal["niveau_priorite"], niveau_b_livraison)
+                )
             candidats.append({
                 "categorie": CATEGORIE_LIVRAISON_VUE_ENSEMBLE, "onglet_cible": "Livraison",
                 "sujet": signal["sujet"], "observation_principale": signal["observation_principale"],
                 "familles_actives": signal["familles_actives"], "volume_n": signal["volume"]["n"],
-                "part_univers_pct": signal["volume"]["part_univers_pct"],
+                "part_univers_pct": signal["volume"]["part_univers_pct"], "evolution_texte": evolution_texte,
             })
     for signal in signaux_av_opportunites:
+        evolution_texte = None
+        if niveau_priorite_par_sujet_b_av is not None:
+            niveau_b_av = niveau_priorite_par_sujet_b_av.get(signal["sujet"])
+            evolution_texte = texte_evolution_signal_vs_b(evaluer_evolution_signal_vs_b(signal["niveau"], niveau_b_av))
         candidats.append({
             "categorie": CATEGORIE_AVANT_VENTE_VUE_ENSEMBLE, "onglet_cible": "Avant-vente & conversion",
             "sujet": signal["sujet"], "observation_principale": signal["observation_principale"],
             "familles_actives": signal["familles_actives"], "volume_n": signal["volume"]["n"],
-            "part_univers_pct": signal["volume"]["part_univers_pct"],
+            "part_univers_pct": signal["volume"]["part_univers_pct"], "evolution_texte": evolution_texte,
         })
     return candidats
 
@@ -5497,6 +5525,9 @@ def regrouper_candidats_par_categorie_vue_ensemble(candidats):
             volume_total = volume_total + candidat["volume_n"]
 
         if len(groupe) == 1:
+            # Étape 7J -- le tag "évolution vs B" (s'il existe) ne survit QUE sur une carte à
+            # signal unique : la branche "plusieurs signaux" ci-dessous ne le reprend jamais, pour
+            # ne jamais empiler un tag par sous-signal ni fabriquer un tag global approximatif.
             unique = groupe[0]
             regroupes.append({
                 "categorie": categorie, "onglet_cible": unique["onglet_cible"],
@@ -5504,6 +5535,7 @@ def regrouper_candidats_par_categorie_vue_ensemble(candidats):
                 "texte": unique["observation_principale"],
                 "volume_n": unique["volume_n"],
                 "part_univers_pct": unique["part_univers_pct"],
+                "evolution_texte": unique.get("evolution_texte"),
             })
         else:
             sujets = []

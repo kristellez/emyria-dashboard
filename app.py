@@ -1777,6 +1777,77 @@ with onglet_vue:
         tickets_av_ve, resultats_achats_av_ve, historique_av_par_fichier_ve, contexte_periode_ve, 5,
     )
 
+    # ------------------------------------------------------------------
+    # Étape 7J -- B pour le tag "évolution vs B" des cartes attention (Option B validée avec
+    # l'utilisatrice : signal unique + identité structurelle non ambiguë seulement, jamais un tag
+    # forcé ni un vocabulaire propre à la Vue d'ensemble). Même schéma que Produit/Livraison/
+    # Avant-vente (Étapes 7B/7C/7D) : réexécute les 3 moteurs sur tickets_s1, plafond
+    # PLAFOND_SIGNAUX_COMPARAISON_B, coût strictement conditionnel à comparaison_disponible.
+    # ------------------------------------------------------------------
+
+    niveau_priorite_par_cle_b_produit_ve = None
+    niveau_priorite_par_sujet_b_livraison_ve = None
+    niveau_priorite_par_sujet_b_av_ve = None
+
+    if comparaison_disponible:
+        historique_sav_produit_par_fichier_ve_b = []
+        historique_livraison_par_fichier_ve_b = []
+        historique_av_par_fichier_ve_b = []
+        for date_export_hist_ve_b, chemin_hist_ve_b in exports_disponibles:
+            if date_export_hist_ve_b < date_b_debut:
+                tickets_fichier_hist_ve_b = charger_tickets(chemin_hist_ve_b)
+                tickets_sav_hist_ve_b = []
+                tickets_liv_hist_ve_b = []
+                tickets_av_hist_ve_b = []
+                for ticket_hist_ve_b in tickets_fichier_hist_ve_b:
+                    categorie_hist_ve_b = categoriser(ticket_hist_ve_b)
+                    if categorie_hist_ve_b == CATEGORIE_SAV_PRODUIT:
+                        tickets_sav_hist_ve_b.append(ticket_hist_ve_b)
+                    elif categorie_hist_ve_b == "Livraison":
+                        tickets_liv_hist_ve_b.append(ticket_hist_ve_b)
+                    elif categorie_hist_ve_b == "Avant-vente / conseil":
+                        tickets_av_hist_ve_b.append(ticket_hist_ve_b)
+                historique_sav_produit_par_fichier_ve_b.append(tickets_sav_hist_ve_b)
+                historique_livraison_par_fichier_ve_b.append(tickets_liv_hist_ve_b)
+                historique_av_par_fichier_ve_b.append(tickets_av_hist_ve_b)
+
+        tickets_sav_produit_ve_b = categories_s1.get(CATEGORIE_SAV_PRODUIT, [])
+        tickets_livraison_ve_b = categories_s1.get("Livraison", [])
+        tickets_av_ve_b = categories_s1.get("Avant-vente / conseil", [])
+
+        resultats_produit_b_ve = moteur_produit_voie_a(
+            tickets_sav_produit_ve_b, historique_sav_produit_par_fichier_ve_b, commandes, couts_produits,
+            PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        niveau_priorite_par_cle_b_produit_ve = {}
+        for signal_b_produit_ve in resultats_produit_b_ve["prioritaires"] + resultats_produit_b_ve["a_surveiller"]:
+            cle_b_produit_ve, grain_b_produit_ve = cle_signal_produit(signal_b_produit_ve)
+            if cle_b_produit_ve is not None:
+                niveau_priorite_par_cle_b_produit_ve[(cle_b_produit_ve, grain_b_produit_ve)] = (
+                    signal_b_produit_ve["niveau_priorite"]
+                )
+
+        resultats_livraison_b_ve = moteur_livraison_voie_a(
+            tickets_livraison_ve_b, historique_livraison_par_fichier_ve_b, PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        niveau_priorite_par_sujet_b_livraison_ve = {}
+        for signal_b_livraison_ve in resultats_livraison_b_ve["prioritaires"] + resultats_livraison_b_ve["a_surveiller"]:
+            niveau_priorite_par_sujet_b_livraison_ve[signal_b_livraison_ve["sujet"]] = (
+                signal_b_livraison_ve["niveau_priorite"]
+            )
+
+        contexte_periode_ve_b = contexte_periode(evenements_calendrier, date_b_debut, date_b_fin)
+        resultats_achats_av_ve_b = resoudre_achats_observes_avant_vente(
+            tickets_av_ve_b, index_commandes_email_ve, FENETRE_CONVERSION_JOURS,
+        )
+        resultats_motifs_av_b_ve = moteur_avant_vente_motifs(
+            tickets_av_ve_b, resultats_achats_av_ve_b, historique_av_par_fichier_ve_b, contexte_periode_ve_b,
+            PLAFOND_SIGNAUX_COMPARAISON_B,
+        )
+        niveau_priorite_par_sujet_b_av_ve = {}
+        for signal_b_av_ve in resultats_motifs_av_b_ve["opportunites"] + resultats_motifs_av_b_ve["a_surveiller"]:
+            niveau_priorite_par_sujet_b_av_ve[signal_b_av_ve["sujet"]] = signal_b_av_ve["niveau"]
+
     reponses_nps_ve = charger_nps(FICHIER_NPS)
     historique_nps_mensuel_ve = construire_historique_nps_par_mois(reponses_nps_ve)
     cle_mois_periode_ve = date_a_debut.strftime("%Y-%m")
@@ -1812,6 +1883,7 @@ with onglet_vue:
 
     candidats_categoriels_ve = extraire_candidats_categoriels_vue_ensemble(
         resultats_produit_ve["prioritaires"], resultats_livraison_ve["prioritaires"], resultats_motifs_av_ve["opportunites"],
+        niveau_priorite_par_cle_b_produit_ve, niveau_priorite_par_sujet_b_livraison_ve, niveau_priorite_par_sujet_b_av_ve,
     )
     diagnostics_transversaux_ve = evaluer_diagnostics_structures_transversal_vue_ensemble(
         profils_historique_ve, index_dernier_profil_ve,
@@ -1921,6 +1993,15 @@ with onglet_vue:
         # déjà porteuse du "pourquoi". Renvoi vers l'onglet concerné : badge existant, inchangé.
         for signal_ve in resultat_attention_ve["retenus"]:
             corps_ve_html = signal_ve["texte"]
+            # Étape 7J -- tag "évolution vs B" (Option B) : seule une carte à signal unique en
+            # porte un (voir regrouper_candidats_par_categorie_vue_ensemble), jamais les cartes
+            # "plusieurs signaux" ni les signaux transversaux (Tendances/NPS, sans ce champ). Même
+            # style/gabarit que Produit/Livraison/Avant-vente, aucun nouveau vocabulaire.
+            if signal_ve.get("evolution_texte") is not None:
+                corps_ve_html = corps_ve_html + (
+                    '<br><span style="font-size:12px; font-weight:600; color:' + COULEUR_TEXTE_MUTED + ';">'
+                    + signal_ve["evolution_texte"] + "</span>"
+                )
             if signal_ve["volume_n"] is not None:
                 texte_volume_ve = str(signal_ve["volume_n"]) + " " + accorder(signal_ve["volume_n"], "ticket", "tickets")
                 if signal_ve.get("part_univers_pct") is not None:
@@ -1950,11 +2031,19 @@ with onglet_vue:
             )
 
     # ---- E. Contexte de la période ----
+    # Étape 7J -- A et B doivent être distinguables sans devenir deux gros pavés (bloc unique,
+    # simplement sous-titré par période) ; "Changement planning" reste une ligne à part, déjà par
+    # nature une lecture comparative A/B, jamais rattachée à un seul des deux sous-titres.
     st.markdown(titre_section_principale("Contexte de la période"), unsafe_allow_html=True)
-    evenements_texte = construire_texte_evenements(exports_disponibles, date_a_debut, date_a_fin)
+    evenements_texte_a_ve = construire_texte_evenements(exports_disponibles, date_a_debut, date_a_fin)
+    evenements_html = "Événements, période A :<br>" + evenements_texte_a_ve.replace("  \n", "<br>")
+    if comparaison_disponible:
+        evenements_texte_b_ve = construire_texte_evenements(exports_disponibles, date_b_debut, date_b_fin)
+        evenements_html = evenements_html + (
+            "<br><br>Événements, période B :<br>" + evenements_texte_b_ve.replace("  \n", "<br>")
+        )
     for changement in changements_planning:
-        evenements_texte = evenements_texte + "  \nChangement planning : " + changement
-    evenements_html = "Événements de la période :<br>" + evenements_texte.replace("  \n", "<br>")
+        evenements_html = evenements_html + "<br>Changement planning : " + changement
     st.markdown(construire_bandeau_info(evenements_html), unsafe_allow_html=True)
 
     if len(anticipations_ve) > 0:
@@ -1993,6 +2082,14 @@ with onglet_vue:
             st.caption("Barres groupées : volume par catégorie sur les deux périodes, avec l'évolution en %")
 
         if comparaison_disponible:
+            # Étape 7J -- B est choisie librement (jamais forcément "avant" A) : les vraies bornes
+            # de chaque période remplacent "Période actuelle/précédente" partout (données, tri,
+            # couleur, légende), cohérent avec le vocabulaire déjà en place au niveau Contexte
+            # ("Période A"/"Période B"). Tooltip explicite (Catégorie/Période/Tickets) pour ne
+            # jamais exposer un champ technique Vega-Lite (ex. l'index de tri interne du xOffset).
+            libelle_periode_a_ve = formater_plage_courte(date_a_debut, date_a_fin)
+            libelle_periode_b_ve = formater_plage_courte(date_b_debut, date_b_fin)
+
             ordre_categories = []
             lignes_graphique_long = []
             lignes_graphique_deltas = []
@@ -2003,8 +2100,8 @@ with onglet_vue:
                 volume_actuel = ligne["Tickets"]
                 volume_precedent = len(categories_s1.get(categorie, []))
 
-                lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période actuelle", "Tickets": volume_actuel})
-                lignes_graphique_long.append({"Catégorie": categorie, "Période": "Période précédente", "Tickets": volume_precedent})
+                lignes_graphique_long.append({"Catégorie": categorie, "Période": libelle_periode_a_ve, "Tickets": volume_actuel})
+                lignes_graphique_long.append({"Catégorie": categorie, "Période": libelle_periode_b_ve, "Tickets": volume_precedent})
 
                 volume_max = max(volume_actuel, volume_precedent)
                 if volume_precedent > 0:
@@ -2023,20 +2120,21 @@ with onglet_vue:
 
             barres_categories = alt.Chart(tableau_long).mark_bar().encode(
                 x=alt.X("Catégorie:N", sort=ordre_categories, title=None),
-                xOffset=alt.XOffset("Période:N", sort=["Période actuelle", "Période précédente"]),
+                xOffset=alt.XOffset("Période:N", sort=[libelle_periode_a_ve, libelle_periode_b_ve]),
                 y=alt.Y("Tickets:Q", title="Tickets"),
                 color=alt.Color(
                     "Période:N",
-                    sort=["Période actuelle", "Période précédente"],
-                    # Période précédente = une référence temporelle, pas une 2e série de données au
-                    # même titre que la période actuelle -- gris neutre, jamais l'Accent secondaire
-                    # (Étape 6C, section 15 ; Étape 6B, section 24).
+                    sort=[libelle_periode_a_ve, libelle_periode_b_ve],
+                    # B = une référence temporelle, pas une 2e série de données au même titre que A
+                    # -- gris neutre, jamais l'Accent secondaire (Étape 6C, section 15 ; Étape 6B,
+                    # section 24).
                     scale=alt.Scale(
-                        domain=["Période actuelle", "Période précédente"],
+                        domain=[libelle_periode_a_ve, libelle_periode_b_ve],
                         range=[COULEUR_PRIMAIRE, COULEUR_NEUTRE_TEXTE],
                     ),
                     legend=alt.Legend(title=None),
                 ),
+                tooltip=["Catégorie:N", "Période:N", "Tickets:Q"],
             )
 
             etiquettes_evolution = alt.Chart(tableau_deltas).mark_text(
@@ -2050,10 +2148,11 @@ with onglet_vue:
             # Étape 6J, section 19 : seul graphique de l'app encore hors configurer_apparence_graphique
             # (Vue d'ensemble, verrouillée depuis 6D, mais ce token manquant est un P1 visuel évident --
             # migration triviale, aucun changement de type/données). configure_axisX reste ensuite pour
-            # la rotation des labels, compatible avec le config.axis déjà posé par le helper.
+            # la rotation des labels (Étape 7J : labelLimit relevé -- les noms de catégorie longs
+            # étaient tronqués/masqués par la limite par défaut de Vega-Lite, jamais réglée jusqu'ici).
             graphique_categories = configurer_apparence_graphique(
                 (barres_categories + etiquettes_evolution).properties(height=340)
-            ).configure_axisX(labelAngle=-30)
+            ).configure_axisX(labelAngle=-30, labelLimit=220)
             st.altair_chart(graphique_categories, width="stretch")
         else:
             lignes_graphique_categories = []
@@ -2078,6 +2177,7 @@ with onglet_vue:
 
         if comparaison_disponible:
             categories_a_afficher_perf = cles_combinees(categories_s2, categories_s1)
+            libelle_colonne_volume_b_perf = "Volume période B (" + formater_plage_courte(date_b_debut, date_b_fin) + ")"
         else:
             categories_a_afficher_perf = list(categories_s2.keys())
 
@@ -2097,7 +2197,10 @@ with onglet_vue:
             ligne = {"Catégorie": categorie}
 
             if comparaison_disponible:
-                ligne["Volume période précédente"] = len(tickets_cat_s1)
+                # Étape 7J -- A reste la lecture principale (aucune autre colonne B ajoutée, ni
+                # CSAT ni résolution) ; seul cet intitulé change, pour porter la vraie borne de B
+                # plutôt que "précédente" (B n'est pas forcément antérieure à A).
+                ligne[libelle_colonne_volume_b_perf] = len(tickets_cat_s1)
 
             ligne["Volume période actuelle"] = len(tickets_cat_s2)
             ligne["CSAT"] = "N/A"
